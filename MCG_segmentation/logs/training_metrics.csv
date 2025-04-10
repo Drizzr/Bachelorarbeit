@@ -1,0 +1,1 @@
+epoch,train_loss,train_acc,val_loss,val_acc,val_f1_macro,learning_rate
