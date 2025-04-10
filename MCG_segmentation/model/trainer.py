@@ -105,7 +105,7 @@ class Trainer(object):
             epoch_steps = 0
             step_start_time = time.time()
 
-            for i, (_, signals, labels) in enumerate(self.train_loader):
+            for i, (signals, labels) in enumerate(self.train_loader):
                 self.optimizer.zero_grad()
 
                 signals = signals.to(self.device, non_blocking=True)
@@ -222,7 +222,7 @@ class Trainer(object):
         self.model.eval()
 
         with torch.no_grad():
-            for i, (_, signals, labels) in enumerate(self.val_loader):
+            for i, (signals, labels) in enumerate(self.val_loader):
                 if limit is not None and i >= limit:
                      print(f"Validation limited to {limit} batches.")
                      break

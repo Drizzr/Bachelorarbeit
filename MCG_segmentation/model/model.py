@@ -2,122 +2,138 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F # Keep for potential use
 import math
 
+# --- Keep other models if needed for reference ---
+# class PositionalEncoding...
+# class ResidualAttentionBlock...
+# class WaveletCNNClassifier...
+# class WaveletCNN_LSTM_Segmenter...
 
-# --- Positional Encoding remains the same ---
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=10000):
+# --- Model based on the text description (1D CNN -> BiLSTM -> Dense) ---
+class Conv1D_BiLSTM_Segmenter(nn.Module):
+    def __init__(self, num_classes=4, # Number of output classes
+                 input_channels=1, # Usually 1 for single-lead ECG segment
+                 cnn_filters=(32, 64, 128), # Filters for the 3 conv layers
+                 cnn_kernel_size=3,
+                 lstm_units=(250, 125), # Hidden units for the 2 BiLSTM layers
+                 dropout_rate=0.2): # Dropout probability after LSTMs
         super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        self.num_classes = num_classes
+        current_channels = input_channels
+
+        # --- 1D Convolutional Layers ---
+        cnn_layers = []
+        padding = cnn_kernel_size // 2 # Maintain length with stride 1
+        for num_filters in cnn_filters:
+            cnn_layers.extend([
+                nn.Conv1d(current_channels, num_filters,
+                          kernel_size=cnn_kernel_size, padding=padding, bias=True), # Bias usually True for Conv1d
+                # Consider adding BatchNorm1d here? Description doesn't explicitly mention it, but often beneficial.
+                # nn.BatchNorm1d(num_filters),
+                nn.ReLU() # Standard activation, description doesn't specify one for CNN
+            ])
+            current_channels = num_filters
+        self.cnn_base = nn.Sequential(*cnn_layers)
+        # --- End CNN ---
+
+        # --- BiLSTM Layers ---
+        lstm_input_size = current_channels # Output channels from last CNN layer
+        self.bilstm1 = nn.LSTM(input_size=lstm_input_size,
+                               hidden_size=lstm_units[0],
+                               num_layers=1,
+                               batch_first=True,
+                               bidirectional=True)
+
+        self.bilstm2 = nn.LSTM(input_size=lstm_units[0] * 2, # Input is output of first BiLSTM
+                               hidden_size=lstm_units[1],
+                               num_layers=1,
+                               batch_first=True,
+                               bidirectional=True)
+        # --- End BiLSTM ---
+
+        # --- Dropout Layer ---
+        # Applied after the BiLSTM layers before the final classifier
+        self.dropout = nn.Dropout(dropout_rate)
+        # --- End Dropout ---
+
+        # --- Time Distributed Dense Layer ---
+        # Apply a Linear layer to each time step of the final LSTM output
+        final_lstm_output_features = lstm_units[1] * 2 # Output of second BiLSTM
+        self.classifier = nn.Linear(final_lstm_output_features, num_classes)
+        # --- End Classifier ---
+
+        print(f"--- Initialized Conv1D_BiLSTM_Segmenter ---")
+        print(f"  Input Channels: {input_channels}")
+        print(f"  CNN Filters: {cnn_filters}, Kernel: {cnn_kernel_size}")
+        print(f"  BiLSTM Units: {lstm_units}")
+        print(f"  Dropout Rate: {dropout_rate}")
+        print(f"  Output Classes: {num_classes}")
+        print(f"---------------------------------------------")
+
 
     def forward(self, x):
-        # Input x shape: (Batch, Time, Features=d_model)
-        # pe shape: (1, max_len, d_model)
-        # We add positional encoding to the feature dimension
-        # Ensure x and pe have compatible dimensions for broadcasting if necessary
-        # Slicing pe ensures we only add encodings up to the sequence length of x
-        return x + self.pe[:, :x.size(1)]
+        # Input x shape: (Batch, Channels=1, Time)
+        # print(f"Input: {x.shape}")
 
+        # CNN Base
+        x = self.cnn_base(x) # Output: (Batch, last_cnn_filter, Time)
+        # print(f"After CNN: {x.shape}")
 
-# --- Residual Attention Block - Modified FFN Width ---
-class ResidualAttentionBlock(nn.Module):
-    # Added ffn_multiplier argument
-    def __init__(self, embed_dim, num_heads, dropout_rate, ffn_multiplier=4): # Increased default multiplier
-        super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout_rate, batch_first=True)
-        self.norm1 = nn.LayerNorm(embed_dim)
-        # Make FFN hidden dimension controllable
-        ffn_hidden_dim = int(embed_dim * ffn_multiplier)
-        self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, ffn_hidden_dim), # Wider intermediate layer
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(ffn_hidden_dim, embed_dim), # Back to embed_dim
-            nn.Dropout(dropout_rate)
-        )
-        self.norm2 = nn.LayerNorm(embed_dim)
+        # Prepare for LSTM: (Batch, Time, Features)
+        x = x.permute(0, 2, 1) # (Batch, Time, last_cnn_filter)
+        # print(f"Before LSTM1: {x.shape}")
 
-    def forward(self, x):
-        # x shape: (Batch, Time, Features=embed_dim)
-        attn_output, _ = self.attn(x, x, x) # Query, Key, Value are all x
-        # Residual connection 1 (Add & Norm)
-        x = self.norm1(x + attn_output)
-        # Feed Forward Network
-        ffn_output = self.ffn(x)
-        # Residual connection 2 (Add & Norm)
-        x = self.norm2(x + ffn_output)
-        return x
+        # BiLSTM Layers
+        x, _ = self.bilstm1(x) # Output: (Batch, Time, lstm_units[0]*2)
+        # print(f"After LSTM1: {x.shape}")
+        x, _ = self.bilstm2(x) # Output: (Batch, Time, lstm_units[1]*2)
+        # print(f"After LSTM2: {x.shape}")
 
+        # Dropout
+        x = self.dropout(x) # Apply dropout to LSTM output features
 
-# --- WaveletCNNClassifier - MODIFIED CNN Width and uses updated Attention Block ---
-class WaveletCNNClassifier(nn.Module):
-    # Added cnn_channels and ffn_multiplier parameters
-    def __init__(self, num_classes=4, dropout_rate=0.3, num_heads=4, # Kept num_heads=4 default
-                 cnn_channels=(48, 96), # Example: Increased channels (1->48->96)
-                 ffn_multiplier=3): # Example: Using 3x multiplier in Attention FFN
-        super().__init__()
+        # Time Distributed Classifier
+        # Apply linear layer to each time step's feature vector
+        # Input: (Batch, Time, lstm_units[1]*2) -> Output: (Batch, Time, num_classes)
+        logits = self.classifier(x)
+        # print(f"Logits: {logits.shape}")
 
-        # --- Parameter Sanity Check ---
-        if not isinstance(cnn_channels, (list, tuple)) or len(cnn_channels) != 2:
-             raise ValueError("cnn_channels must be a list or tuple of length 2, e.g., (48, 96)")
-        ch1, ch2 = cnn_channels
-        # --- End Check ---
+        # Softmax is typically applied in the loss function (CrossEntropyLoss)
+        return logits
 
-        # Input CWT map shape: (B, 1, H=NumScales, T=TimeSteps)
-        self.cnn = nn.Sequential(
-            # Layer 1
-            nn.Conv2d(1, ch1, kernel_size=(3, 3), padding=1), # Input channels = 1
-            nn.ReLU(),
-            nn.BatchNorm2d(ch1),
-            # Layer 2
-            nn.Conv2d(ch1, ch2, kernel_size=(3, 3), padding=1), # Input channels = ch1
-            nn.ReLU(),
-            nn.BatchNorm2d(ch2),
-            # Pooling & Dropout
-            nn.AdaptiveAvgPool2d((1, None)), # Average pool across the scale dimension -> (B, ch2, 1, T)
-            nn.Dropout(dropout_rate) # Dropout after pooling
-        )
+# --- Function to count parameters ---
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-        # The embedding dimension is now the output channel count of the CNN
-        self.embed_dim = ch2
-        self.pos_encoding = PositionalEncoding(d_model=self.embed_dim)
+# --- Example Usage ---
+if __name__ == "__main__":
+    print("\n--- Testing Conv1D_BiLSTM_Segmenter ---")
+    NUM_CLASSES = 4
+    TIME_STEPS = 250 # Example sequence length
+    BATCH_SIZE = 16
+    INPUT_CHANNELS = 1 # Single channel (lead)
 
-        # Instantiate the Attention Block with the potentially wider FFN
-        self.attn_block = ResidualAttentionBlock(
-            embed_dim=self.embed_dim,
-            num_heads=num_heads,
-            dropout_rate=dropout_rate,
-            ffn_multiplier=ffn_multiplier # Pass the multiplier
-        )
+    # Instantiate the model using defaults from description
+    model_test = Conv1D_BiLSTM_Segmenter(
+        num_classes=NUM_CLASSES,
+        input_channels=INPUT_CHANNELS,
+        cnn_filters=(32, 64, 128),
+        cnn_kernel_size=3,
+        lstm_units=(250, 125),
+        dropout_rate=0.2
+    )
 
-        # Classifier Head - input dimension matches embed_dim
-        self.classifier = nn.Sequential(
-            nn.Linear(self.embed_dim, self.embed_dim // 2), # Example: hidden layer size relative to embed_dim
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(self.embed_dim // 2, num_classes) # Output layer
-        )
+    dummy_input_1d = torch.randn(BATCH_SIZE, INPUT_CHANNELS, TIME_STEPS)
 
-    def forward(self, x):
-        # x: (B, 1, H, T) - Batch, Channel, Height(Scales), Width(Time)
-        x = self.cnn(x)  # Output: (B, ch2, 1, T)
-        # Squeeze the height dimension and permute to (B, T, Features=ch2)
-        x = x.squeeze(2).permute(0, 2, 1) # Shape: (B, T, ch2) where ch2 = embed_dim
+    model_test.eval()
+    with torch.no_grad():
+        output_logits = model_test(dummy_input_1d)
 
-        # Add positional encoding
-        x = self.pos_encoding(x) # Shape remains (B, T, embed_dim)
+    params_count = count_parameters(model_test)
+    print(f"\nInput Shape (1D Signal): {dummy_input_1d.shape}")
+    print(f"Output Logits Shape: {output_logits.shape}") # Should be (BATCH_SIZE, TIME_STEPS, NUM_CLASSES)
+    print(f"Total Trainable Parameters: {params_count:,}") # Should be >> 1M
 
-        # Pass through attention block
-        x = self.attn_block(x) # Shape remains (B, T, embed_dim)
-
-        # Classify each time step
-        out = self.classifier(x)  # Output shape: (B, T, num_classes)
-        return out
-
+    print("-" * 40)

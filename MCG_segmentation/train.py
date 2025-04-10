@@ -44,11 +44,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
         # num_classes = checkpoint_args.get("num_classes", args.num_classes) # Example
 
     # Define model structure based on args (or potentially loaded args)
-    model = WaveletCNNClassifier(
-        num_classes=args.num_classes, # Use current args
-        dropout_rate=args.dropout_rate,
-        num_heads=args.num_heads
-        )
+    model = Conv1D_BiLSTM_Segmenter()
     model.to(device)
 
     # Define optimizer
@@ -118,16 +114,9 @@ def main():
     parser.add_argument("--overlap", type=int, default=250, help="Overlap between consecutive sequence segments")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of dataloader workers")
 
-    # Model Architecture Args (Ensure these match your model's __init__)
-    parser.add_argument("--num_classes", type=int, default=4, help="Number of output classes for segmentation")
-    parser.add_argument("--num_heads", type=int, default=4, help="Number of attention heads")
-    parser.add_argument("--dropout_rate", type=float, default=0.3, help="Dropout rate used in the model")
-    # Add args for cnn_channels etc. if your WaveletCNNClassifier takes them
-
     # LR Scheduler Args
     parser.add_argument("--max_lr", type=float, default=1e-4, help="Maximum learning rate (for Adam and CyclicLR)")
     parser.add_argument("--base_lr", type=float, default=1e-5, help="Base learning rate for CyclicLR")
-    parser.add_argument("--cycle_epochs_up", type=int, default=4, help="Epochs for LR increase phase in CyclicLR")
 
     # Logging Arg
     parser.add_argument("--metrics_file", type=str, default="MCG_segmentation/logs/training_metrics.csv", help="Path to CSV file for saving epoch metrics")
@@ -146,10 +135,6 @@ def main():
     # Ensure save directory exists
     os.makedirs(args.save_dir, exist_ok=True)
 
-    # Define wavelet scales (Adjust if using logspace or different type)
-    wavelet_scales = np.arange(1, 64)
-    print(f"Using Wavelet Scales (min/max): {wavelet_scales.min():.2f}/{wavelet_scales.max():.2f}")
-    # wavelet_type = 'morl' # Define if different from dataset default
 
     # --- Dataset & DataLoader Setup ---
     train_loader = None; val_loader = None
@@ -158,11 +143,11 @@ def main():
         # Ensure wavelet_type is passed if needed by ECGFullDataset
         train_dataset = ECGFullDataset(
                 data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag, wavelet_scales=wavelet_scales #, wavelet=wavelet_type
+                sinusoidal_noise_mag=args.sinusoidal_noise_mag #, wavelet=wavelet_type
             )
         val_dataset = ECGFullDataset(
             data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=args.sinusoidal_noise_mag, wavelet_scales=wavelet_scales #, wavelet=wavelet_type
+            sinusoidal_noise_mag=args.sinusoidal_noise_mag #, wavelet=wavelet_type
         )
         if len(train_dataset) == 0: print(f"Warning: Training dataset is empty. Check path: {args.data_dir_train}")
         if len(val_dataset) == 0: print(f"Warning: Validation dataset is empty. Check path: {args.data_dir_val}")
@@ -195,10 +180,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = WaveletCNNClassifier( # Ensure this matches the definition in model.py
-            num_classes=args.num_classes, dropout_rate=args.dropout_rate, num_heads=args.num_heads
-            # Add other arch args if needed
-        )
+        model = Conv1D_BiLSTM_Segmenter()
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
