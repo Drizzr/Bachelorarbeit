@@ -202,9 +202,11 @@ def main():
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
-        scheduler = lr_scheduler.CyclicLR(optimizer, base_lr=args.base_lr, max_lr=args.max_lr,
-                                        step_size_up=len(train_loader) * args.cycle_epochs_up,
-                                        mode='triangular2', cycle_momentum=False)
+        scheduler  = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=args.num_epochs * len(train_loader), # T_max is usually specified in *steps* not epochs
+                eta_min=args.base_lr # Anneal down to base_lr (or 0)
+            )
 
         # Instantiate Trainer with log file path and STANDARD loss function
         trainer = Trainer(model, train_loader, args, val_loader, optimizer, device,
