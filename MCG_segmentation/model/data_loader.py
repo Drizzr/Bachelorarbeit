@@ -63,19 +63,9 @@ class ECGFullDataset(Dataset):
         self.max_time_shift = max_time_shift
         self.augmentation_prob = augmentation_prob
 
-        # Filter parameters
-        self.apply_filter = apply_filter
-        self.filter_lowcut = filter_lowcut
-        self.filter_highcut = filter_highcut
-        self.filter_order = filter_order
+        self.sequences = [] # List to store 1D sequences
+        self.sequence_labels = [] # List to store labels for each sequence
 
-        # Storage
-        # Each list item will be a dict {'signal': tensor, 'label': tensor, 'fs': float}
-        # Store data per channel separately initially before slicing maybe? Or handle channel selection later?
-        # Let's stick to the current slicing approach but store fs.
-        self.sequences = []         # List of Tensors of shape (T,) - NOW the signal itself
-        self.sequence_labels = []   # List of Tensors of shape (T,)
-        self.sequence_fs = []       # List of sampling frequencies
 
         self._load_and_slice_all()
 
@@ -136,37 +126,15 @@ class ECGFullDataset(Dataset):
             seq_label = labels[start:end]
             self.sequences.append(seq)
             self.sequence_labels.append(seq_label)
-            self.sequence_fs.append(fs)
 
     def __len__(self):
         return len(self.sequences)
-
-    # _apply_butter_bandpass_filter remains the same
-    def _apply_butter_bandpass_filter(self, data, lowcut, highcut, fs, order):
-        """Applies Butterworth bandpass filter."""
-        nyq = 0.5 * fs; low = lowcut / nyq; high = highcut / nyq
-        if low <= 0 or high >= 1.0: logging.warning(f"Invalid filter freq for fs={fs}. Skip."); return data
-        try:
-            b, a = butter(order, [low, high], btype='bandpass')
-            data_np = data.numpy() if isinstance(data, torch.Tensor) else np.asarray(data)
-            padlen = 3 * order
-            if len(data_np) <= padlen: logging.warning(f"Signal too short ({len(data_np)}) for filter order {order}. Skip."); return data
-            y = filtfilt(b, a, data_np)
-            return torch.from_numpy(y.copy()).to(dtype=data.dtype)
-        except Exception as e: logging.error(f"Filter error: {e}"); return data
 
     # Modified __getitem__ to return processed 1D signal
     def __getitem__(self, idx):
 
         signal = self.sequences[idx] # This is the raw 1D sequence now
         labels = self.sequence_labels[idx]
-        fs = self.sequence_fs[idx]
-
-        # --- Apply Bandpass Filter ---
-        if self.apply_filter:
-            signal = self._apply_butter_bandpass_filter(
-                signal, self.filter_lowcut, self.filter_highcut, fs, self.filter_order
-            )
 
         # --- Apply Augmentations (Identical logic as before, applied to 1D signal) ---
         signal_processed = signal
@@ -228,17 +196,9 @@ class ECGFullDataset(Dataset):
         # --- End Augmentations ---
 
 
-        # --- Prepare Output for 1D CNN Model ---
         # Add channel dimension: (1, T) - Conv1d expects (Batch, Channels, Length)
         final_signal_output = noisy_signal.unsqueeze(0)
-        # --- Output is now (1, T), labels is (T,) ---
 
-        # --- REMOVED CWT Calculation and related steps ---
-        # tf_map = compute_wavelet(...)
-        # tf_map_unsqueezed = tf_map.unsqueeze(0)
-        # if self.transform: ...
-
-        # Return the processed 1D signal (with channel dim) and labels
         return final_signal_output, labels
 
 
@@ -254,8 +214,6 @@ if __name__ == "__main__":
             data_dir="MCG_segmentation/qtdb/processed/val", # Adjust path
             overlap=125,
             sequence_length=250,
-            # Enable augmentations for testing
-            apply_filter=True,
             sinusoidal_noise_mag=0.05,
             gaussian_noise_std=0.02,
             baseline_wander_mag=0.05,
