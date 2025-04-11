@@ -49,13 +49,13 @@ class TransformerBlock(nn.Module):
 # --- New Model with Attention ---
 class Conv1D_Attention_Segmenter(nn.Module):
     def __init__(self, num_classes=4,
-                 input_channels=1,
-                 cnn_filters=(16, 32, 64),  # Reduced CNN filters
-                 cnn_kernel_size=3,
-                 attention_dim=128,         # Reduced attention dimension
-                 num_heads=4,
-                 num_transformer_layers=2, # Reduced number of transformer layers
-                 dropout_rate=0.2):
+                input_channels=1,
+                cnn_filters=(16, 32, 64),  # Reduced CNN filters
+                cnn_kernel_size=3,
+                attention_dim=64,         # Reduced attention dimension
+                num_heads=4,
+                num_transformer_layers=1, # Reduced number of transformer layers
+                dropout_rate=0.5):
         super().__init__()
         self.num_classes = num_classes
         current_channels = input_channels
@@ -128,16 +128,8 @@ if __name__ == "__main__":
     BATCH_SIZE = 16
     INPUT_CHANNELS = 1
 
-    model = Conv1D_Attention_Segmenter(
-        num_classes=NUM_CLASSES,
-        input_channels=INPUT_CHANNELS,
-        cnn_filters=(16, 32, 64),
-        cnn_kernel_size=3,
-        attention_dim=128,
-        num_heads=4,
-        num_transformer_layers=2,
-        dropout_rate=0.2
-    )
+    model = Conv1D_Attention_Segmenter()
+
 
     dummy_input = torch.randn(BATCH_SIZE, INPUT_CHANNELS, TIME_STEPS)
     model.eval()
