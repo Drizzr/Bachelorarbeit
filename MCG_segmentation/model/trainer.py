@@ -26,7 +26,7 @@ class Trainer(object):
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
 
-        self.loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.0, 4.64, 3.64, 2.13], device=device, dtype=torch.float32)) 
+        self.loss_fn = torch.nn.CrossEntropyLoss() 
 
         self.device = device
         self.log_filepath = log_filepath 
