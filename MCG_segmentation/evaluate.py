@@ -42,11 +42,7 @@ def load_model(load_dir, device):
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
 
-    return model, {
-        "num_classes": args.get("num_classes", 4),
-        "sequence_length": args.get("sequence_length", 250),
-        "overlap": args.get("overlap", 125),
-    }
+    return model, args.get("num_classes", 4)
 
 def plot_sample(signal, true, pred, output_dir, index=0, seq_len=None):
     """Plot signal with true/predicted labels."""
@@ -175,16 +171,18 @@ def main():
     parser.add_argument("--eval_batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
+    parser.add_argument("--sequence_length", type=int, default=500) 
+
 
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    model, params = load_model(args.load_dir, DEVICE)
+    model, num_classes = load_model(args.load_dir, DEVICE)
 
     dataset = ECGFullDataset(
         data_dir=args.data_dir_eval,
-        sequence_length=params["sequence_length"],
-        overlap=params["overlap"],
+        sequence_length=args.sequence_length,
+        overlap=0,
         sinusoidal_noise_mag=0.0, gaussian_noise_std=0.0,
         baseline_wander_mag=0.0, amplitude_scale_range=0.0, max_time_shift=0,
     )
@@ -200,7 +198,7 @@ def main():
         }
 
     loss_fn = nn.CrossEntropyLoss()
-    evaluate(model, dataloader, loss_fn, DEVICE, params["num_classes"], args.output_dir, sample_info)
+    evaluate(model, dataloader, loss_fn, DEVICE, num_classes, args.output_dir, sample_info)
 
 if __name__ == "__main__":
     main()

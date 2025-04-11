@@ -110,8 +110,12 @@ class ECGFullDataset(Dataset):
     def _slice_channel_sequences(self, signal: torch.Tensor, labels: torch.Tensor):
         """Slices 1D signal and labels, stores fs."""
         stride = self.sequence_length - self.overlap
+        if stride <= 0:
+            logging.error(f"Stride must be positive. Current stride: {stride}")
+            return
         total_length = signal.shape[0]
-        if total_length < self.sequence_length: return
+        if total_length < self.sequence_length: 
+            return
         for start in range(0, total_length - self.sequence_length + 1, stride):
             end = start + self.sequence_length
             seq = signal[start:end]
