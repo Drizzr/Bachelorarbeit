@@ -157,7 +157,6 @@ def main():
     else: 
         device = torch.device("cpu")
     print(f"Using device: {device}")
-    device = torch.device("cpu")
     # --- End Device Setup ---
 
     # --- Model, Optimizer, Scheduler, Trainer Initialization ---
