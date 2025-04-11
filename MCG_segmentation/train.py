@@ -30,7 +30,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
         params = json.load(f)
 
     # Define model structure based on args (or potentially loaded args)
-    model = Conv1D_BiLSTM_Segmenter()
+    model = Conv1D_Attention_Segmenter()
     model.to(device)
 
     # Define optimizer
@@ -157,6 +157,7 @@ def main():
     else: 
         device = torch.device("cpu")
     print(f"Using device: {device}")
+    device = torch.device("cpu")
     # --- End Device Setup ---
 
     # --- Model, Optimizer, Scheduler, Trainer Initialization ---
@@ -171,7 +172,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = Conv1D_BiLSTM_Segmenter()
+        model = Conv1D_Attention_Segmenter()
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")

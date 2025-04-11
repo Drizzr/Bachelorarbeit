@@ -1,131 +1,150 @@
-# model/model.py
-
 import torch
 import torch.nn as nn
+import math
 
 
-# --- Model based on the text description (1D CNN -> BiLSTM -> Dense) ---
-class Conv1D_BiLSTM_Segmenter(nn.Module):
-    def __init__(self, num_classes=4, # Number of output classes
-                input_channels=1, # Usually 1 for single-lead ECG segment
-                cnn_filters=(32, 64, 128), # Filters for the 3 conv layers
-                cnn_kernel_size=3,
-                lstm_units=(250, 125), # Hidden units for the 2 BiLSTM layers
-                dropout_rate=0.2): # Dropout probability after LSTMs
+# --- Positional Encoding ---
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # Shape: (1, max_len, d_model)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x shape: (batch_size, seq_len, d_model)
+        x = x + self.pe[:, :x.size(1)]
+        return x
+
+
+# --- Transformer Encoder Block ---
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model, num_heads, dim_feedforward=1024, dropout=0.1):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, dim_feedforward),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(dim_feedforward, d_model),
+        )
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # Multi-head attention
+        attn_output, _ = self.attn(x, x, x)
+        x = self.norm1(x + self.dropout(attn_output))
+        # Feed-forward
+        ffn_output = self.ffn(x)
+        x = self.norm2(x + self.dropout(ffn_output))
+        return x
+
+
+# --- New Model with Attention ---
+class Conv1D_Attention_Segmenter(nn.Module):
+    def __init__(self, num_classes=4,
+                 input_channels=1,
+                 cnn_filters=(16, 32, 64),  # Reduced CNN filters
+                 cnn_kernel_size=3,
+                 attention_dim=128,         # Reduced attention dimension
+                 num_heads=4,
+                 num_transformer_layers=2, # Reduced number of transformer layers
+                 dropout_rate=0.2):
         super().__init__()
         self.num_classes = num_classes
         current_channels = input_channels
 
-        # --- 1D Convolutional Layers ---
+        # --- CNN Layers ---
         cnn_layers = []
-        padding = cnn_kernel_size // 2 # Maintain length with stride 1
+        padding = cnn_kernel_size // 2
         for num_filters in cnn_filters:
             cnn_layers.extend([
-                nn.Conv1d(current_channels, num_filters,
-                        kernel_size=cnn_kernel_size, padding=padding, bias=True), # Bias usually True for Conv1d
-                #nn.BatchNorm1d(num_filters),
-                nn.ReLU() # Standard activation, description doesn't specify one for CNN
+                nn.Conv1d(current_channels, num_filters, kernel_size=cnn_kernel_size, padding=padding),
+                nn.ReLU()
             ])
             current_channels = num_filters
         self.cnn_base = nn.Sequential(*cnn_layers)
-        # --- End CNN ---
 
-        # --- BiLSTM Layers ---
-        lstm_input_size = current_channels # Output channels from last CNN layer
-        self.bilstm1 = nn.LSTM(input_size=lstm_input_size,
-                            hidden_size=lstm_units[0],
-                            num_layers=1,
-                            batch_first=True,
-                            bidirectional=True)
+        # --- Projection to Attention Dim ---
+        self.project_to_attention = nn.Linear(current_channels, attention_dim)
 
-        self.bilstm2 = nn.LSTM(input_size=lstm_units[0] * 2, # Input is output of first BiLSTM
-                            hidden_size=lstm_units[1],
-                            num_layers=1,
-                            batch_first=True,
-                            bidirectional=True)
-        # --- End BiLSTM ---
+        # --- Positional Encoding ---
+        self.pos_encoder = PositionalEncoding(attention_dim)
 
-        # --- Dropout Layer ---
-        # Applied after the BiLSTM layers before the final classifier
+        # --- Transformer Blocks ---
+        self.transformer_blocks = nn.Sequential(*[
+            TransformerBlock(d_model=attention_dim, num_heads=num_heads, dropout=dropout_rate)
+            for _ in range(num_transformer_layers)
+        ])
+
+        # --- Dropout ---
         self.dropout = nn.Dropout(dropout_rate)
-        # --- End Dropout ---
 
-        # --- Time Distributed Dense Layer ---
-        final_lstm_output_features = lstm_units[1] * 2 
-        self.classifier = nn.Linear(final_lstm_output_features, num_classes)
-        # --- End Classifier ---
+        # --- Classifier ---
+        self.classifier = nn.Linear(attention_dim, num_classes)
 
-        print(f"--- Initialized Conv1D_BiLSTM_Segmenter ---")
-        print(f"  Input Channels: {input_channels}")
+        print(f"--- Initialized Conv1D_Attention_Segmenter ---")
         print(f"  CNN Filters: {cnn_filters}, Kernel: {cnn_kernel_size}")
-        print(f"  BiLSTM Units: {lstm_units}")
-        print(f"  Dropout Rate: {dropout_rate}")
+        print(f"  Attention Dim: {attention_dim}, Heads: {num_heads}, Layers: {num_transformer_layers}")
         print(f"  Output Classes: {num_classes}")
         print(f"---------------------------------------------")
 
-
     def forward(self, x):
-        # Input x shape: (Batch, Channels=1, Time)
-        # print(f"Input: {x.shape}")
+        # Input shape: (B, C=1, T)
+        x = self.cnn_base(x)  # -> (B, C_out, T)
+        x = x.permute(0, 2, 1)  # -> (B, T, Features)
 
-        # CNN Base
-        x = self.cnn_base(x) # Output: (Batch, last_cnn_filter, Time)
-        # print(f"After CNN: {x.shape}")
+        # Project to attention dimension
+        x = self.project_to_attention(x)
 
-        # Prepare for LSTM: (Batch, Time, Features)
-        x = x.permute(0, 2, 1) # (Batch, Time, last_cnn_filter)
-        # print(f"Before LSTM1: {x.shape}")
+        # Add positional encoding
+        x = self.pos_encoder(x)
 
-        # BiLSTM Layers
-        x, _ = self.bilstm1(x) # Output: (Batch, Time, lstm_units[0]*2)
-        # print(f"After LSTM1: {x.shape}")
-        x, _ = self.bilstm2(x) # Output: (Batch, Time, lstm_units[1]*2)
-        # print(f"After LSTM2: {x.shape}")
+        # Transformer encoder blocks
+        x = self.transformer_blocks(x)
 
-        # Dropout
-        x = self.dropout(x) # Apply dropout to LSTM output features
-
-        # Time Distributed Classifier
-        # Apply linear layer to each time step's feature vector
-        # Input: (Batch, Time, lstm_units[1]*2) -> Output: (Batch, Time, num_classes)
-        logits = self.classifier(x)
-        # print(f"Logits: {logits.shape}")
-
-        # Softmax is typically applied in the loss function (CrossEntropyLoss)
+        # Dropout + Classifier
+        x = self.dropout(x)
+        logits = self.classifier(x)  # -> (B, T, num_classes)
         return logits
 
 
-# --- Function to count parameters ---
+# --- Count Parameters ---
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-# --- Example Usage ---
-if __name__ == "__main__":
-    print("\n--- Testing Conv1D_BiLSTM_Segmenter ---")
-    NUM_CLASSES = 4
-    TIME_STEPS = 250 # Example sequence length
-    BATCH_SIZE = 16
-    INPUT_CHANNELS = 1 # Single channel (lead)
 
-    # Instantiate the model using defaults from description
-    model_test = Conv1D_BiLSTM_Segmenter(
+# --- Test ---
+if __name__ == "__main__":
+    print("\n--- Testing Conv1D_Attention_Segmenter ---")
+    NUM_CLASSES = 4
+    TIME_STEPS = 250
+    BATCH_SIZE = 16
+    INPUT_CHANNELS = 1
+
+    model = Conv1D_Attention_Segmenter(
         num_classes=NUM_CLASSES,
         input_channels=INPUT_CHANNELS,
-        cnn_filters=(32, 64, 128),
+        cnn_filters=(16, 32, 64),
         cnn_kernel_size=3,
-        lstm_units=(250, 125),
+        attention_dim=128,
+        num_heads=4,
+        num_transformer_layers=2,
         dropout_rate=0.2
     )
 
-    dummy_input_1d = torch.randn(BATCH_SIZE, INPUT_CHANNELS, TIME_STEPS)
-
-    model_test.eval()
+    dummy_input = torch.randn(BATCH_SIZE, INPUT_CHANNELS, TIME_STEPS)
+    model.eval()
     with torch.no_grad():
-        output_logits = model_test(dummy_input_1d)
+        logits = model(dummy_input)
 
-    params_count = count_parameters(model_test)
-    print(f"\nInput Shape (1D Signal): {dummy_input_1d.shape}")
-    print(f"Output Logits Shape: {output_logits.shape}") # Should be (BATCH_SIZE, TIME_STEPS, NUM_CLASSES)
-    print(f"Total Trainable Parameters: {params_count:,}") # Should be >> 1M
-
+    print(f"\nInput Shape: {dummy_input.shape}")
+    print(f"Output Shape: {logits.shape}")
+    print(f"Total Parameters: {count_parameters(model):,}")
     print("-" * 40)
