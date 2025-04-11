@@ -46,16 +46,16 @@ class QTDB(object):
         """Generate the raw version of the QT database in the 'raw' folder."""
         # Check if raw data exists and has content
         if os.path.exists(self.raw_path) and any(f.endswith('.dat') for f in os.listdir(self.raw_path)):
-             LOGGER.info(f"Raw database seems to exist in {self.raw_path}, skipping download.")
-             self.record_names = self._get_record_names()
-             return # Don't download again
+            LOGGER.info(f"Raw database seems to exist in {self.raw_path}, skipping download.")
+            self.record_names = self._get_record_names()
+            return # Don't download again
 
         LOGGER.info('Generating Raw QT Database...\nSave path: {}'.format(self.raw_path))
         try:
             wfdb.dl_database(self.db_name, self.raw_path)
             self.record_names = self._get_record_names()
             if not self.record_names:
-                 raise RuntimeError("Downloaded database but still could not find records.")
+                raise RuntimeError("Downloaded database but still could not find records.")
             LOGGER.info('Raw DB download complete!')
         except Exception as e:
             LOGGER.error(f"Failed to download raw database: {e}", exc_info=True)
@@ -96,9 +96,9 @@ class QTDB(object):
                     LOGGER.warning(f"Train Record {record_name}: No valid intervals or processed DataFrame is empty.")
                 # Log progress less frequently maybe
                 if (i + 1) % 10 == 0 or (i + 1) == len(train_records):
-                     LOGGER.info(f'Processed Train: {i+1}/{len(train_records)} Record: {record_name}')
+                    LOGGER.info(f'Processed Train: {i+1}/{len(train_records)} Record: {record_name}')
             except Exception as e:
-                 LOGGER.error(f"Error processing train record {record_name}: {e}", exc_info=True)
+                LOGGER.error(f"Error processing train record {record_name}: {e}", exc_info=True)
         LOGGER.info(f"Finished processing Training Set. Saved {processed_count_train} files.")
 
         # --- Process Validation Records ---
@@ -108,7 +108,7 @@ class QTDB(object):
             try:
                 record = Record(record_name=record_name, data_dir=DATA_DIR, min_gap_ms=80)
                 if record.intervals_df is not None and not record.intervals_df.empty:
-                     # Pass target subset directory
+                    # Pass target subset directory
                     record.save_csv(subset='val')
                     processed_count_val += 1
                 else:
@@ -116,7 +116,7 @@ class QTDB(object):
                 if (i + 1) % 10 == 0 or (i + 1) == len(val_records):
                     LOGGER.info(f'Processed Val: {i+1}/{len(val_records)} Record: {record_name}')
             except Exception as e:
-                 LOGGER.error(f"Error processing val record {record_name}: {e}", exc_info=True)
+                LOGGER.error(f"Error processing val record {record_name}: {e}", exc_info=True)
         LOGGER.info(f"Finished processing Validation Set. Saved {processed_count_val} files.")
 
         LOGGER.info('Processed DB generation complete!')
@@ -216,7 +216,7 @@ class Record(object):
 
 
         except FileNotFoundError as e:
-             LOGGER.error(f"Record file(s) not found for {self.record_name} in {self.load_path}: {e}")
+            LOGGER.error(f"Record file(s) not found for {self.record_name} in {self.load_path}: {e}")
         except ValueError as e: # Catch specific errors like checksum mismatch from rdrecord
             LOGGER.error(f"Value error processing record {self.record_name} (potential WFDB issue): {e}")
         except Exception as e:
