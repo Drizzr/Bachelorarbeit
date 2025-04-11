@@ -35,8 +35,8 @@ def load_model(load_dir, device):
     model = Conv1D_BiLSTM_Segmenter(
         num_classes=args.get("num_classes", 4),
         input_channels=args.get("input_channels", 1),
-        cnn_filters=args.get("cnn_filters", (32, 64, 128)),
-        lstm_units=args.get("lstm_units", (250, 125)),
+        cnn_filters=args.get("cnn_filters", (16, 32, 64)),
+        lstm_units=args.get("lstm_units", (128, 64)),
         dropout_rate=args.get("dropout_rate", 0.2)
     )
     model.load_state_dict(torch.load(model_path, map_location=device))
