@@ -5,16 +5,13 @@ from torch.utils.data import DataLoader
 from model.model import * # Import necessary models
 from model.trainer import Trainer # Import Trainer
 from model.data_loader import * # Import dataset class
-# No SummaryWriter needed
 import torch
 import sys
 import json
 import os
-import re # Keep for load_from_checkpoint
 import numpy as np
 import torch.optim.lr_scheduler as lr_scheduler
-# No direct need for sklearn here, it's used in Trainer
-# from sklearn.metrics import f1_score
+
 
 def load_from_checkpoint(args, train_loader, val_loader, device):
     """Load model from checkpoint"""
@@ -25,23 +22,12 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
     scheduler_path = os.path.join(args.load_dir, "lr_scheduler.pth") # Define path
 
     if not all(os.path.exists(p) for p in [param_path, model_path, optimizer_path]):
-        # If best doesn't exist, check for epoch-specific files (adjust logic if needed)
-        # This simple check might need refinement based on how exactly you name epoch checkpoints
-        print(f"Best checkpoint not found. Looking for latest epoch checkpoint...")
-        # Example: find the latest epoch checkpoint (requires more logic to parse filenames)
-        # For simplicity now, we just check for the basic files presence.
-        # A more robust approach would list files, sort by epoch number, and pick the latest.
-        if not all(os.path.exists(p) for p in [param_path, model_path, optimizer_path]):
-            raise FileNotFoundError(f"Missing required checkpoint files (model.pth, optimizer.pth, params.json) in: {args.load_dir}")
-        else:
-            print(f"Loading from latest found epoch checkpoint files in {args.load_dir}")
+        raise FileNotFoundError(f"Missing required checkpoint files (model.pth, optimizer.pth, params.json) in: {args.load_dir}")
+    else:
+        print(f"Loading from latest found epoch checkpoint files in {args.load_dir}")
 
     with open(param_path, "r") as f:
         params = json.load(f)
-        # Load args from checkpoint if available, override cmd line args? Or prioritize cmd line?
-        # Let's prioritize command line args, but maybe load some like num_classes
-        # checkpoint_args = params.get("args", {})
-        # num_classes = checkpoint_args.get("num_classes", args.num_classes) # Example
 
     # Define model structure based on args (or potentially loaded args)
     model = Conv1D_BiLSTM_Segmenter()
@@ -89,6 +75,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
 
     return trainer, model
 
+
 def main():
 
     # --- Argument Parser Setup ---
@@ -121,12 +108,7 @@ def main():
     # Logging Arg
     parser.add_argument("--metrics_file", type=str, default="MCG_segmentation/logs/training_metrics.csv", help="Path to CSV file for saving epoch metrics")
 
-    # --- REMOVED Weighted Loss Arguments ---
-    # parser.add_argument("--use_weighted_loss", action='store_true', default=False, help="Use weighted CrossEntropyLoss")
-    # parser.add_argument("--class0_weight", type=float, default=1.5, help="Weight for class 0 if using weighted loss")
-
     args = parser.parse_args()
-    # --- End Argument Parser Setup ---
 
     # Validate args
     if args.from_check_point and not args.load_dir:
@@ -136,7 +118,6 @@ def main():
     os.makedirs(args.save_dir, exist_ok=True)
 
 
-    # --- Dataset & DataLoader Setup ---
     train_loader = None; val_loader = None
     try:
         print("Setting up datasets...")
@@ -149,34 +130,44 @@ def main():
             data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
             sinusoidal_noise_mag=args.sinusoidal_noise_mag #, wavelet=wavelet_type
         )
-        if len(train_dataset) == 0: print(f"Warning: Training dataset is empty. Check path: {args.data_dir_train}")
-        if len(val_dataset) == 0: print(f"Warning: Validation dataset is empty. Check path: {args.data_dir_val}")
-        
 
+        if len(train_dataset) == 0: 
+            print(f"Warning: Training dataset is empty. Check path: {args.data_dir_train}")
+        if len(val_dataset) == 0: 
+            print(f"Warning: Validation dataset is empty. Check path: {args.data_dir_val}")
+        
         print("Setting up dataloaders...")
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=args.num_workers, pin_memory=True)
         val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, drop_last=False, num_workers=args.num_workers, pin_memory=True)
         print(f"Training samples: {len(train_dataset)}, Validation samples: {len(val_dataset)}")
         print(f"Training batches: {len(train_loader)}, Validation batches: {len(val_loader)}")
-    except FileNotFoundError as e: print(f"Error initializing datasets: {e}"); sys.exit(1)
-    except ValueError as e: print(f"Error initializing datasets: {e}"); sys.exit(1)
+    
+    except FileNotFoundError as e: 
+        print(f"Error initializing datasets: {e}"); sys.exit(1)
+    except ValueError as e: 
+        print(f"Error initializing datasets: {e}"); sys.exit(1)
     # --- End Dataset & DataLoader Setup ---
 
+
     # --- Device Setup ---
-    if torch.cuda.is_available(): device = torch.device("cuda")
-    elif torch.backends.mps.is_available(): device = torch.device("mps")
-    else: device = torch.device("cpu")
+    if torch.cuda.is_available(): 
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available(): 
+        device = torch.device("mps")
+    else: 
+        device = torch.device("cpu")
     print(f"Using device: {device}")
     # --- End Device Setup ---
-
 
     # --- Model, Optimizer, Scheduler, Trainer Initialization ---
     if args.from_check_point:
         try:
             trainer, model = load_from_checkpoint(args, train_loader, val_loader, device)
-        except FileNotFoundError as e: print(f"Error loading checkpoint: {e}"); sys.exit(1)
+        except FileNotFoundError as e: 
+            print(f"Error loading checkpoint: {e}")
+            sys.exit(1)
         except Exception as e:
-             print(f"An unexpected error occurred loading checkpoint: {e}"); import traceback; traceback.print_exc(); sys.exit(1)
+            print(f"An unexpected error occurred loading checkpoint: {e}"); import traceback; traceback.print_exc(); sys.exit(1)
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
@@ -192,16 +183,15 @@ def main():
 
         # Instantiate Trainer with log file path and STANDARD loss function
         trainer = Trainer(model, train_loader, args, val_loader, optimizer, device,
-                          log_filepath=args.metrics_file, # Pass metrics file path
-                          lr_scheduler=scheduler) 
+                        log_filepath=args.metrics_file, # Pass metrics file path
+                        lr_scheduler=scheduler) 
         
-    # --- End Initialization ---
-
     # --- Print Setup Summary ---
     # (Remains the same)
     print("_________________________________________________________________")
     print("CONFIGURATION:")
-    for arg, value in vars(args).items(): print(f"{arg:>20}: {value}")
+    for arg, value in vars(args).items(): 
+        print(f"{arg:>20}: {value}")
     print(f"{'Device':>20}: {device}")
     print(f"{'Trainable Params':>20}: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
     print("_________________________________________________________________")
@@ -218,14 +208,13 @@ def main():
         except Exception as save_e: print(f"Could not save model after interruption: {save_e}")
         print("Exiting."); sys.exit(0)
     except Exception as e:
-         print(f"\nAn error occurred during training: {e}"); import traceback; traceback.print_exc()
-         print("Attempting to save model state after error...")
-         try: trainer.save_model(is_best=False); print("Model saved after error.")
-         except Exception as save_e: print(f"Could not save model after error: {save_e}")
-         sys.exit(1)
+        print(f"\nAn error occurred during training: {e}"); import traceback; traceback.print_exc()
+        print("Attempting to save model state after error...")
+        try: trainer.save_model(is_best=False); print("Model saved after error.")
+        except Exception as save_e: print(f"Could not save model after error: {save_e}")
+        sys.exit(1)
     finally:
         print("Training script finished.")
-    # --- End Training Loop ---
 
 
 if __name__ == "__main__":

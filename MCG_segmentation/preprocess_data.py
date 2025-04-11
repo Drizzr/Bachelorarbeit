@@ -129,8 +129,8 @@ class QTDB(object):
             return [f.split('.')[0] for f in os.listdir(self.raw_path)
                     if f.endswith('.dat') and not f.startswith('.')]
         except FileNotFoundError:
-             LOGGER.error(f"Raw data directory not found: {self.raw_path}")
-             return []
+            LOGGER.error(f"Raw data directory not found: {self.raw_path}")
+            return []
 
 
 def _create_directory(directory):
@@ -142,7 +142,7 @@ def _create_directory(directory):
             with open(gitignore_path, 'w') as f:
                 f.write('*\n!.gitignore\n')
         except IOError as e:
-             LOGGER.warning(f"Could not create .gitignore in {directory}: {e}")
+            LOGGER.warning(f"Could not create .gitignore in {directory}: {e}")
 
 
 class Record(object):
@@ -172,7 +172,7 @@ class Record(object):
             record_filepath = os.path.join(self.load_path, self.record_name)
             # Check if essential .dat and .hea files exist
             if not os.path.exists(record_filepath + ".dat") or not os.path.exists(record_filepath + ".hea"):
-                 raise FileNotFoundError(f"Essential record files (.dat, .hea) not found for {self.record_name}")
+                raise FileNotFoundError(f"Essential record files (.dat, .hea) not found for {self.record_name}")
 
             record_obj = wfdb.rdrecord(record_filepath)
             self.waveforms = record_obj.p_signal
@@ -182,17 +182,17 @@ class Record(object):
                 try:
                     self.annotations = wfdb.rdann(record_filepath, self.annotator).__dict__
                 except FileNotFoundError:
-                     LOGGER.warning(f"Annotation file '{self.annotator}' not found for {self.record_name}. Trying alternatives...")
-                     # Simple fallback logic if preferred annotator missing
-                     self.annotator = self._get_annotator(annotator=None, auto_return=True) # Re-check with auto_return maybe?
-                     if self.annotator:
-                          self.annotations = wfdb.rdann(record_filepath, self.annotator).__dict__
-                     else:
-                          LOGGER.error(f"No annotation file could be loaded for {self.record_name}")
-                          self.annotations = None
+                    LOGGER.warning(f"Annotation file '{self.annotator}' not found for {self.record_name}. Trying alternatives...")
+                    # Simple fallback logic if preferred annotator missing
+                    self.annotator = self._get_annotator(annotator=None, auto_return=True) # Re-check with auto_return maybe?
+                    if self.annotator:
+                        self.annotations = wfdb.rdann(record_filepath, self.annotator).__dict__
+                    else:
+                        LOGGER.error(f"No annotation file could be loaded for {self.record_name}")
+                        self.annotations = None
 
             else:
-                 LOGGER.warning(f"No suitable annotator found initially for record {self.record_name}")
+                LOGGER.warning(f"No suitable annotator found initially for record {self.record_name}")
 
             if self.waveforms is None or self.fs is None:
                 raise ValueError("Failed to load essential waveform data or sampling frequency.")
@@ -210,9 +210,9 @@ class Record(object):
                     else:
                         LOGGER.warning(f"No valid intervals created for record {self.record_name}")
                 else:
-                     LOGGER.warning(f"Could not derive labels for record {self.record_name}")
+                    LOGGER.warning(f"Could not derive labels for record {self.record_name}")
             else:
-                 LOGGER.warning(f"No annotations available to process labels for record {self.record_name}")
+                LOGGER.warning(f"No annotations available to process labels for record {self.record_name}")
 
 
         except FileNotFoundError as e:
@@ -233,8 +233,8 @@ class Record(object):
             return
 
         if subset not in ['train', 'val']:
-             LOGGER.error(f"Invalid subset '{subset}' provided for saving {self.record_name}. Must be 'train' or 'val'.")
-             return
+            LOGGER.error(f"Invalid subset '{subset}' provided for saving {self.record_name}. Must be 'train' or 'val'.")
+            return
 
         # Construct the full save path including the subset directory
         subset_save_dir = os.path.join(self.processed_base_path, subset)
@@ -314,20 +314,20 @@ class Record(object):
                     # For now, proceed if start < peak < end
                     peak_sample = ann_samples[ann_idx]
                     if start_sample < peak_sample < end_sample:
-                         labels.append({
-                             'peak': peak_sample,
-                             'start': start_sample,
-                             'end': end_sample,
-                             'label': symbol
-                         })
+                        labels.append({
+                            'peak': peak_sample,
+                            'start': start_sample,
+                            'end': end_sample,
+                            'label': symbol
+                        })
                     else:
-                         LOGGER.debug(f"Skipping beat {symbol} at sample {peak_sample} for {self.record_name}: "
-                                      f"Invalid start/peak/end sample order ({start_sample}, {peak_sample}, {end_sample})")
+                        LOGGER.debug(f"Skipping beat {symbol} at sample {peak_sample} for {self.record_name}: "
+                                    f"Invalid start/peak/end sample order ({start_sample}, {peak_sample}, {end_sample})")
 
 
             if not labels:
-                 LOGGER.warning(f"Could not extract any valid label intervals for {self.record_name} using marker logic.")
-                 return None
+                LOGGER.warning(f"Could not extract any valid label intervals for {self.record_name} using marker logic.")
+                return None
 
             # Sort labels by start time
             labels.sort(key=lambda x: x['start'])
@@ -335,19 +335,19 @@ class Record(object):
             # Remove overlapping intervals (preferring the earlier one)
             non_overlapping_labels = []
             if labels:
-                 non_overlapping_labels.append(labels[0])
-                 for i in range(1, len(labels)):
-                     # If current label starts after or exactly where previous ended
-                     if labels[i]['start'] >= non_overlapping_labels[-1]['end']:
-                         non_overlapping_labels.append(labels[i])
-                     else:
-                          LOGGER.debug(f"Removing overlapping label {labels[i]} starting at {labels[i]['start']} "
-                                       f"because previous ended at {non_overlapping_labels[-1]['end']}")
+                non_overlapping_labels.append(labels[0])
+                for i in range(1, len(labels)):
+                    # If current label starts after or exactly where previous ended
+                    if labels[i]['start'] >= non_overlapping_labels[-1]['end']:
+                        non_overlapping_labels.append(labels[i])
+                    else:
+                        LOGGER.debug(f"Removing overlapping label {labels[i]} starting at {labels[i]['start']} "
+                                    f"because previous ended at {non_overlapping_labels[-1]['end']}")
 
 
             if not non_overlapping_labels:
-                 LOGGER.warning(f"No non-overlapping labels found for {self.record_name}")
-                 return None
+                LOGGER.warning(f"No non-overlapping labels found for {self.record_name}")
+                return None
 
             # Add gap labels
             labels_with_gaps = self._add_gap_labels(labels=non_overlapping_labels)
@@ -355,8 +355,8 @@ class Record(object):
             return labels_with_gaps
 
         except Exception as e:
-             LOGGER.error(f"Error processing annotations for {self.record_name}: {e}", exc_info=True)
-             return None
+            LOGGER.error(f"Error processing annotations for {self.record_name}: {e}", exc_info=True)
+            return None
 
     def _add_gap_labels(self, labels):
         """Add 'na' labels in gaps between valid beat intervals."""
@@ -382,8 +382,8 @@ class Record(object):
                         'end': gap_end, 'label': 'na'
                     })
             elif gap_duration_samples < 0:
-                 LOGGER.warning(f"{self.record_name}: Overlap detected between label ending at {gap_start} and label starting at {gap_end}. Skipping gap.")
-                 # Implicitly skips gap if overlap
+                LOGGER.warning(f"{self.record_name}: Overlap detected between label ending at {gap_start} and label starting at {gap_end}. Skipping gap.")
+                # Implicitly skips gap if overlap
 
             processed_labels.append(next_label) # Add the next actual beat label
 
@@ -475,11 +475,11 @@ class Record(object):
             if not (len(final_indices) == len(final_times) == final_waveforms.shape[0] == \
                     len(all_str_labels) == len(all_train_labels) == len(all_interval_ids)):
                 raise ValueError(f"Length mismatch! idx:{len(final_indices)}, time:{len(final_times)}, "
-                                 f"wf:{final_waveforms.shape[0]}, strL:{len(all_str_labels)}, "
-                                 f"trainL:{len(all_train_labels)}, intID:{len(all_interval_ids)}")
+                                f"wf:{final_waveforms.shape[0]}, strL:{len(all_str_labels)}, "
+                                f"trainL:{len(all_train_labels)}, intID:{len(all_interval_ids)}")
 
             df_data = {'time': final_times, 'index': final_indices, 'label': all_str_labels,
-                       'train_label': all_train_labels, 'interval': all_interval_ids}
+                    'train_label': all_train_labels, 'interval': all_interval_ids}
             for ch in range(self.num_channels): df_data[f'ch{ch+1}'] = final_waveforms[:, ch]
 
             return pd.DataFrame(df_data)
@@ -524,8 +524,8 @@ class Record(object):
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plot_save_path = os.path.join(self.processed_base_path, f'{self.record_name}_plot.png') # Save plot in base processed dir
         try:
-             plt.savefig(plot_save_path); LOGGER.info(f"Saved waveform plot to {plot_save_path}")
-             plt.close(fig)
+            plt.savefig(plot_save_path); LOGGER.info(f"Saved waveform plot to {plot_save_path}")
+            plt.close(fig)
         except Exception as e: LOGGER.error(f"Failed to save plot for {self.record_name}: {e}")
 
 

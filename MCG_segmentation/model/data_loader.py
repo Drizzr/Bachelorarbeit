@@ -6,15 +6,12 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 import logging
-from typing import List, Optional
+from typing import List
 import matplotlib.pyplot as plt
-# import pywt # <-- REMOVED CWT related import
 import math
-from scipy.signal import butter, filtfilt
 import torch.nn.functional as F
 from matplotlib.lines import Line2D
 
-# --- REMOVED compute_wavelet function ---
 
 class ECGFullDataset(Dataset):
     """
@@ -37,15 +34,7 @@ class ECGFullDataset(Dataset):
         amplitude_scale_range: float = 0.1,
         max_time_shift: int = 10,
         augmentation_prob: float = 0.5,
-        # Filter parameters
-        apply_filter: bool = True,
-        filter_lowcut: float = 0.5,
-        filter_highcut: float = 40.0,
-        filter_order: int = 3,
-        # --- REMOVED CWT parameters ---
-        # transform=None,
-        # wavelet: str = 'mexh',
-        # wavelet_scales = ...
+
     ):
         self.data_dir = data_dir
         self.channel_names = channel_names # Which channels to load from CSV
@@ -76,46 +65,49 @@ class ECGFullDataset(Dataset):
     # _load_and_slice_all & _slice_channel_sequences remain the same as the previous version
     # They correctly store 1D signal segments in self.sequences now.
     def _load_and_slice_all(self):
-        # ... (Identical to previous version - reads CSVs, infers fs, calls slice) ...
+        # reads CSVs, calls slice) ...
         if not os.path.exists(self.data_dir):
             logging.error(f"Data directory not found: {self.data_dir}")
             raise FileNotFoundError(f"Data directory not found: {self.data_dir}")
         files = [f for f in os.listdir(self.data_dir) if f.endswith(self.file_extension) and not f.startswith('.')]
         if not files:
-             logging.error(f"No '{self.file_extension}' files found in {self.data_dir}")
-             raise ValueError(f"No {self.file_extension}' files found in {self.data_dir}")
+            logging.error(f"No '{self.file_extension}' files found in {self.data_dir}")
+            raise ValueError(f"No {self.file_extension}' files found in {self.data_dir}")
         num_processed = 0
         for fname in files:
             try:
                 file_path = os.path.join(self.data_dir, fname)
                 df = pd.read_csv(file_path)
-                fs = None
-                if 'time' in df.columns and len(df['time']) > 1:
-                    time_diffs = np.diff(df['time'].unique())
-                    if len(time_diffs) > 0:
-                         median_dt = np.median(time_diffs)
-                         if median_dt > 1e-9: fs = 1.0 / median_dt
-                         logging.debug(f"Inferred fs={fs:.2f} Hz for {fname}")
-                if fs is None:
-                     logging.warning(f"Could not infer fs for {fname}. Skipping."); continue
-                fs = round(fs)
+                
                 required_cols = self.channel_names + [self.label_column]
                 if not all(col in df.columns for col in required_cols):
                     missing_cols=[col for col in required_cols if col not in df.columns]
-                    logging.warning(f"Skipping {fname}: Missing {missing_cols}"); continue
+                    logging.warning(f"Skipping {fname}: Missing {missing_cols}")
+                    continue
+
                 labels = torch.tensor(df[self.label_column].values, dtype=torch.long)
                 for ch in self.channel_names:
                     signal_pd = pd.to_numeric(df[ch], errors='coerce')
-                    if signal_pd.isnull().any(): logging.warning(f"Skipping {ch} in {fname}: Non-numeric."); continue
+                    if signal_pd.isnull().any(): 
+                        logging.warning(f"Skipping {ch} in {fname}: Non-numeric.")
+                        continue
+
                     signal = torch.tensor(signal_pd.values, dtype=torch.float32)
-                    if signal.shape[0]!= labels.shape[0]: logging.warning(f"Skipping {ch} in {fname}: Length mismatch"); continue
-                    self._slice_channel_sequences(signal, labels, fs)
+                    if signal.shape[0]!= labels.shape[0]: 
+                        logging.warning(f"Skipping {ch} in {fname}: Length mismatch")
+                        continue
+
+                    self._slice_channel_sequences(signal, labels)
                 num_processed += 1
-            except pd.errors.EmptyDataError: logging.warning(f"Skipping {fname}: Empty file.")
-            except Exception as e: logging.error(f"Error loading/processing {fname}: {e}", exc_info=True)
+
+            except pd.errors.EmptyDataError: 
+                logging.warning(f"Skipping {fname}: Empty file.")
+            except Exception as e: 
+                logging.error(f"Error loading/processing {fname}: {e}", exc_info=True)
+
         logging.info(f"Loaded and sliced {len(self.sequences)} sequences from {num_processed} files.")
 
-    def _slice_channel_sequences(self, signal: torch.Tensor, labels: torch.Tensor, fs: float):
+    def _slice_channel_sequences(self, signal: torch.Tensor, labels: torch.Tensor):
         """Slices 1D signal and labels, stores fs."""
         stride = self.sequence_length - self.overlap
         total_length = signal.shape[0]
@@ -141,19 +133,21 @@ class ECGFullDataset(Dataset):
         labels_processed = labels
         # Time Shift
         if self.max_time_shift > 0 and torch.rand(1).item() < self.augmentation_prob:
-             shift = torch.randint(-self.max_time_shift, self.max_time_shift + 1, (1,)).item()
-             if shift > 0:
-                 signal_processed = F.pad(signal[:-shift], (shift, 0), value=signal[0].item())
-                 labels_processed = F.pad(labels[:-shift], (shift, 0), value=labels[0].item())
-             elif shift < 0:
-                 shift_abs = -shift
-                 signal_processed = F.pad(signal[shift_abs:], (0, shift_abs), value=signal[-1].item())
-                 labels_processed = F.pad(labels[shift_abs:], (0, shift_abs), value=labels[-1].item())
+            shift = torch.randint(-self.max_time_shift, self.max_time_shift + 1, (1,)).item()
+            if shift > 0:
+                signal_processed = F.pad(signal[:-shift], (shift, 0), value=signal[0].item())
+                labels_processed = F.pad(labels[:-shift], (shift, 0), value=labels[0].item())
+            elif shift < 0:
+                shift_abs = -shift
+                signal_processed = F.pad(signal[shift_abs:], (0, shift_abs), value=signal[-1].item())
+                labels_processed = F.pad(labels[shift_abs:], (0, shift_abs), value=labels[-1].item())
         signal = signal_processed; labels = labels_processed # Update signal/labels if shifted
 
-        # DC Offset
+
+        # Normalize to zero mean
         signal_mean = signal.mean()
-        if not torch.isnan(signal_mean) and not torch.isinf(signal_mean): signal = signal - signal_mean
+        if not torch.isnan(signal_mean) and not torch.isinf(signal_mean): 
+            signal = signal - signal_mean
 
         # Amplitude Scaling
         if self.amplitude_scale_range > 0 and torch.rand(1).item() < self.augmentation_prob:
@@ -167,15 +161,15 @@ class ECGFullDataset(Dataset):
         # Baseline Wander
         noisy_signal = signal # Start noise addition here
         if self.baseline_wander_mag > 0 and torch.rand(1).item() < self.augmentation_prob:
-             time = torch.linspace(0, 1, signal.size(0), device=signal.device)
-             bw_noise = torch.zeros_like(signal)
-             num_bw_components = torch.randint(1, 3, (1,)).item()
-             for _ in range(num_bw_components):
-                  freq = torch.rand(1).item() * self.baseline_wander_freq_max
-                  amplitude = (torch.rand(1).item() - 0.5) * 2 * self.baseline_wander_mag
-                  phase = torch.rand(1).item() * 2 * math.pi
-                  bw_noise += amplitude * torch.sin(2 * math.pi * freq * time + phase)
-             noisy_signal = noisy_signal + bw_noise
+            time = torch.linspace(0, 1, signal.size(0), device=signal.device)
+            bw_noise = torch.zeros_like(signal)
+            num_bw_components = torch.randint(1, 3, (1,)).item()
+            for _ in range(num_bw_components):
+                freq = torch.rand(1).item() * self.baseline_wander_freq_max
+                amplitude = (torch.rand(1).item() - 0.5) * 2 * self.baseline_wander_mag
+                phase = torch.rand(1).item() * 2 * math.pi
+                bw_noise += amplitude * torch.sin(2 * math.pi * freq * time + phase)
+            noisy_signal = noisy_signal + bw_noise
 
         # Gaussian Noise
         if self.gaussian_noise_std > 0 and torch.rand(1).item() < self.augmentation_prob:
@@ -194,7 +188,6 @@ class ECGFullDataset(Dataset):
                 sinusoidal_noise += amplitude * torch.sin(2 * math.pi * freq * time + phase)
             noisy_signal = noisy_signal + sinusoidal_noise
         # --- End Augmentations ---
-
 
         # Add channel dimension: (1, T) - Conv1d expects (Batch, Channels, Length)
         final_signal_output = noisy_signal.unsqueeze(0)
@@ -250,13 +243,15 @@ if __name__ == "__main__":
             for t in range(signal_single.shape[0]):
                 color = TEST_CLASS_COLORS.get(labels_single[t], 'magenta')
                 ax[0].scatter(t, signal_single[t], color=color, s=15, zorder=3)
+
             ax[0].set_ylabel("Amplitude (Normalized)")
             ax[0].set_title("Processed Signal with Ground Truth Labels (Color Dots)")
             ax[0].grid(True, linestyle=':', alpha=0.7)
             legend_elements = [Line2D([0], [0], color='black', lw=1, label='Signal')]
+            
             for lbl, col in TEST_CLASS_COLORS.items():
-                 legend_elements.append(Line2D([0], [0], marker='o', color='w', label=f'Label {lbl}',
-                                       markerfacecolor=col, markersize=8))
+                legend_elements.append(Line2D([0], [0], marker='o', color='w', label=f'Label {lbl}',
+                                    markerfacecolor=col, markersize=8))
             ax[0].legend(handles=legend_elements, loc='upper right', fontsize='small')
 
             # Plot 2: Labels
@@ -271,9 +266,12 @@ if __name__ == "__main__":
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             plt.show()
 
-    except FileNotFoundError as e: print(f"Error: {e}. Check data directory path.")
-    except ValueError as e: print(f"ValueError: {e}.")
-    except ImportError as e: print(f"ImportError: {e}. Ensure required libraries are installed.")
+    except FileNotFoundError as e: 
+        print(f"Error: {e}. Check data directory path.")
+    except ValueError as e: 
+        print(f"ValueError: {e}.")
+    except ImportError as e: 
+        print(f"ImportError: {e}. Ensure required libraries are installed.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         import traceback

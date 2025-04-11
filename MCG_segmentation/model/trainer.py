@@ -4,16 +4,16 @@ import torch
 import time
 import json
 import os
-import torch.nn.functional as F
-import csv # <-- Import csv module
-from sklearn.metrics import f1_score # <-- Import f1_score
+import csv 
+from sklearn.metrics import f1_score 
+
 
 class Trainer(object):
-    # Removed writer, added log_filepath, added loss_fn placeholder if needed later
+
     def __init__(self, model, train_loader, args, val_loader, optimizer, device,
-                 log_filepath: str, # <-- ADDED log file path argument
-                 lr_scheduler=None,
-                 init_epoch=1): 
+                log_filepath: str, 
+                lr_scheduler=None,
+                init_epoch=1): 
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -26,19 +26,15 @@ class Trainer(object):
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
 
-        # Use provided loss_fn or default to CrossEntropyLoss
         self.loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.0, 4.64, 3.64, 2.13], device=device, dtype=torch.float32)) 
 
-        # self.writer = writer # <-- REMOVED writer
         self.device = device
-        self.log_filepath = log_filepath # <-- STORE log file path
-
+        self.log_filepath = log_filepath 
         self.losses = []
         self.val_losses = []
 
-        # --- Initialize CSV Log File ---
         self._init_log_file()
-        # ---
+
 
         print("--- Model Summary ---")
         print(model)
@@ -46,8 +42,10 @@ class Trainer(object):
         print(f"Trainer initialized. Starting from Epoch {self.epoch}.")
         print(f"Logging metrics to: {self.log_filepath}") # <-- Log file info
         print(f"Optimizer: {type(self.optimizer).__name__}")
-        if self.lr_scheduler: print(f"LR Scheduler: {type(self.lr_scheduler).__name__}")
-        else: print("LR Scheduler: None")
+        if self.lr_scheduler: 
+            print(f"LR Scheduler: {type(self.lr_scheduler).__name__}")
+        else: 
+            print("LR Scheduler: None")
         print(f"Loss Function: {type(self.loss_fn).__name__}")
         print(f"Training on device: {self.device}")
         print("---------------------")
@@ -75,7 +73,7 @@ class Trainer(object):
                     "learning_rate"
                 ])
         else:
-             print(f"Appending to existing log file: {self.log_filepath}")
+            print(f"Appending to existing log file: {self.log_filepath}")
 
     def _log_epoch_metrics(self, epoch_metrics: dict):
         """Appends a dictionary of epoch metrics to the CSV log file."""
@@ -84,12 +82,11 @@ class Trainer(object):
         row = [epoch_metrics.get(key, 'N/A') for key in header] # Get value or 'N/A'
 
         try:
-             with open(self.log_filepath, 'a', newline='') as f:
-                 writer = csv.writer(f)
-                 writer.writerow(row)
+            with open(self.log_filepath, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(row)
         except IOError as e:
-             print(f"Error writing metrics to log file {self.log_filepath}: {e}")
-
+            print(f"Error writing metrics to log file {self.log_filepath}: {e}")
 
     def train(self):
         epoch_start_time = time.time()
@@ -116,11 +113,11 @@ class Trainer(object):
 
                 loss.backward()
                 if hasattr(self.args, 'clip') and self.args.clip > 0:
-                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
                 self.optimizer.step()
 
                 if self.lr_scheduler and not isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                     self.lr_scheduler.step()
+                    self.lr_scheduler.step()
 
                 with torch.no_grad():
                     preds = torch.argmax(logits, dim=-1)
@@ -151,12 +148,6 @@ class Trainer(object):
                         step_time, eta_epoch_min,
                     ))
 
-                    # --- REMOVED TensorBoard Step Logging ---
-                    # self.writer.add_scalar("Train/Loss_Step", current_loss, self.total_step)
-                    # self.writer.add_scalar("Train/Accuracy_Step", batch_acc.item(), self.total_step)
-                    # self.writer.add_scalar("Train/LearningRate", current_lr, self.total_step)
-                    # self.writer.flush()
-
                     step_start_time = time.time()
                     self.losses = self.losses[-self.args.print_freq:]
 
@@ -167,9 +158,6 @@ class Trainer(object):
 
             print(f"\n--- Epoch {self.epoch} Summary ---")
             print(f"Avg Train Loss: {avg_epoch_loss:.4f}, Avg Train Acc: {avg_epoch_acc:.4f}, Duration: {epoch_duration:.2f}s")
-            # --- REMOVED TensorBoard Epoch Logging ---
-            # self.writer.add_scalar("Train/Loss_Epoch", avg_epoch_loss, self.epoch)
-            # self.writer.add_scalar("Train/Accuracy_Epoch", avg_epoch_acc, self.epoch)
 
             # --- Validation ---
             # Now returns loss, acc, and f1_score
@@ -200,9 +188,8 @@ class Trainer(object):
                 self.best_val_loss = val_loss
                 self.save_model(is_best=True)
             if self.epoch % 5 == 0: # Save periodic checkpoint every 5 epochs
-                 print(f"Saving periodic checkpoint at epoch {self.epoch}...")
-                 self.save_model(is_best=False)
-
+                print(f"Saving periodic checkpoint at epoch {self.epoch}...")
+                self.save_model(is_best=False)
 
             print(f"--- End of Epoch {self.epoch} --- \n")
             self.epoch += 1
@@ -224,8 +211,8 @@ class Trainer(object):
         with torch.no_grad():
             for i, (signals, labels) in enumerate(self.val_loader):
                 if limit is not None and i >= limit:
-                     print(f"Validation limited to {limit} batches.")
-                     break
+                    print(f"Validation limited to {limit} batches.")
+                    break
 
                 signals = signals.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True).long()
@@ -250,21 +237,16 @@ class Trainer(object):
 
         # --- Calculate F1 Score ---
         if all_labels and all_preds:
-             # Using macro average: calculates F1 for each class and finds unweighted mean.
-             # Does not take label imbalance into account for the average score.
-             # zero_division=0 prevents errors if a class has no predictions/true labels
-             f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
+            # Using macro average: calculates F1 for each class and finds unweighted mean.
+            # Does not take label imbalance into account for the average score.
+            # zero_division=0 prevents errors if a class has no predictions/true labels
+            f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
         else:
-             f1 = 0.0 # Default if no data
+            f1 = 0.0 # Default if no data
         # ---
 
         # Print all metrics including F1
         print(f"Validation Results - Avg Loss: {avg_loss:.4f}, Avg Acc: {avg_acc:.4f}, Macro F1: {f1:.4f}, Duration: {val_duration:.2f}s")
-
-        # --- REMOVED TensorBoard Validation Logging ---
-        # self.writer.add_scalar("Val/Loss_Epoch", avg_loss, self.epoch)
-        # self.writer.add_scalar("Val/Accuracy_Epoch", avg_acc, self.epoch)
-        # self.writer.flush()
 
         self.model.train()
         # Return all three metrics

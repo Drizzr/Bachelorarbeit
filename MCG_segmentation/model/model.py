@@ -2,23 +2,16 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F # Keep for potential use
-import math
 
-# --- Keep other models if needed for reference ---
-# class PositionalEncoding...
-# class ResidualAttentionBlock...
-# class WaveletCNNClassifier...
-# class WaveletCNN_LSTM_Segmenter...
 
 # --- Model based on the text description (1D CNN -> BiLSTM -> Dense) ---
 class Conv1D_BiLSTM_Segmenter(nn.Module):
     def __init__(self, num_classes=4, # Number of output classes
-                 input_channels=1, # Usually 1 for single-lead ECG segment
-                 cnn_filters=(32, 64, 128), # Filters for the 3 conv layers
-                 cnn_kernel_size=3,
-                 lstm_units=(250, 125), # Hidden units for the 2 BiLSTM layers
-                 dropout_rate=0.2): # Dropout probability after LSTMs
+                input_channels=1, # Usually 1 for single-lead ECG segment
+                cnn_filters=(32, 64, 128), # Filters for the 3 conv layers
+                cnn_kernel_size=3,
+                lstm_units=(250, 125), # Hidden units for the 2 BiLSTM layers
+                dropout_rate=0.2): # Dropout probability after LSTMs
         super().__init__()
         self.num_classes = num_classes
         current_channels = input_channels
@@ -29,9 +22,8 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
         for num_filters in cnn_filters:
             cnn_layers.extend([
                 nn.Conv1d(current_channels, num_filters,
-                          kernel_size=cnn_kernel_size, padding=padding, bias=True), # Bias usually True for Conv1d
-                # Consider adding BatchNorm1d here? Description doesn't explicitly mention it, but often beneficial.
-                # nn.BatchNorm1d(num_filters),
+                        kernel_size=cnn_kernel_size, padding=padding, bias=True), # Bias usually True for Conv1d
+                #nn.BatchNorm1d(num_filters),
                 nn.ReLU() # Standard activation, description doesn't specify one for CNN
             ])
             current_channels = num_filters
@@ -41,16 +33,16 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
         # --- BiLSTM Layers ---
         lstm_input_size = current_channels # Output channels from last CNN layer
         self.bilstm1 = nn.LSTM(input_size=lstm_input_size,
-                               hidden_size=lstm_units[0],
-                               num_layers=1,
-                               batch_first=True,
-                               bidirectional=True)
+                            hidden_size=lstm_units[0],
+                            num_layers=1,
+                            batch_first=True,
+                            bidirectional=True)
 
         self.bilstm2 = nn.LSTM(input_size=lstm_units[0] * 2, # Input is output of first BiLSTM
-                               hidden_size=lstm_units[1],
-                               num_layers=1,
-                               batch_first=True,
-                               bidirectional=True)
+                            hidden_size=lstm_units[1],
+                            num_layers=1,
+                            batch_first=True,
+                            bidirectional=True)
         # --- End BiLSTM ---
 
         # --- Dropout Layer ---
@@ -59,8 +51,7 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
         # --- End Dropout ---
 
         # --- Time Distributed Dense Layer ---
-        # Apply a Linear layer to each time step of the final LSTM output
-        final_lstm_output_features = lstm_units[1] * 2 # Output of second BiLSTM
+        final_lstm_output_features = lstm_units[1] * 2 
         self.classifier = nn.Linear(final_lstm_output_features, num_classes)
         # --- End Classifier ---
 
@@ -102,6 +93,7 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
 
         # Softmax is typically applied in the loss function (CrossEntropyLoss)
         return logits
+
 
 # --- Function to count parameters ---
 def count_parameters(model):
