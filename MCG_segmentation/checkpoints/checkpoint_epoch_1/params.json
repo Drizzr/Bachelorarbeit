@@ -1,18 +1,24 @@
 {
     "epoch": 1,
-    "total_step": 768,
-    "best_val_f1": 0.47717567567491703,
-    "model_args": {
-        "training": true,
-        "_parameters": {},
-        "_buffers": {},
-        "_non_persistent_buffers_set": [],
-        "_backward_hooks": {},
-        "_is_full_backward_hook": null,
-        "_forward_hooks": {},
-        "_forward_pre_hooks": {},
-        "_state_dict_hooks": {},
-        "_load_state_dict_pre_hooks": {},
-        "_load_state_dict_post_hooks": {},
-        "_modules": {
-            "cnn_base": 
+    "total_step": 954,
+    "best_val_f1": 0.5161186258091821,
+    "args": {
+        "num_epochs": 60,
+        "batch_size": 64,
+        "val_batch_size": 64,
+        "print_freq": 50,
+        "clip": 1.0,
+        "from_check_point": false,
+        "load_dir": "MCG_segmentation/checkpoints",
+        "save_dir": "MCG_segmentation/checkpoints",
+        "data_dir_train": "MCG_segmentation/qtdb/processed/train",
+        "data_dir_val": "MCG_segmentation/qtdb/processed/val",
+        "sinusoidal_noise_mag": 0.01,
+        "sequence_length": 300,
+        "overlap": 280,
+        "num_workers": 4,
+        "max_lr": 0.0001,
+        "base_lr": 1e-05,
+        "metrics_file": "MCG_segmentation/logs/training_metrics.csv"
+    }
+}
