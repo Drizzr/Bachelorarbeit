@@ -100,5 +100,3 @@ if __name__ == "__main__":
 
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {parameters}")
-
-    print(model.state_dict())
