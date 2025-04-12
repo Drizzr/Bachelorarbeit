@@ -269,22 +269,11 @@ class Trainer(object):
         if self.lr_scheduler:
             torch.save(self.lr_scheduler.state_dict(), scheduler_filename) # <-- Save scheduler
         
-        def make_json_serializable(obj):
-            if isinstance(obj, dict):
-                return {k: make_json_serializable(v) for k, v in obj.items()}
-            elif isinstance(obj, set):
-                return list(obj)
-            elif isinstance(obj, (list, tuple)):
-                return [make_json_serializable(v) for v in obj]
-            else:
-                return obj
-
 
         params = {
             "epoch": self.epoch,
             "total_step": self.total_step,
             "best_val_f1": self.best_val_f1,
-            "model_args": make_json_serializable(self.model.__dict__),
             # Save args used for this run for reproducibility
             "args": vars(self.args) # Save command line args
         }

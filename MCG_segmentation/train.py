@@ -29,9 +29,8 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
     with open(param_path, "r") as f:
         params = json.load(f)
 
-    model_args = params.get("model_args", {})
     # Define model structure based on args (or potentially loaded args)
-    model = Conv1D_BiLSTM_Segmenter(**model_args)
+    model = Conv1D_BiLSTM_Segmenter()
     model.to(device)
 
     # Define optimizer
@@ -99,7 +98,7 @@ def main():
     parser.add_argument("--data_dir_val", type=str, default="MCG_segmentation/qtdb/processed/val", help="Path to validation data directory")
     parser.add_argument("--sinusoidal_noise_mag", type=float, default=0.05, help="Magnitude of sinusoidal noise added during training")
     parser.add_argument("--sequence_length", type=int, default=300, help="Length of ECG sequence segments")
-    parser.add_argument("--overlap", type=int, default=200, help="Overlap between consecutive sequence segments")
+    parser.add_argument("--overlap", type=int, default=250, help="Overlap between consecutive sequence segments")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of dataloader workers")
 
     # LR Scheduler Args
