@@ -1,7 +1,7 @@
 {
     "epoch": 40,
-    "total_step": 38160,
-    "best_val_f1": 0.8246112125904058,
+    "total_step": 37933,
+    "best_val_f1": 0.8080492528132632,
     "args": {
         "num_epochs": 60,
         "batch_size": 64,
@@ -13,7 +13,7 @@
         "save_dir": "MCG_segmentation/checkpoints",
         "data_dir_train": "MCG_segmentation/qtdb/processed/train",
         "data_dir_val": "MCG_segmentation/qtdb/processed/val",
-        "sinusoidal_noise_mag": 0.01,
+        "sinusoidal_noise_mag": 0.03,
         "sequence_length": 300,
         "overlap": 280,
         "num_workers": 4,

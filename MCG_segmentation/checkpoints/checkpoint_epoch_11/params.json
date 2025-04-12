@@ -1,7 +1,7 @@
 {
-    "epoch": 4,
-    "total_step": 3816,
-    "best_val_f1": 0.7627943927445695,
+    "epoch": 11,
+    "total_step": 10494,
+    "best_val_f1": 0.7940109089181326,
     "args": {
         "num_epochs": 60,
         "batch_size": 64,
