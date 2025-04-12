@@ -22,7 +22,7 @@ class Trainer(object):
         self.total_step = 0
         self.epoch = init_epoch
         self.last_epoch = args.num_epochs
-        self.best_val_loss = float('inf')
+        self.best_val_f1 = 0
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
 
@@ -183,9 +183,9 @@ class Trainer(object):
             # ---
 
             # --- Save Model ---
-            if val_loss < self.best_val_loss:
-                print(f"Validation loss improved ({self.best_val_loss:.4f} -> {val_loss:.4f}). Saving best model...")
-                self.best_val_loss = val_loss
+            if val_f1 > self.best_val_f1:
+                print(f"Validation loss improved ({self.best_val_f1:.4f} -> {val_f1:.4f}). Saving best model...")
+                self.best_val_f1 = val_f1
                 self.save_model(is_best=True)
             if self.epoch % 5 == 0: # Save periodic checkpoint every 5 epochs
                 print(f"Saving periodic checkpoint at epoch {self.epoch}...")
@@ -272,7 +272,7 @@ class Trainer(object):
         params = {
             "epoch": self.epoch,
             "total_step": self.total_step,
-            "best_val_loss": self.best_val_loss,
+            "best_val_f1": self.best_val_f1,
             # Save args used for this run for reproducibility
             "args": vars(self.args) # Save command line args
         }

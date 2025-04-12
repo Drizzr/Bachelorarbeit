@@ -82,7 +82,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train ECG Segmentation Model")
 
     # Training Process Args
-    parser.add_argument("--num_epochs", type=int, default=200, help="Number of training epochs")
+    parser.add_argument("--num_epochs", type=int, default=60, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training")
     parser.add_argument("--val_batch_size", type=int, default=64, help="Batch size for validation")
     parser.add_argument("--print_freq", type=int, default=50, help="Frequency of printing training stats (in steps)")
@@ -103,6 +103,7 @@ def main():
 
     # LR Scheduler Args
     parser.add_argument("--max_lr", type=float, default=1e-4, help="Maximum learning rate (for Adam and CyclicLR)")
+    parser.add_argument("--base_lr", type=float, default=1e-5, help="Base learning rate for CyclicLR")
 
     # Logging Arg
     parser.add_argument("--metrics_file", type=str, default="MCG_segmentation/logs/training_metrics.csv", help="Path to CSV file for saving epoch metrics")
@@ -123,11 +124,11 @@ def main():
         # Ensure wavelet_type is passed if needed by ECGFullDataset
         train_dataset = ECGFullDataset(
                 data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag #, wavelet=wavelet_type
+                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90
             )
         val_dataset = ECGFullDataset(
             data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=args.sinusoidal_noise_mag #, wavelet=wavelet_type
+            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90
         )
 
         if len(train_dataset) == 0: 
@@ -175,7 +176,12 @@ def main():
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
-        scheduler  = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3)
+        
+        scheduler  = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=args.num_epochs * len(train_loader), # T_max is usually specified in *steps* not epochs
+                eta_min=args.base_lr # Anneal down to base_lr (or 0)
+            )
 
         # Instantiate Trainer with log file path and STANDARD loss function
         trainer = Trainer(model, train_loader, args, val_loader, optimizer, device,
