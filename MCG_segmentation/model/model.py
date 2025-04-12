@@ -26,7 +26,7 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
                 input_channels=1,
                 cnn_filters=(16, 32, 64),
                 cnn_kernel_size=3,
-                lstm_units=(32, 16),
+                lstm_units=(100, 50),
                 dropout_rate=0.55,
                 max_seq_len=5000):
         

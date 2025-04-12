@@ -96,7 +96,7 @@ def main():
     # Data Args
     parser.add_argument("--data_dir_train", type=str, default="MCG_segmentation/qtdb/processed/train", help="Path to training data directory")
     parser.add_argument("--data_dir_val", type=str, default="MCG_segmentation/qtdb/processed/val", help="Path to validation data directory")
-    parser.add_argument("--sinusoidal_noise_mag", type=float, default=0.03, help="Magnitude of sinusoidal noise added during training")
+    parser.add_argument("--sinusoidal_noise_mag", type=float, default=0.08, help="Magnitude of sinusoidal noise added during training")
     parser.add_argument("--sequence_length", type=int, default=300, help="Length of ECG sequence segments")
     parser.add_argument("--overlap", type=int, default=280, help="Overlap between consecutive sequence segments")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of dataloader workers")

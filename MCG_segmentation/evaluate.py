@@ -180,7 +180,7 @@ def main():
         overlap=0,
         sinusoidal_noise_mag=0.05,
         gaussian_noise_std=0.02,
-        baseline_wander_mag=0.05,
+        baseline_wander_mag=0.03,
         amplitude_scale_range=0.1,
         max_time_shift=5,
         augmentation_prob=0.70,

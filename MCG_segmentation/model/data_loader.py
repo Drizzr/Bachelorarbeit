@@ -211,9 +211,9 @@ if __name__ == "__main__":
             data_dir="MCG_segmentation/qtdb/processed/val", # Adjust path
             overlap=125,
             sequence_length=300,
-            sinusoidal_noise_mag=0.05,
+            sinusoidal_noise_mag=0.08,
             gaussian_noise_std=0.02,
-            baseline_wander_mag=0.05,
+            baseline_wander_mag=0.02,
             amplitude_scale_range=0.1,
             max_time_shift=5,
             augmentation_prob=1.0,
