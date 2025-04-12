@@ -29,8 +29,9 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
     with open(param_path, "r") as f:
         params = json.load(f)
 
+    model_args = params.get("model_args", {})
     # Define model structure based on args (or potentially loaded args)
-    model = Conv1D_BiLSTM_Segmenter()
+    model = Conv1D_BiLSTM_Segmenter(**model_args)
     model.to(device)
 
     # Define optimizer
@@ -108,6 +109,8 @@ def main():
     # Logging Arg
     parser.add_argument("--metrics_file", type=str, default="MCG_segmentation/logs/training_metrics.csv", help="Path to CSV file for saving epoch metrics")
 
+
+
     args = parser.parse_args()
 
     # Validate args
@@ -124,11 +127,11 @@ def main():
         # Ensure wavelet_type is passed if needed by ECGFullDataset
         train_dataset = ECGFullDataset(
                 data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90
+                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.85
             )
         val_dataset = ECGFullDataset(
             data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90
+            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.85
         )
 
         if len(train_dataset) == 0: 

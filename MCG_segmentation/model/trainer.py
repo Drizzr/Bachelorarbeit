@@ -273,6 +273,7 @@ class Trainer(object):
             "epoch": self.epoch,
             "total_step": self.total_step,
             "best_val_f1": self.best_val_f1,
+            "model_args": self.model.__dict__,
             # Save args used for this run for reproducibility
             "args": vars(self.args) # Save command line args
         }

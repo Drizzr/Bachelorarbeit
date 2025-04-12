@@ -26,9 +26,9 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
                 input_channels=1,
                 cnn_filters=(16, 32, 64),
                 cnn_kernel_size=3,
-                lstm_units=(128, 64),
-                dropout_rate=0.6,
-                max_seq_len=500):
+                lstm_units=(100, 50),
+                dropout_rate=0.5,
+                max_seq_len=5000):
         
         super().__init__()
         self.num_classes = num_classes
@@ -100,3 +100,5 @@ if __name__ == "__main__":
 
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {parameters}")
+
+    print(model.state_dict())

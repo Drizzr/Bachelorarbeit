@@ -183,7 +183,7 @@ def main():
         baseline_wander_mag=0.05,
         amplitude_scale_range=0.1,
         max_time_shift=5,
-        augmentation_prob=1.0,
+        augmentation_prob=0.00,
     )
 
     dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)
