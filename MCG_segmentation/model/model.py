@@ -23,12 +23,13 @@ class PositionalEncoding(nn.Module):
 
 class Conv1D_BiLSTM_Segmenter(nn.Module):
     def __init__(self, num_classes=4,
-                 input_channels=1,
-                 cnn_filters=(32, 64, 128),
-                 cnn_kernel_size=3,
-                 lstm_units=(250, 125),
-                 dropout_rate=0.2,
-                 max_seq_len=1000):
+                input_channels=1,
+                cnn_filters=(16, 32, 64),
+                cnn_kernel_size=3,
+                lstm_units=(128, 64),
+                dropout_rate=0.5,
+                max_seq_len=1000):
+        
         super().__init__()
         self.num_classes = num_classes
         current_channels = input_channels
@@ -38,8 +39,9 @@ class Conv1D_BiLSTM_Segmenter(nn.Module):
         for num_filters in cnn_filters:
             cnn_layers.extend([
                 nn.Conv1d(current_channels, num_filters,
-                          kernel_size=cnn_kernel_size, padding=padding, bias=True),
-                nn.ReLU()
+                        kernel_size=cnn_kernel_size, padding=padding, bias=True),
+                nn.ReLU(),
+                nn.Dropout(dropout_rate),
             ])
             current_channels = num_filters
         self.cnn_base = nn.Sequential(*cnn_layers)

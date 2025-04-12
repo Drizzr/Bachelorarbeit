@@ -103,7 +103,6 @@ def main():
 
     # LR Scheduler Args
     parser.add_argument("--max_lr", type=float, default=1e-4, help="Maximum learning rate (for Adam and CyclicLR)")
-    parser.add_argument("--base_lr", type=float, default=1e-5, help="Base learning rate for CyclicLR")
 
     # Logging Arg
     parser.add_argument("--metrics_file", type=str, default="MCG_segmentation/logs/training_metrics.csv", help="Path to CSV file for saving epoch metrics")
@@ -176,11 +175,7 @@ def main():
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
-        scheduler  = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer,
-                T_max=args.num_epochs * len(train_loader), # T_max is usually specified in *steps* not epochs
-                eta_min=args.base_lr # Anneal down to base_lr (or 0)
-            )
+        scheduler  = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3)
 
         # Instantiate Trainer with log file path and STANDARD loss function
         trainer = Trainer(model, train_loader, args, val_loader, optimizer, device,

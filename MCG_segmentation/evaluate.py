@@ -1,6 +1,6 @@
 # evaluate.py
 
-import os, sys, json, argparse
+import os, json, argparse
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,13 +32,8 @@ def load_model(load_dir, device):
     with open(param_path) as f:
         args = json.load(f).get("args", {})
 
-    model = Conv1D_BiLSTM_Segmenter(
-        num_classes=args.get("num_classes", 4),
-        input_channels=args.get("input_channels", 1),
-        cnn_filters=args.get("cnn_filters", (32, 64, 128)),
-        lstm_units=args.get("lstm_units", (250, 125)),
-        dropout_rate=args.get("dropout_rate", 0.2)
-    )
+    model = Conv1D_BiLSTM_Segmenter()
+
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
 
@@ -183,11 +178,11 @@ def main():
         data_dir=args.data_dir_eval,
         sequence_length=args.sequence_length,
         overlap=0,
-        sinusoidal_noise_mag=0.0, gaussian_noise_std=0.0,
+        sinusoidal_noise_mag=0.05, gaussian_noise_std=0.02,
         baseline_wander_mag=0.0, amplitude_scale_range=0.0, max_time_shift=0,
     )
 
-    dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=False, num_workers=args.num_workers)
+    dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=2, num_workers=args.num_workers)
 
     sample_info = None
     if args.plot_sample_index is not None and 0 <= args.plot_sample_index < len(dataset):
