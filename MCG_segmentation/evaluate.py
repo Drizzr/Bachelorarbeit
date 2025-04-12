@@ -178,11 +178,15 @@ def main():
         data_dir=args.data_dir_eval,
         sequence_length=args.sequence_length,
         overlap=0,
-        sinusoidal_noise_mag=0.05, gaussian_noise_std=0.02,
-        baseline_wander_mag=0.0, amplitude_scale_range=0.0, max_time_shift=0,
+        sinusoidal_noise_mag=0.05,
+        gaussian_noise_std=0.02,
+        baseline_wander_mag=0.05,
+        amplitude_scale_range=0.1,
+        max_time_shift=5,
+        augmentation_prob=1.0,
     )
 
-    dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=2, num_workers=args.num_workers)
+    dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)
 
     sample_info = None
     if args.plot_sample_index is not None and 0 <= args.plot_sample_index < len(dataset):
