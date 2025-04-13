@@ -11,7 +11,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from torch.utils.data import DataLoader
 from torch import nn
 
-from model.model import Conv1D_BiLSTM_Segmenter
+from model.model import ECGSegmenter
 from model.data_loader import ECGFullDataset
 
 # Constants
@@ -32,7 +32,7 @@ def load_model(load_dir, device):
     with open(param_path) as f:
         args = json.load(f).get("args", {})
 
-    model = Conv1D_BiLSTM_Segmenter()
+    model = ECGSegmenter()
 
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--eval_batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
-    parser.add_argument("--sequence_length", type=int, default=300) 
+    parser.add_argument("--sequence_length", type=int, default=500) 
 
 
     args = parser.parse_args()
@@ -183,7 +183,7 @@ def main():
         baseline_wander_mag=0.03,
         amplitude_scale_range=0.1,
         max_time_shift=5,
-        augmentation_prob=0.00,
+        augmentation_prob=1.00,
     )
 
     dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)
