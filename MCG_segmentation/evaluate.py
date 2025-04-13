@@ -11,7 +11,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from torch.utils.data import DataLoader
 from torch import nn
 
-from model.model import ECGSegmenter
+from model.model import ECGSegmenter, DENS_ECG_segmenter
 from model.data_loader import ECGFullDataset
 
 # Constants
@@ -32,7 +32,7 @@ def load_model(load_dir, device):
     with open(param_path) as f:
         args = json.load(f).get("args", {})
 
-    model = ECGSegmenter()
+    model = DENS_ECG_segmenter()
 
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
@@ -183,7 +183,7 @@ def main():
         baseline_wander_mag=0.03,
         amplitude_scale_range=0.1,
         max_time_shift=5,
-        augmentation_prob=1.00,
+        augmentation_prob=0.00,
     )
 
     dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)
