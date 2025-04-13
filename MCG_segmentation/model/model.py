@@ -190,8 +190,6 @@ class DENS_ECG_segmenter(nn.Module):
     def forward(self, x):
         # x: (batch_size, time_steps, features)
         # For Conv1D: (batch_size, channels, time_steps)
-        x = x.permute(0, 2, 1)  # Convert to (batch_size, channels, time_steps) => (B, C, T)
-
         x = F.relu(self.conv1(x))  # -> (batch, 32, time)
         x = F.relu(self.conv2(x))  # -> (batch, 64, time)
         x = F.relu(self.conv3(x))  # -> (batch, 128, time)
@@ -220,6 +218,8 @@ if __name__ == "__main__":
         num_classes=num_classes,
         input_channels=input_channels,
     )
+
+    model = DENS_ECG_segmenter()
     
     # Test-Input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)
