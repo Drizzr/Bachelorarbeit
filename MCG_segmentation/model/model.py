@@ -24,7 +24,7 @@ class PositionalEncoding(nn.Module):
 class Conv1D_BiLSTM_Segmenter(nn.Module):
     def __init__(self, num_classes=4, input_channels=1, cnn_filters=(16, 32, 64),
                  cnn_kernel_size=3, lstm_units=(128, 64), dropout_rate=0.6,
-                 max_seq_len=1000, attention=True, attn_heads=8):
+                 max_seq_len=500, attention=True, attn_heads=8):
         super().__init__()
         self.num_classes = num_classes
         current_channels = input_channels
