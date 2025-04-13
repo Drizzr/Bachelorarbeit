@@ -190,13 +190,13 @@ class DENS_ECG_segmenter(nn.Module):
     def forward(self, x):
         # x: (batch_size, time_steps, features)
         # For Conv1D: (batch_size, channels, time_steps)
-        x = x.transpose(1, 2)  # swap to (batch, channels=1, time) for Conv1D
+        x = x.permute(0, 2, 1)  # Convert to (batch_size, channels, time_steps) => (B, C, T)
 
         x = F.relu(self.conv1(x))  # -> (batch, 32, time)
         x = F.relu(self.conv2(x))  # -> (batch, 64, time)
         x = F.relu(self.conv3(x))  # -> (batch, 128, time)
 
-        x = x.transpose(1, 2)  # (batch, time, features=128)
+        x = x.permute(0, 2, 1)  # Convert to (batch_size, channels, time_steps) => (B, C, T)
 
         x, _ = self.bilstm1(x)  # -> (batch, time, 500)
         x, _ = self.bilstm2(x)  # -> (batch, time, 250)
