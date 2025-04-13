@@ -126,11 +126,11 @@ def main():
         # Ensure wavelet_type is passed if needed by ECGFullDataset
         train_dataset = ECGFullDataset(
                 data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.70, baseline_wander_mag=0.02, gaussian_noise_std=0.02
+                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.95, baseline_wander_mag=0.03, gaussian_noise_std=0.02
             )
         val_dataset = ECGFullDataset(
             data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.70, baseline_wander_mag=0.02, gaussian_noise_std=0.02
+            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90, baseline_wander_mag=0.03, gaussian_noise_std=0.02
         )
 
         if len(train_dataset) == 0: 
