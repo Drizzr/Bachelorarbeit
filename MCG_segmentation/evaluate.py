@@ -32,7 +32,7 @@ def load_model(load_dir, device):
     with open(param_path) as f:
         args = json.load(f).get("args", {})
 
-    model = DENS_ECG_segmenter()
+    model = ECGSegmenter()
 
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
