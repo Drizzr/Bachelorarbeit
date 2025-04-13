@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
@@ -13,7 +14,7 @@ class PositionalEncoding(nn.Module):
         )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)  # (1, max_len, d_model)
+        pe = pe.unsqueeze(0)
         self.register_buffer('pe', pe)
 
     def forward(self, x):
@@ -21,74 +22,177 @@ class PositionalEncoding(nn.Module):
         return x
 
 
-class Conv1D_BiLSTM_Segmenter(nn.Module):
-    def __init__(self, num_classes=4, input_channels=1, cnn_filters=(16, 32, 64),
-                 cnn_kernel_size=3, lstm_units=(128, 64), dropout_rate=0.6,
-                 max_seq_len=500, attention=True, attn_heads=8):
+class ResidualBlock(nn.Module):
+    def __init__(self, channels, kernel_size=3, dilation=1, dropout=0.2):
         super().__init__()
-        self.num_classes = num_classes
-        current_channels = input_channels
-        
-        # CNN layers
-        cnn_layers = []
-        padding = cnn_kernel_size // 2
-        for num_filters in cnn_filters:
-            cnn_layers.extend([
-                nn.Conv1d(current_channels, num_filters, kernel_size=cnn_kernel_size,
-                          padding=padding, bias=True),
-                nn.ReLU(),
-                nn.LayerNorm([num_filters, max_seq_len]),
-                nn.Dropout(dropout_rate),
-            ])
-            current_channels = num_filters
-        self.cnn_base = nn.Sequential(*cnn_layers)
-        
-        # Positional Encoding
-        self.pos_encoder = PositionalEncoding(d_model=current_channels, max_len=max_seq_len)
-        
-        # BiLSTM layers
-        self.bilstm1 = nn.LSTM(input_size=current_channels, hidden_size=lstm_units[0],
-                               num_layers=1, batch_first=True, bidirectional=True)
-        self.bilstm2 = nn.LSTM(input_size=lstm_units[0] * 2, hidden_size=lstm_units[1],
-                               num_layers=1, batch_first=True, bidirectional=True)
-        
-        # Attention layer (optional)
-        if attention:
-            self.attn_layer = TransformerEncoderLayer(d_model=lstm_units[1] * 2, nhead=attn_heads)
-            self.attn = TransformerEncoder(self.attn_layer, num_layers=1)
-        
-        self.dropout = nn.Dropout(dropout_rate)
-        
-        # Classifier
-        final_features = lstm_units[1] * 2
-        self.classifier = nn.Linear(final_features, num_classes)
+        padding = (kernel_size - 1) * dilation // 2
+        self.conv_block = nn.Sequential(
+            nn.Conv1d(channels, channels, kernel_size, padding=padding, dilation=dilation),
+            nn.BatchNorm1d(channels),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
     
     def forward(self, x):
-        x = self.cnn_base(x)  
-        x = x.permute(0, 2, 1)  
-        x = self.pos_encoder(x)  
-        x, _ = self.bilstm1(x)
-        x, _ = self.bilstm2(x)
-        if hasattr(self, 'attn'):
-            x = self.attn(x)  
-        x = self.dropout(x)
-        logits = self.classifier(x)  
+        return x + self.conv_block(x)
+
+
+class ECGSegmenter(nn.Module):
+    def __init__(self, num_classes=4, input_channels=1, hidden_channels=32, 
+                 lstm_hidden=64, dropout_rate=0.3, max_seq_len=2000):
+        super().__init__()
+        
+        # Positional Encoding
+        self.pos_encoder = PositionalEncoding(d_model=input_channels, max_len=max_seq_len)
+        
+        # Initial convolution to increase channels
+        self.initial_conv = nn.Sequential(
+            nn.Conv1d(input_channels, hidden_channels, kernel_size=7, padding=3),
+            nn.BatchNorm1d(hidden_channels),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate)
+        )
+        
+        # Multi-scale feature extraction with different kernel sizes
+        self.multi_scale = nn.ModuleList([
+            nn.Conv1d(hidden_channels, hidden_channels, kernel_size=k, padding=k//2)
+            for k in [3, 7, 15]  # Different receptive fields
+        ])
+        
+        # Combine multi-scale features
+        self.combine_scales = nn.Sequential(
+            nn.Conv1d(hidden_channels * 3, hidden_channels * 2, kernel_size=1),
+            nn.BatchNorm1d(hidden_channels * 2),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate)
+        )
+        
+        # Residual blocks with increasing dilation
+        self.res_blocks = nn.ModuleList([
+            ResidualBlock(hidden_channels * 2, kernel_size=3, dilation=2**i, dropout=dropout_rate)
+            for i in range(4)  # Dilations: 1, 2, 4, 8
+        ])
+        
+        # BiLSTM layer
+        self.bilstm = nn.LSTM(
+            input_size=hidden_channels * 2,
+            hidden_size=lstm_hidden,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True
+        )
+        
+        # Self-attention
+        self.self_attn = TransformerEncoderLayer(
+            d_model=lstm_hidden * 2,
+            nhead=8,
+            dropout=dropout_rate
+        )
+        self.transformer = TransformerEncoder(self.self_attn, num_layers=1)
+        
+        # Skip connection from earlier in the network
+        self.skip_connection = nn.Linear(hidden_channels, lstm_hidden * 2)
+        
+        # Classifier
+        self.classifier = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(lstm_hidden * 2, num_classes)
+        )
+        
+    def forward(self, x):
+        # Input shape: [batch_size, channels, seq_len]
+        batch_size, _, seq_len = x.shape
+        
+        # Positional encoding
+        x_pos = x.permute(0, 2, 1)  # [B, L, C]
+        x_pos = self.pos_encoder(x_pos)
+        x = x_pos.permute(0, 2, 1)  # [B, C, L]
+        
+        # Initial convolution
+        x = self.initial_conv(x)
+        
+        # Save for skip connection
+        skip_features = x
+        
+        # Multi-scale feature extraction
+        multi_scale_outputs = [conv(x) for conv in self.multi_scale]
+        x = torch.cat(multi_scale_outputs, dim=1)
+        
+        # Combine scales
+        x = self.combine_scales(x)
+        
+        # Apply residual blocks
+        for block in self.res_blocks:
+            x = block(x)
+        
+        # BiLSTM expects [batch, seq_len, features]
+        x = x.permute(0, 2, 1)  # [B, L, C]
+        
+        # Apply BiLSTM
+        x, _ = self.bilstm(x)
+        
+        # Self-attention
+        x = self.transformer(x)
+        
+        # Skip connection from earlier features
+        skip_features = skip_features.permute(0, 2, 1)  # [B, L, C]
+        skip_features = self.skip_connection(skip_features)
+        
+        # Combine with skip connection
+        x = x + skip_features
+        
+        # Final classifier
+        logits = self.classifier(x)
+        
         return logits
 
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        self.cross_entropy = nn.CrossEntropyLoss(reduction='none')
+        
+    def forward(self, inputs, targets):
+        ce_loss = self.cross_entropy(inputs, targets)
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 
 if __name__ == "__main__":
-    # Simple test
+    # Test-Code
     batch_size = 2
-    seq_len = 300
+    seq_len = 100
     input_channels = 1
-    model = Conv1D_BiLSTM_Segmenter(num_classes=4,
-                                    input_channels=input_channels,
-                                    max_seq_len=seq_len)
-
-    dummy_input = torch.randn(batch_size, input_channels, seq_len)  # (B, C, L)
+    num_classes = 4
+    
+    model = ECGSegmenter(
+        num_classes=num_classes,
+        input_channels=input_channels,
+    )
+    
+    # Test-Input
+    dummy_input = torch.randn(batch_size, input_channels, seq_len)
+    
+    # Forward Pass
     output = model(dummy_input)
-    print(f"Output shape: {output.shape}")  # Expecting (B, L, num_classes)
-
+    print(f"Output shape: {output.shape}")  # Sollte [B, L, num_classes] sein
+    
+    # Anzahl der Parameter
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters: {parameters}")
+    print(f"Gesamtzahl Parameter: {parameters}")
+    
+    # Test mit Focal Loss
+    criterion = FocalLoss(gamma=2.0)
+    target = torch.randint(0, num_classes, (batch_size, seq_len))
+    loss = criterion(output.view(-1, num_classes), target.view(-1))
+    print(f"Loss: {loss.item()}")
