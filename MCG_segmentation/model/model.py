@@ -169,95 +169,44 @@ class FocalLoss(nn.Module):
         
 
 class DENS_ECG_segmenter(nn.Module):
-    def __init__(self, input_channels=1, num_classes=4, dropout_rate=0.2):
+    def __init__(self, input_channels=1, num_classes=4):
         super(DENS_ECG_segmenter, self).__init__()
-        
-        # CNN layer parameters
-        kernel_size = 3
-        cnn_filters = [32, 64, 128]
-        
-        # BiLSTM layer parameters
-        lstm_units = [250, 125]
-        
-        # First 1D Convolutional layer: input_channels -> 32 filters
-        self.conv1 = nn.Conv1d(
-            in_channels=input_channels,
-            out_channels=cnn_filters[0],
-            kernel_size=kernel_size,
-            padding=kernel_size//2  # Zero padding to maintain input dimensions
-        )
-        self.relu1 = nn.ReLU()
-        
-        # Second 1D Convolutional layer: 32 -> 64 filters
-        self.conv2 = nn.Conv1d(
-            in_channels=cnn_filters[0],
-            out_channels=cnn_filters[1],
-            kernel_size=kernel_size,
-            padding=kernel_size//2
-        )
-        self.relu2 = nn.ReLU()
-        
-        # Third 1D Convolutional layer: 64 -> 128 filters
-        self.conv3 = nn.Conv1d(
-            in_channels=cnn_filters[1],
-            out_channels=cnn_filters[2],
-            kernel_size=kernel_size,
-            padding=kernel_size//2
-        )
-        self.relu3 = nn.ReLU()
-        
-        # First BiLSTM layer: 128 -> 250 hidden units (bidirectional, so 125 per direction)
-        self.bilstm1 = nn.LSTM(
-            input_size=cnn_filters[2],
-            hidden_size=lstm_units[0] // 2,  # Divide by 2 because bidirectional doubles it
-            batch_first=True,
-            bidirectional=True
-        )
-        
-        # Second BiLSTM layer: 250 -> 125 hidden units (bidirectional, so 62/63 per direction)
-        self.bilstm2 = nn.LSTM(
-            input_size=lstm_units[0],
-            hidden_size=lstm_units[1] // 2,
-            batch_first=True,
-            bidirectional=True
-        )
-        
-        # Dropout layer
-        self.dropout = nn.Dropout(dropout_rate)
-        
-        # Dense layer (time distributed)
-        self.dense = nn.Linear(lstm_units[1], num_classes)
-        
-        # Softmax activation
-        self.softmax = nn.Softmax(dim=2)
-        
-    def forward(self, x):
-        # Input shape: [batch_size, channels, sequence_length]
-        
-        # Apply CNN layers
-        x = self.relu1(self.conv1(x))
-        x = self.relu2(self.conv2(x))
-        x = self.relu3(self.conv3(x))
-        
-        # BiLSTM expects input as [batch_size, sequence_length, features]
-        x = x.permute(0, 2, 1)
-        
-        # Apply BiLSTM layers
-        x, _ = self.bilstm1(x)
-        x, _ = self.bilstm2(x)
-        
-        # Apply dropout
-        x = self.dropout(x)
-        
-        # Apply the dense layer (time distributed)
-        # This is automatically applied to every time step thanks to PyTorch's broadcasting
-        x = self.dense(x)
-        
-        # Apply softmax to obtain probabilities
-        x = self.softmax(x)
-        
-        return x
 
+        # 1D Convolutional Layers
+        self.conv1 = nn.Conv1d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+
+        # BiLSTM Layers
+        self.bilstm1 = nn.LSTM(input_size=128, hidden_size=250, batch_first=True, bidirectional=True)
+        self.bilstm2 = nn.LSTM(input_size=500, hidden_size=125, batch_first=True, bidirectional=True)
+
+        # Dropout
+        self.dropout = nn.Dropout(p=0.2)
+
+        # TimeDistributed Dense Layer (implemented as a Linear layer over each time step)
+        self.classifier = nn.Linear(250, num_classes)  # 2*125 from BiLSTM2
+
+    def forward(self, x):
+        # x: (batch_size, time_steps, features)
+        # For Conv1D: (batch_size, channels, time_steps)
+        x = x.transpose(1, 2)  # swap to (batch, channels=1, time) for Conv1D
+
+        x = F.relu(self.conv1(x))  # -> (batch, 32, time)
+        x = F.relu(self.conv2(x))  # -> (batch, 64, time)
+        x = F.relu(self.conv3(x))  # -> (batch, 128, time)
+
+        x = x.transpose(1, 2)  # (batch, time, features=128)
+
+        x, _ = self.bilstm1(x)  # -> (batch, time, 500)
+        x, _ = self.bilstm2(x)  # -> (batch, time, 250)
+
+        x = self.dropout(x)
+
+        x = self.classifier(x)  # -> (batch, time, num_classes)
+        x = F.softmax(x, dim=-1)
+
+        return x
 
 
 if __name__ == "__main__":
