@@ -184,7 +184,7 @@ class Trainer(object):
 
             # --- Save Model ---
             if val_f1 > self.best_val_f1:
-                print(f"Validation loss improved ({self.best_val_f1:.4f} -> {val_f1:.4f}). Saving best model...")
+                print(f"Validation F1-score improved ({self.best_val_f1:.4f} -> {val_f1:.4f}). Saving best model...")
                 self.best_val_f1 = val_f1
                 self.save_model(is_best=True)
             if self.epoch % 5 == 0: # Save periodic checkpoint every 5 epochs
