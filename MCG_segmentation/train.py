@@ -174,7 +174,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = DENS_ECG_segmenter()
+        model = ECGSegmenter()
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
