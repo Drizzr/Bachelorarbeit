@@ -219,7 +219,7 @@ if __name__ == "__main__":
         input_channels=input_channels,
     )
 
-    model = DENS_ECG_segmenter()
+    #model = DENS_ECG_segmenter()
     
     # Test-Input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)

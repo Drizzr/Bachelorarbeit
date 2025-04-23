@@ -19,13 +19,28 @@ import pandas as pd
 import re
 import json
 from scipy.interpolate import interp1d
+from MCG_segmentation.model.model import ECGSegmenter
+import torch
 
 
 
 
 class Analyzer:
 
-    def __init__(self, filename = "", add_filename = "", log_file_path = "", sensor_channels_to_excllude = {"Brustlage": ["NL_x"], "Rueckenlage": ["NL_x"]}, scaling = 2.7/1000, sampling = 1000, num_ch = 48):
+    # --- Constants (Match Training/Evaluation) ---
+    CLASS_NAMES_MAP = {0: "No Wave", 1: "P Wave", 2: "QRS", 3: "T Wave"}
+    SEGMENT_COLORS = {0: "silver", 1: "lightblue", 2: "lightcoral", 3: "lightgreen"}
+    LABEL_TO_IDX = {v: k for k, v in CLASS_NAMES_MAP.items()}
+    
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # mps is not supported in this version of numpy
+    
+    print(f"Using device: {DEVICE}")
+
+    def __init__(self, filename = "", add_filename = "", log_file_path = "", 
+                sensor_channels_to_excllude = {"Brustlage": ["NL_x"], "Rueckenlage": ["NL_x"]}, 
+                scaling = 2.7/1000, sampling = 1000, 
+                num_ch = 48, model_check_point_dir = "MCG_segmentation/MCGSegmentator/checkpoints/best"):
+        
         self.filename = filename
         self.add_filename =   add_filename
         self.log_file_path  = log_file_path
@@ -63,6 +78,37 @@ class Analyzer:
         self.cmap = plt.get_cmap('nipy_spectral')
         self.cmaplist = [self.cmap(x) for x in np.linspace(0,1,num=40)]
 
+
+        try:
+            self.model = self.load_trained_model(model_check_point_dir, self.DEVICE)
+        except Exception as e:
+            print(f"FATAL: Could not load model. Error: {e}")
+            self.model = None
+
+    @staticmethod
+    def load_trained_model(checkpoint_dir, device):
+        """Loads the 'best' trained ECGSegmentator model."""
+        print(f"Loading model from: {checkpoint_dir}")
+        best_model_path = os.path.join(checkpoint_dir, "model.pth")
+        best_params_path = os.path.join(checkpoint_dir, "params.json")
+        if not os.path.exists(best_model_path) or not os.path.exists(best_params_path):
+            raise FileNotFoundError(f"model.pth or params.json not found in {checkpoint_dir}")
+        with open(best_params_path, "r") as f:
+            params = json.load(f); checkpoint_args = params.get("args", {})
+            num_classes=checkpoint_args.get("num_classes", 4); num_heads=checkpoint_args.get("num_heads", 4)
+            dropout_rate=checkpoint_args.get("dropout_rate", 0.3)
+            # Load other args if needed by model init
+            print(f"Loaded model args: num_classes={num_classes}, num_heads={num_heads}, dropout={dropout_rate}")
+        model = ECGSegmenter() # Add other args if needed
+        try: 
+            model.load_state_dict(torch.load(best_model_path, map_location=device))
+        except RuntimeError as e: 
+            print("\n*** Error loading state_dict: Model architecture mismatch? ***"); raise e
+        
+        model.to(device); model.eval(); print("Model loaded successfully.")
+        
+        return model
+    
     @staticmethod
     def import_tdms(filename, scaling):
         data = {}
@@ -344,6 +390,172 @@ class Analyzer:
         
         if save and path is not None:
             plt.savefig(path + f'{name}_heart_vector_proj.png', bbox_inches='tight', dpi=200)
+
+    def segment_heart_beat_intervall(self, data, short_segment_threshold=10):
+        """
+        Segments the heart beat interval. Therefore classifies for each data point whether it is: 1) p-Wave, 2) QRS, 3) T-Wave or 4) No Wave.
+        The classification is done by the trained model. Note that this model was trained on data sampled at 250Hz and supports a maximum sequence length of 2000 samples.
+        The signal is expected to be filtered and normalized.
+        data should be of the shape: (b, 1, T) where b is the batch size and T is the number of time steps.
+        """
+
+        if len(data) == 0:
+            print("No data to segment.")
+            return None
+        elif len(data) > 2000:
+            print("Data length exceeds maximum sequence length of 2000 samples. Truncating data.")
+            data = data[:2000]
+
+        with torch.no_grad():
+            logits = self.model(data)
+            # Predictions correspond to the DOWNSAMPLED time axis
+            predicted_indices = torch.argmax(logits, dim=-1).squeeze().cpu().numpy()
+        
+        # clean up the predicted indices
+
+        # Remove short segments since the model sometimes predicts short segments (e.g. 1-2 samples) that are not meaningful.
+        def replace_short_intervals(arr, threshold):
+            result = arr[:]
+            intervals = []
+            start = 0
+            
+            # Step 1: Identify all intervals
+            while start < len(arr):
+                current = arr[start]
+                end = start
+                while end < len(arr) and arr[end] == current:
+                    end += 1
+                intervals.append((start, end - 1, current))  # (start_index, end_index, value)
+                start = end
+
+            # Step 2: Replace short intervals
+            for i, (start, end, value) in enumerate(intervals):
+                length = end - start + 1
+                if length < threshold:
+                    # Check left and right neighbors
+                    left_len = right_len = -1
+                    left_val = right_val = None
+
+                    if i > 0:
+                        left_start, left_end, left_val = intervals[i - 1]
+                        left_len = left_end - left_start + 1
+                    if i < len(intervals) - 1:
+                        right_start, right_end, right_val = intervals[i + 1]
+                        right_len = right_end - right_start + 1
+
+                    # Choose the longer neighbor
+                    if right_len > left_len:
+                        replace_val = right_val
+                    else:
+                        replace_val = left_val
+
+                    for j in range(start, end + 1):
+                        result[j] = replace_val
+
+            return result
+
+
+        # Filter the predicted indices
+        filtered_indices = replace_short_intervals(predicted_indices, short_segment_threshold)  # Threshold of 10 samples
+
+        return filtered_indices
+    
+
+    def segment_entire_run(self, data, sampling_rate, short_segment_threshold=10, window_size=300, overlap=0.5):
+        """
+        Use this function to segment the entire run (also T > 2000). The function will first find the channel with the clearest peaks and then segment the data.
+        data should be of the shape: (b, 1, T) where b is the batch size and T is the number of time steps.
+        This function already handles data preprocessing (e.g. filtering, normalization).
+        Also the sampling rate of the input data is adapted to the model's sampling rate (250Hz)
+        """
+
+        # Resample to 250Hz if necessary
+        if sampling_rate != 250:
+            # Calculate the number of samples for 250Hz
+            num_samples = int(data.shape[-1] * (250 / sampling_rate))  # data.shape[-1] corresponds to T
+            
+            # Resample each sample in the batch
+            resampled_data = []
+            for i in range(data.shape[0]):  # Loop over the batch dimension (b)
+                resampled_sample = signal.resample(data[i, 0, :], num_samples)  # Resample along the last axis (T)
+                resampled_data.append(resampled_sample)
+            
+            # Stack the resampled samples back into the batch
+            data = np.stack(resampled_data, axis=0)  # The result will have shape (b, num_samples)
+            data = np.expand_dims(data, axis=1)  # Add the channel dimension back
+        
+        if window_size > 2000:
+            print("Window size exceeds maximum sequence length of 2000 samples. Setting window size to 2000.")
+            window_size = 2000
+        
+        # Apply the moving window with overlap to the data
+        segment_labels = []
+        segment_positions = []  # Keep track of where each segment belongs in the original data
+        step_size = int(window_size * (1 - overlap))
+        
+        T = data.shape[-1]
+        start = 0
+        
+        while start + window_size <= T:
+            end = start + window_size
+            segment = data[:, :, start:end]
+            segment = torch.from_numpy(segment.astype(np.float32)).to(self.DEVICE)
+            
+            # --- Apply EXACT Training Preprocessing ---
+            signal_mean = segment.mean(dim=-1, keepdims=True)
+            if not torch.isnan(signal_mean).any() and not torch.isinf(signal_mean).any(): 
+                segment = segment - signal_mean
+            
+            max_vals, _ = segment.abs().max(dim=-1, keepdim=True)
+            segment = torch.where(max_vals > 1e-6, segment / max_vals, segment)
+            
+            # Get labels for this segment
+            labels = self.segment_heart_beat_intervall(segment, short_segment_threshold)
+            
+            # Store the labels and their positions
+            segment_labels.append(labels)
+            segment_positions.append((start, end))
+
+            # Move the window forward by step_size (with overlap)
+            start += step_size
+
+        # Create a full-length array of zeros to hold the final labels
+        final_labels = np.zeros(T, dtype=int)
+        
+        # Process each segment
+        for i, ((start, end), labels) in enumerate(zip(segment_positions, segment_labels)):
+            if i == 0:
+                # For the first segment, use all labels
+                final_labels[start:end] = labels
+            else:
+                # For subsequent segments, handle the overlap
+                prev_start, prev_end = segment_positions[i-1]
+                overlap_start = start
+                overlap_end = prev_end
+                
+                # Get the overlapping regions
+                overlap_current = labels[:(overlap_end - overlap_start)]
+                overlap_prev = final_labels[overlap_start:overlap_end]
+                
+                # Check for conflicts in overlapping region
+                if not np.array_equal(np.unique(overlap_current), np.unique(overlap_prev)):
+                    # Conflict detected - set overlapping region to 0
+                    final_labels[overlap_start:overlap_end] = 0
+                    
+                    # Use non-overlapping part of current segment
+                    final_labels[overlap_end:end] = labels[(overlap_end - start):]
+                else:
+                    # No conflict - use entire current segment (will overwrite previous overlap)
+                    final_labels[start:end] = labels
+        
+        # Reshape final_labels to match expected output format if needed
+        # (depending on how segment_heart_beat_intervall returns data)
+        if len(final_labels.shape) == 1:
+            final_labels = final_labels.reshape(1, -1)  # Add batch dimension if needed
+        
+        return final_labels, data
+
+
 
     def find_cleanest_channel(self, data):
         """
@@ -1132,7 +1344,7 @@ class Analyzer:
                     for key in self.key_list:
                         data = self.prepare_data(key, apply_default_filter=True)
                         # Pass the data to the function to process further
-                        function(data, key, dir)
+                        function(self, data, key, dir)
                 else:
                     print(f"Not enough .tdms files in directory {dir}. Skipping...")
 
@@ -1140,3 +1352,8 @@ class Analyzer:
                 print(f"Skipping non-patient directory: {dir}")
 
 
+
+
+if __name__ == "__main__":
+    # Example usage
+    analyzer = Analyzer()

@@ -166,7 +166,7 @@ def main():
     parser.add_argument("--eval_batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
-    parser.add_argument("--sequence_length", type=int, default=500) 
+    parser.add_argument("--sequence_length", type=int, default=5000) 
 
 
     args = parser.parse_args()
