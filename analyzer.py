@@ -391,88 +391,173 @@ class Analyzer:
         if save and path is not None:
             plt.savefig(path + f'{name}_heart_vector_proj.png', bbox_inches='tight', dpi=200)
 
-    def segment_heart_beat_intervall(self, data, short_segment_threshold=10):
-        """
-        Segments the heart beat interval. Therefore classifies for each data point whether it is: 1) p-Wave, 2) QRS, 3) T-Wave or 4) No Wave.
-        The classification is done by the trained model. Note that this model was trained on data sampled at 250Hz and supports a maximum sequence length of 2000 samples.
-        The signal is expected to be filtered and normalized.
-        data should be of the shape: (b, 1, T) where b is the batch size and T is the number of time steps.
-        """
 
-        if len(data) == 0:
-            print("No data to segment.")
-            return None
-        elif len(data) > 2000:
-            print("Data length exceeds maximum sequence length of 2000 samples. Truncating data.")
-            data = data[:2000]
 
-        with torch.no_grad():
-            logits = self.model(data)
-            # Predictions correspond to the DOWNSAMPLED time axis
-            predicted_indices = torch.argmax(logits, dim=-1).squeeze().cpu().numpy()
+    def _replace_short_intervals_with_confidence(self, arr, confidence, threshold):
+        """
+        Replace short intervals in the predicted indices with values from longer neighboring intervals.
+        Also updates the confidence scores accordingly.
         
-        # clean up the predicted indices
-
-        # Remove short segments since the model sometimes predicts short segments (e.g. 1-2 samples) that are not meaningful.
-        def replace_short_intervals(arr, threshold):
-            result = arr[:]
-            intervals = []
-            start = 0
+        Args:
+            arr: numpy array of predicted indices (can be 1D or 2D with batch dimension)
+            confidence: numpy array of confidence scores (same shape as arr)
+            threshold: Minimum length for a segment to be considered valid
             
-            # Step 1: Identify all intervals
-            while start < len(arr):
-                current = arr[start]
-                end = start
-                while end < len(arr) and arr[end] == current:
-                    end += 1
-                intervals.append((start, end - 1, current))  # (start_index, end_index, value)
-                start = end
-
-            # Step 2: Replace short intervals
-            for i, (start, end, value) in enumerate(intervals):
-                length = end - start + 1
-                if length < threshold:
-                    # Check left and right neighbors
-                    left_len = right_len = -1
-                    left_val = right_val = None
-
-                    if i > 0:
-                        left_start, left_end, left_val = intervals[i - 1]
-                        left_len = left_end - left_start + 1
-                    if i < len(intervals) - 1:
-                        right_start, right_end, right_val = intervals[i + 1]
-                        right_len = right_end - right_start + 1
-
-                    # Choose the longer neighbor
+        Returns:
+            Tuple of (numpy array with short intervals replaced, 
+                    numpy array with updated confidence scores)
+        """
+        # Handle edge case
+        if len(arr) == 0:
+            return arr, confidence
+        
+        # Handle multi-dimensional arrays (with batch dimension)
+        if len(arr.shape) > 1:
+            # Process each batch separately
+            result_arr = np.zeros_like(arr)
+            result_conf = np.zeros_like(confidence)
+            
+            for b in range(arr.shape[0]):
+                result_arr[b], result_conf[b] = self._replace_short_intervals_with_confidence(
+                    arr[b], confidence[b], threshold)
+                
+            return result_arr, result_conf
+            
+        # Process single batch (1D array)
+        result = arr.copy()  # Create a copy to avoid modifying the original array
+        result_confidence = confidence.copy()  # Copy confidence scores
+        intervals = []
+        
+        # Step 1: Identify all intervals
+        start = 0
+        while start < len(arr):
+            current_value = int(arr[start])  # Convert to Python int to avoid numpy array comparison issues
+            end = start
+            
+            # Find the end of the current interval
+            while end < len(arr) and int(arr[end]) == current_value:
+                end += 1
+                
+            intervals.append((start, end - 1, current_value))  # (start_index, end_index, value)
+            start = end
+        
+        # Step 2: Replace short intervals
+        for i, (start, end, value) in enumerate(intervals):
+            length = end - start + 1
+            
+            if length < threshold:
+                # Initialize neighbor values
+                left_val = right_val = None
+                left_len = right_len = -1
+                left_conf = right_conf = 0.0
+                
+                # Check left neighbor
+                if i > 0:
+                    left_start, left_end, left_val = intervals[i - 1]
+                    left_len = left_end - left_start + 1
+                    left_conf = np.mean(confidence[left_start:left_end+1])
+                    
+                # Check right neighbor
+                if i < len(intervals) - 1:
+                    right_start, right_end, right_val = intervals[i + 1]
+                    right_len = right_end - right_start + 1
+                    right_conf = np.mean(confidence[right_start:right_end+1])
+                
+                # Default to no-wave (0) if no neighbors
+                replace_val = 0
+                replace_conf = 0.5  # Default confidence
+                
+                # Choose the longer neighbor if both exist
+                if left_val is not None and right_val is not None:
                     if right_len > left_len:
                         replace_val = right_val
+                        replace_conf = right_conf
                     else:
                         replace_val = left_val
+                        replace_conf = left_conf
+                # Or use the only neighbor that exists
+                elif right_val is not None:
+                    replace_val = right_val
+                    replace_conf = right_conf
+                elif left_val is not None:
+                    replace_val = left_val
+                    replace_conf = left_conf
+                    
+                # Replace the values in the short interval
+                result[start:end+1] = replace_val
+                # Also update confidence scores - slightly reduce confidence for replaced segments
+                result_confidence[start:end+1] = replace_conf * 0.9  # 10% confidence penalty for replaced segments
+        
+        return result, result_confidence
 
-                    for j in range(start, end + 1):
-                        result[j] = replace_val
 
-            return result
+    def segment_heart_beat_intervall(self, data, short_segment_threshold=10):
+        """
+        Segments the heart beat interval. Therefore classifies for each data point whether it is: 
+        1) p-Wave, 2) QRS, 3) T-Wave or 4) No Wave.
+        
+        The classification is done by the trained model. Note that this model was trained on 
+        data sampled at 250Hz and supports a maximum sequence length of 2000 samples.
+        The signal is expected to be filtered and normalized.
+        
+        Args:
+            data: torch Tensor of shape (b, 1, T) where b is the batch size and T is the number of time steps.
+            short_segment_threshold: Minimum length for a segment to be considered valid.
+            
+        Returns:
+            Tuple of (numpy array of segment classifications, numpy array of confidence scores)
+        """
+        # Handle edge cases
+        if data.numel() == 0:
+            print("No data to segment.")
+            return None, None
+            
+        # Check if data exceeds maximum sequence length
+        if data.shape[-1] > 2000:
+            print("Data length exceeds maximum sequence length of 2000 samples. Truncating data.")
+            data = data[..., :2000]  # Properly slice the last dimension
+        
+        # Forward pass through the model
+        with torch.no_grad():
+            logits = self.model(data)
+            # Apply softmax to get probabilities
+            probabilities = torch.nn.functional.softmax(logits, dim=-1)
+            # Get predicted indices
+            predicted_indices = torch.argmax(logits, dim=-1).cpu().numpy()
+            # Get confidence scores (max probability for each prediction)
+            confidence_scores = torch.max(probabilities, dim=-1)[0].cpu().numpy()
+        
+        # Clean up the predicted indices by removing short segments
+        filtered_indices, filtered_confidence = self._replace_short_intervals_with_confidence(
+            predicted_indices, confidence_scores, short_segment_threshold)
+        
+        return filtered_indices, filtered_confidence
 
 
-        # Filter the predicted indices
-        filtered_indices = replace_short_intervals(predicted_indices, short_segment_threshold)  # Threshold of 10 samples
-
-        return filtered_indices
-    
 
     def segment_entire_run(self, data, sampling_rate, short_segment_threshold=10, window_size=300, overlap=0.5):
         """
         Use this function to segment the entire run (also T > 2000). The function will first find the channel with the clearest peaks and then segment the data.
-        data should be of the shape: (b, 1, T) where b is the batch size and T is the number of time steps.
+        data should be of the shape (numpy): (b, 1, T) where b is the batch size and T is the number of time steps.
         This function already handles data preprocessing (e.g. filtering, normalization).
         Also the sampling rate of the input data is adapted to the model's sampling rate (250Hz)
+        
+        Returns:
+            Tuple of (segmentation labels, resampled data, confidence scores)
         """
 
         # Resample to 250Hz if necessary
         if sampling_rate != 250:
             # Calculate the number of samples for 250Hz
             num_samples = int(data.shape[-1] * (250 / sampling_rate))  # data.shape[-1] corresponds to T
+
+            if num_samples < window_size:
+                print(f"Warning: Resampled length {num_samples} is less than window size {window_size}. Adjusting window size to {num_samples}.")
+                window_size = num_samples
+            
+            if window_size < 300:
+                print(f"Warning: Window size: {window_size} this might lead to suboptimal results. Consider using a larger window size.")
+
             
             # Resample each sample in the batch
             resampled_data = []
@@ -490,6 +575,7 @@ class Analyzer:
         
         # Apply the moving window with overlap to the data
         segment_labels = []
+        segment_confidences = []
         segment_positions = []  # Keep track of where each segment belongs in the original data
         step_size = int(window_size * (1 - overlap))
         
@@ -509,86 +595,206 @@ class Analyzer:
             max_vals, _ = segment.abs().max(dim=-1, keepdim=True)
             segment = torch.where(max_vals > 1e-6, segment / max_vals, segment)
             
-            # Get labels for this segment
-            labels = self.segment_heart_beat_intervall(segment, short_segment_threshold)
+            # Get labels and confidences for this segment
+            labels, confidences = self.segment_heart_beat_intervall(segment, short_segment_threshold)
             
-            # Store the labels and their positions
+            # Store the labels, confidences and their positions
             segment_labels.append(labels)
+            segment_confidences.append(confidences)
             segment_positions.append((start, end))
 
             # Move the window forward by step_size (with overlap)
             start += step_size
 
-        # Create a full-length array of zeros to hold the final labels
-        final_labels = np.zeros(T, dtype=int)
+        # Explicitly process the last window_size samples to ensure complete coverage
+        if T >= window_size:
+            start = T - window_size
+            end = T
+            
+            # Only add this last window if it's different from the last processed window
+            if not segment_positions or segment_positions[-1][0] != start:
+                segment = data[:, :, start:end]
+                segment = torch.from_numpy(segment.astype(np.float32)).to(self.DEVICE)
+                
+                # --- Apply EXACT Training Preprocessing ---
+                signal_mean = segment.mean(dim=-1, keepdims=True)
+                if not torch.isnan(signal_mean).any() and not torch.isinf(signal_mean).any(): 
+                    segment = segment - signal_mean
+                
+                max_vals, _ = segment.abs().max(dim=-1, keepdim=True)
+                segment = torch.where(max_vals > 1e-6, segment / max_vals, segment)
+                
+                # Get labels and confidences for this segment
+                labels, confidences = self.segment_heart_beat_intervall(segment, short_segment_threshold)
+                
+                # Store the labels, confidences and their positions
+                segment_labels.append(labels)
+                segment_confidences.append(confidences)
+                segment_positions.append((start, end))
+
+        # Create full-length arrays to hold the final labels and confidence scores for each batch
+        batch_size = data.shape[0]
+        final_labels = np.zeros((batch_size, T), dtype=int)
+        final_confidences = np.zeros((batch_size, T), dtype=float)
         
         # Process each segment
-        for i, ((start, end), labels) in enumerate(zip(segment_positions, segment_labels)):
+        for i, ((start, end), labels, confidences) in enumerate(zip(segment_positions, segment_labels, segment_confidences)):
             if i == 0:
-                # For the first segment, use all labels
-                final_labels[start:end] = labels
+                # For the first segment, use all labels and confidences
+                final_labels[:, start:end] = labels
+                final_confidences[:, start:end] = confidences
             else:
                 # For subsequent segments, handle the overlap
                 prev_start, prev_end = segment_positions[i-1]
                 overlap_start = start
-                overlap_end = prev_end
+                overlap_end = min(prev_end, end)  # Make sure we don't go out of bounds
                 
-                # Get the overlapping regions
-                overlap_current = labels[:(overlap_end - overlap_start)]
-                overlap_prev = final_labels[overlap_start:overlap_end]
-                
-                # Check for conflicts in overlapping region
-                if not np.array_equal(np.unique(overlap_current), np.unique(overlap_prev)):
-                    # Conflict detected - set overlapping region to 0
-                    final_labels[overlap_start:overlap_end] = 0
+                # For each batch
+                for b in range(batch_size):
+                    # Get the overlapping regions
+                    overlap_len = overlap_end - overlap_start
+                    overlap_current_labels = labels[b, :overlap_len]
+                    overlap_current_conf = confidences[b, :overlap_len]
+                    
+                    # For the overlapping region, always choose the label with higher confidence
+                    for j in range(overlap_len):
+                        idx = overlap_start + j
+                        if overlap_current_conf[j] > final_confidences[b, idx]:
+                            final_labels[b, idx] = overlap_current_labels[j]
+                            final_confidences[b, idx] = overlap_current_conf[j]
                     
                     # Use non-overlapping part of current segment
-                    final_labels[overlap_end:end] = labels[(overlap_end - start):]
-                else:
-                    # No conflict - use entire current segment (will overwrite previous overlap)
-                    final_labels[start:end] = labels
+                    non_overlap_len = end - overlap_end
+                    if non_overlap_len > 0:
+                        final_labels[b, overlap_end:end] = labels[b, overlap_len:overlap_len+non_overlap_len]
+                        final_confidences[b, overlap_end:end] = confidences[b, overlap_len:overlap_len+non_overlap_len]
         
-        # Reshape final_labels to match expected output format if needed
-        # (depending on how segment_heart_beat_intervall returns data)
-        if len(final_labels.shape) == 1:
-            final_labels = final_labels.reshape(1, -1)  # Add batch dimension if needed
+        return final_labels, data, final_confidences
+
+
+    def find_cleanest_channel(self, data, sampling_rate=1000, window_size=300, overlap=0.5):
+        """
+        Find the channel with the clearest peaks in the data based on:
+        1. High confidence in segmentation
+        2. Physiologically plausible distribution of cardiac waveforms:
+        - P-wave: ~10-12% of the signal
+        - QRS-complex: ~10-12% of the signal
+        - T-wave: ~15-25% of the signal
         
-        return final_labels, data
-
-
-
-    def find_cleanest_channel(self, data):
+        Args:
+            data: numpy array of shape (num_channels, num_samples)
+            sampling_rate: Sampling rate of the data in Hz
+            window_size: Window size for segmentation
+            overlap: Overlap between windows
+            
+        Returns:
+            int: Index of the best channel
         """
-        Find the channel with the clearest peaks in the data.
-        This function detects both positive and negative peaks and returns the channel index
-        with the highest mean peak height.
-        """
-        best_mean = 0
-        argmax = 0
-        best_peak_type = 'positive'
-        for ch in range(len(data)):
-            meanvalue = np.median(data[ch])
-            # Detect positive peaks
-            positive_peaks, positive_prop = find_peaks(data[ch], height=meanvalue * 5, distance=500, width=(15, 50))
-            positive_heights = positive_prop["peak_heights"]
-            mean_positive = np.mean(positive_heights) if len(positive_heights) > 0 else 0
-            # Detect negative peaks
-            negative_peaks, negative_prop = find_peaks(-data[ch], height=meanvalue * 5, distance=500, width=(15, 50))
-            negative_heights = negative_prop["peak_heights"]  # These are -data[ch] at minima, positive values
-            mean_negative = np.mean(negative_heights) if len(negative_heights) > 0 else 0
-            # Determine which peak type is clearer for this channel
-            if mean_positive > mean_negative:
-                mean = mean_positive
-                peak_type = 'positive'
-            else:
-                mean = mean_negative
-                peak_type = 'negative'
-            # Update best channel if this mean is higher
-            if ch == 0 or mean > best_mean:
-                best_mean = mean
-                argmax = ch
-                best_peak_type = peak_type
-        return argmax, best_peak_type
+        # Reshape data to (num_channels, 1, num_samples) for segmentation
+        data = data.reshape(data.shape[0], 1, -1)
+        
+
+        labels, _, confidence = self.segment_entire_run(data, sampling_rate, window_size=window_size, overlap=overlap)
+
+        
+        # Calculate the mean confidence for each channel
+        mean_confidence = np.mean(confidence, axis=1)  # Shape: (num_channels,)
+        
+        # Calculate the percentage of each segment type for each channel
+        # Assuming labels: 0=No Wave, 1=P-Wave, 2=QRS, 3=T-Wave
+        num_channels = data.shape[0]
+        segment_percentages = np.zeros((num_channels, 4))  # 4 segment types
+        
+        for channel in range(num_channels):
+            total_samples = labels[channel].size
+            for segment_type in range(4):  # 0, 1, 2, 3
+                segment_count = np.sum(labels[channel] == segment_type)
+                segment_percentages[channel, segment_type] = (segment_count / total_samples) * 100
+        
+        # Define ideal ranges for physiological plausibility
+        p_wave_range = (10, 12)      # P-wave: 10-12%
+        qrs_range = (10, 12)         # QRS: 10-12%
+        t_wave_range = (15, 25)      # T-wave: 15-25%
+        
+        # Calculate a physiological plausibility score for each channel
+        plausibility_scores = np.zeros(num_channels)
+        
+        for channel in range(num_channels):
+            p_percent = segment_percentages[channel, 1]  # P-wave (index 1)
+            qrs_percent = segment_percentages[channel, 2]  # QRS (index 2)
+            t_percent = segment_percentages[channel, 3]  # T-wave (index 3)
+            
+            # Calculate how well each segment fits within its ideal range
+            # Lower values mean better fit (0 = perfect)
+            p_deviation = 0
+            if p_percent < p_wave_range[0]:
+                p_deviation = p_wave_range[0] - p_percent
+            elif p_percent > p_wave_range[1]:
+                p_deviation = p_percent - p_wave_range[1]
+                
+            qrs_deviation = 0
+            if qrs_percent < qrs_range[0]:
+                qrs_deviation = qrs_range[0] - qrs_percent
+            elif qrs_percent > qrs_range[1]:
+                qrs_deviation = qrs_percent - qrs_range[1]
+                
+            t_deviation = 0
+            if t_percent < t_wave_range[0]:
+                t_deviation = t_wave_range[0] - t_percent
+            elif t_percent > t_wave_range[1]:
+                t_deviation = t_percent - t_wave_range[1]
+            
+            # Total deviation from ideal (lower is better)
+            total_deviation = p_deviation + qrs_deviation + t_deviation
+            
+            # Convert to a score where higher is better
+            max_possible_deviation = (p_wave_range[1] - p_wave_range[0]) + \
+                                    (qrs_range[1] - qrs_range[0]) + \
+                                    (t_wave_range[1] - t_wave_range[0])
+            plausibility_scores[channel] = 1.0 - (total_deviation / (3 * max_possible_deviation))
+            
+            # Ensure score is in [0, 1] range
+            plausibility_scores[channel] = max(0, min(1, plausibility_scores[channel]))
+        
+        # Combine confidence and physiological plausibility for final ranking
+        # Normalize mean_confidence to [0, 1] range for fair weighting
+        normalized_confidence = mean_confidence / np.max(mean_confidence) if np.max(mean_confidence) > 0 else mean_confidence
+        
+        # Calculate the final score (weighted sum of confidence and plausibility)
+        confidence_weight = 0.6  # Adjust these weights as needed
+        plausibility_weight = 0.4
+        final_scores = (confidence_weight * normalized_confidence) + (plausibility_weight * plausibility_scores)
+        
+        # Find the channel with the highest score
+        best_channel = np.argmax(final_scores)
+        
+        # Print detailed results
+        print("\nChannel Selection Results:")
+        print(f"{'Channel':<10}{'Mean Conf':<12}{'P-Wave %':<12}{'QRS %':<12}{'T-Wave %':<12}{'Plausibility':<15}{'Final Score':<12}")
+        print("-" * 85)
+
+        for channel in range(num_channels):
+            print(f"{channel + 1:<10}"
+                f"{mean_confidence[channel]:<12.4f}"
+                f"{segment_percentages[channel, 1]:<12.2f}"
+                f"{segment_percentages[channel, 2]:<12.2f}"
+                f"{segment_percentages[channel, 3]:<12.2f}"
+                f"{plausibility_scores[channel]:<15.4f}"
+                f"{final_scores[channel]:<12.4f}")
+
+        print("\nBest Channel Summary:")
+        print(f"{'Channel':<10}: {best_channel + 1}")
+        print(f"{'Mean Conf':<10}: {mean_confidence[best_channel]:.4f}")
+        print(f"{'Plausibility':<10}: {plausibility_scores[best_channel]:.4f}")
+        print(f"{'Final Score':<10}: {final_scores[best_channel]:.4f}")
+        print("Segment Distribution:")
+        print(f"  P-Wave % : {segment_percentages[best_channel, 1]:.2f}%")
+        print(f"  QRS %    : {segment_percentages[best_channel, 2]:.2f}%")
+        print(f"  T-Wave % : {segment_percentages[best_channel, 3]:.2f}%")
+
+        return best_channel
+    
+    
 
     def find_peak_positions_fixed_ch(self, data, time, ch, peak_type='positive', z_threshold=2.5):
         meanvalue = np.median(data[ch])   
