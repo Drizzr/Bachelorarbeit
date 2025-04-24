@@ -160,13 +160,13 @@ def evaluate(model, dataloader, loss_fn, device, num_classes, output_dir, sample
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/MCGSegmentator/checkpoints/best")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/checkpoints/best")
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/qtdb/processed/val")
     parser.add_argument("--output_dir", type=str, default="MCG_segmentation/evaluation_results")
-    parser.add_argument("--eval_batch_size", type=int, default=64)
+    parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
-    parser.add_argument("--sequence_length", type=int, default=5000) 
+    parser.add_argument("--sequence_length", type=int, default=2000) 
 
 
     args = parser.parse_args()
@@ -183,7 +183,7 @@ def main():
         baseline_wander_mag=0.03,
         amplitude_scale_range=0.1,
         max_time_shift=5,
-        augmentation_prob=0.00,
+        augmentation_prob=1.00,
     )
 
     dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)

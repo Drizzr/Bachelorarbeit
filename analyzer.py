@@ -41,7 +41,7 @@ class Analyzer:
     def __init__(self, filename = "", add_filename = "", log_file_path = "", 
                 sensor_channels_to_excllude = {"Brustlage": ["NL_x"], "Rueckenlage": ["NL_x"]}, 
                 scaling = 2.7/1000, sampling = 1000, 
-                num_ch = 48, model_check_point_dir = "MCG_segmentation/MCGSegmentator/checkpoints/best"):
+                num_ch = 48, model_check_point_dir = "MCG_segmentation/MCGSegmentator_s/checkpoints/best"):
         
         self.filename = filename
         self.add_filename =   add_filename
@@ -432,7 +432,7 @@ class Analyzer:
         return predicted_indices, confidence_scores
 
 
-    def segment_entire_run(self, data: np.ndarray, window_size: int = 300, overlap: float = 0.5):
+    def segment_entire_run(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5):
         """
         Segment the entire run (potentially T > 2000) using a sliding window.
 
@@ -543,7 +543,7 @@ class Analyzer:
         return final_labels, resampled_data_np.squeeze(axis=1), final_confidences
 
 
-    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 300, overlap: float = 0.5, print_results: bool = True):
+    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True):
         """
         Find the channel with the clearest signal based on segmentation confidence
         and physiological plausibility.
