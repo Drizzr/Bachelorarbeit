@@ -18,7 +18,7 @@ import pandas as pd
 import re
 import json
 from scipy.interpolate import interp1d
-from MCG_segmentation.model.model import ECGSegmenter
+from MCG_segmentation.model.model import ECGSegmenter, DENS_ECG_segmenter
 import torch
 import warnings  # Use warnings instead of print for less intrusive messages
 import numba
@@ -101,7 +101,7 @@ class Analyzer:
             dropout_rate=checkpoint_args.get("dropout_rate", 0.3)
             # Load other args if needed by model init
             print(f"Loaded model args: num_classes={num_classes}, num_heads={num_heads}, dropout={dropout_rate}")
-        model = ECGSegmenter() # Add other args if needed
+        model =  ECGSegmenter() # Add other args if needed
         try: 
             model.load_state_dict(torch.load(best_model_path, map_location=device))
         except RuntimeError as e: 
@@ -891,14 +891,12 @@ class Analyzer:
 
         
     def plotting_time_series(self, data, time, num_ch, name, path = None, save = False):
-        fig, elem= plt.subplots(nrows=1,ncols=1, sharex=True, figsize=(12, 4))  
+        fig, elem= plt.subplots(nrows=1,ncols=1, sharex=True, figsize=(10, 4))  
         fig.suptitle(name,size='small', y=0.99)
-        print(data.shape)
         if num_ch>1:
             # linienstile = ['-', '--', '-.', ':']
             for i in range(num_ch):
                 elem.plot(time, data[i], alpha=0.4,color=self.cmaplist[i], label = f"Ch {i+1}")
-            elem.legend(loc='lower center',bbox_to_anchor=(0.5,-0.35),ncol=7)
             elem.grid(alpha=0.7)
             elem.minorticks_on()
             elem.grid(True,which='minor',linestyle='dotted',alpha=0.7)
@@ -907,7 +905,6 @@ class Analyzer:
             fig.subplots_adjust(top= 0.95, bottom=0.25)
         else:
             elem.plot(time, data,"-", label = "Single Channel")
-            elem.legend(loc='lower center',bbox_to_anchor=(0.5,-0.2),ncol=5)
             elem.grid(alpha=0.7)
             elem.minorticks_on()
             elem.grid(True,which='minor',linestyle='dotted',alpha=0.7)
