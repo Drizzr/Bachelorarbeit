@@ -148,10 +148,16 @@ def evaluate(model, dataloader, loss_fn, device, num_classes, output_dir, sample
     print(classification_report(all_labels, all_preds, target_names=[CLASS_NAMES.get(i, f"Class {i}") for i in range(num_classes)], digits=4))
 
     cm = confusion_matrix(all_labels, all_preds, labels=range(num_classes))
+    cm_percent = cm.astype('float') / cm.sum(axis=1, keepdims=True) * 100  # normalize row-wise to percentage
+
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=CLASS_NAMES.values(), yticklabels=CLASS_NAMES.values())
-    plt.title("Confusion Matrix")
-    plt.xlabel("Predicted"); plt.ylabel("True")
+    sns.heatmap(cm_percent, annot=True, fmt='.1f', cmap='Blues',
+                xticklabels=CLASS_NAMES.values(),
+                yticklabels=CLASS_NAMES.values(),
+                cbar_kws={'label': 'Percentage (%)'})
+    plt.title("Confusion Matrix (%)")
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "confusion_matrix.png"))
     plt.close()
@@ -160,9 +166,9 @@ def evaluate(model, dataloader, loss_fn, device, num_classes, output_dir, sample
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/checkpoints/best")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/MCGSegmentator_s/checkpoints/best")
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/qtdb/processed/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/MCGSegmentator_s/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
@@ -183,7 +189,7 @@ def main():
         baseline_wander_mag=0.03,
         amplitude_scale_range=0.1,
         max_time_shift=5,
-        augmentation_prob=1.00,
+        augmentation_prob=0.00,
     )
 
     dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)
