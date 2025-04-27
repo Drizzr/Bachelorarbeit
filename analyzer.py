@@ -1,15 +1,12 @@
 import numpy as np
 from nptdms import TdmsFile
 import matplotlib.pyplot as plt
-from scipy.stats import linregress
 from scipy import signal
 import ast
 from sklearn.decomposition import FastICA
 import matplotlib.pyplot as plt
 from scipy.signal import correlate
 import plotly.graph_objects as go
-from scipy.optimize import curve_fit
-from scipy.signal import find_peaks
 from matplotlib.animation import FuncAnimation
 import matplotlib.colors as mcolors
 from scipy.interpolate import griddata
@@ -21,7 +18,7 @@ from scipy.interpolate import interp1d
 from MCG_segmentation.model.model import ECGSegmenter, DENS_ECG_segmenter
 import torch
 import warnings  # Use warnings instead of print for less intrusive messages
-import numba
+from scipy.signal import savgol_filter
 
 
 
@@ -395,39 +392,139 @@ class Analyzer:
 
 
 
-    def segment_heart_beat_intervall(self, data: torch.Tensor):
+    def plot_segmented_signal(self, signal, pred, axs = None):
+        """Plot signal with true/predicted labels."""
+        signal = signal.squeeze()
+        pred = pred.squeeze()
+
+        t = np.arange(len(signal))
+
+        if axs is None:
+            fig, axs = plt.subplots(1, 1, figsize=(15, 8), sharex=True)
+
+
+        # --- Panel 1: Signal + True Dots + Predicted Background ---
+        axs.plot(t, signal, color='black', linewidth=0.8, label='Signal (Processed)')
+        axs.grid(True, linestyle=':', alpha=0.7)
+
+        current_start_idx = 0
+        legend_handles_map = {}
+        line_signal, = axs.plot([],[], color='black', linewidth=0.8, label='Signal')  # Dummy for legend
+        legend_handles_map['Signal'] = line_signal
+
+        for k in range(1, len(pred)):
+            if pred[k] != pred[current_start_idx]:
+                label_idx = pred[current_start_idx]
+                label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
+                color = self.SEGMENT_COLORS.get(label_idx, 'gray')
+                h = axs.axvspan(t[current_start_idx] - 0.5, t[k] - 0.5, color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
+                if f'Pred: {label_name}' not in legend_handles_map:
+                    legend_handles_map[f'Pred: {label_name}'] = h
+                current_start_idx = k
+
+        # Final segmen
+        label_idx = pred[current_start_idx]
+        label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
+        color = self.SEGMENT_COLORS.get(label_idx, 'gray')
+        h = axs.axvspan(t[current_start_idx] - 0.5, t[-1] + 0.5, color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
+        if f'Pred: {label_name}' not in legend_handles_map:
+            legend_handles_map[f'Pred: {label_name}'] = h
+
+
+        # Combined legend
+        combined_handles = [legend_handles_map['Signal']]
+        combined_labels = ['Signal']
+        for i in sorted(self.CLASS_NAMES_MAP.keys()):
+            label_name_pred = f'Pred: {self.CLASS_NAMES_MAP[i]}'
+            if label_name_pred in legend_handles_map:
+                patch = plt.Rectangle((0, 0), 1, 1, fc=self.SEGMENT_COLORS.get(i, 'gray'), alpha=0.3)
+                combined_handles.append(patch)
+                combined_labels.append(label_name_pred)
+
+        axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
+
+        plt.show()
+
+    def segment_heart_beat_intervall(self, data: torch.Tensor, min_duration: int = 15):
         """
         Segments the heart beat interval. Classifies each data point as:
         0) No Wave, 1) P-Wave, 2) QRS, 3) T-Wave.
 
         Args:
-            data: torch Tensor of shape (b, 1, T) where b is the batch size and T is the number of time steps.
+            data: torch Tensor of shape (b, 1, T)
+            min_duration: Minimum duration of segments to be considered valid.
         Returns:
             Tuple of (numpy array of segment classifications (b, T), numpy array of confidence scores (b, T))
         """
         if data.numel() == 0:
             warnings.warn("No data to segment.")
-            # Return empty arrays with correct batch dimension if possible
             batch_size = data.shape[0]
             return np.empty((batch_size, 0), dtype=int), np.empty((batch_size, 0), dtype=float)
 
-        # Check max length *before* inference
-        max_len = 2000 # Define as constant or class attribute
+        # Constants
+        max_len = 2000
+
+
+        # Clip long sequences
         if data.shape[-1] > max_len:
-            warnings.warn(f"Data length ({data.shape[-1]}) exceeds maximum sequence length of {max_len}. Truncating data.")
+            warnings.warn(f"Data length ({data.shape[-1]}) exceeds maximum ({max_len}). Truncating.")
             data = data[..., :max_len]
 
-        # Ensure data is on the correct device
         data = data.to(self.DEVICE)
 
         with torch.no_grad():
             logits = self.model(data)
-            probabilities = torch.softmax(logits, dim=-1) # Use torch.softmax
-            confidence_scores_pt, predicted_indices_pt = torch.max(probabilities, dim=-1) # Get both max value and index
+            probabilities =  torch.softmax(logits, dim=-1)
+            confidence_scores_pt, predicted_indices_pt = torch.max(probabilities, dim=-1)
 
-            # Move to CPU and convert to NumPy *once*
             predicted_indices = predicted_indices_pt.cpu().numpy()
             confidence_scores = confidence_scores_pt.cpu().numpy()
+
+        # --- Postprocessing to fix short artifacts ---
+        batch_size, time_steps = predicted_indices.shape
+        for b in range(batch_size):
+            labels_arr = predicted_indices[b]
+            i = 0
+            while i < time_steps:
+                current_label = labels_arr[i]
+                start = i
+                while i < time_steps and labels_arr[i] == current_label:
+                    i += 1
+                end = i  # exclusive
+
+                segment_length = end - start
+                if segment_length < min_duration:
+                    # Determine neighboring segments
+                    left_label = labels_arr[start - 1] if start > 0 else None
+                    right_label = labels_arr[end] if end < time_steps else None
+
+                    # Count left and right neighbor lengths
+                    left_len = 0
+                    if left_label is not None:
+                        j = start - 1
+                        while j >= 0 and labels_arr[j] == left_label:
+                            left_len += 1
+                            j -= 1
+
+                    right_len = 0
+                    if right_label is not None:
+                        j = end
+                        while j < time_steps and labels_arr[j] == right_label:
+                            right_len += 1
+                            j += 1
+
+                    # Decide which neighbor to copy
+                    if left_len >= right_len and left_label is not None:
+                        new_label = left_label
+                    elif right_label is not None:
+                        new_label = right_label
+                    else:
+                        new_label = 0  # fallback if no neighbors
+
+                    # Reassign short segment
+                    labels_arr[start:end] = new_label
+
+            predicted_indices[b] = labels_arr
 
         return predicted_indices, confidence_scores
 
@@ -471,6 +568,7 @@ class Analyzer:
             resampled_data_list = []
             for i in range(data.shape[0]):
                 resampled_sample = signal.resample(data[i, 0, :], num_samples_target)
+                resampled_sample = savgol_filter(resampled_sample, window_length=7, polyorder=2, axis=-1)
                 resampled_data_list.append(resampled_sample)
 
             resampled_data_np = np.stack(resampled_data_list, axis=0)
@@ -521,7 +619,6 @@ class Analyzer:
             max_vals = segment.abs().max(dim=-1, keepdim=True)[0] # [0] to get values
             # Add small epsilon to avoid division by zero
             segment = torch.where(max_vals > 1e-6, segment / (max_vals + 1e-9), segment)
-
             # --- Get Segment Labels ---
             labels, confidences = self.segment_heart_beat_intervall(segment)
 
@@ -543,7 +640,7 @@ class Analyzer:
         return final_labels, resampled_data_np.squeeze(axis=1), final_confidences
 
 
-    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True):
+    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.7, plausibility_weight: float = 0.3):
         """
         Find the channel with the clearest signal based on segmentation confidence
         and physiological plausibility.
@@ -618,8 +715,6 @@ class Analyzer:
         max_conf = np.max(mean_confidence)
         normalized_confidence = mean_confidence / (max_conf + 1e-9) if max_conf > 0 else mean_confidence
 
-        confidence_weight = 0.6
-        plausibility_weight = 0.4
         final_scores = (confidence_weight * normalized_confidence) + (plausibility_weight * plausibility_scores)
 
         # Find best channel
@@ -656,7 +751,7 @@ class Analyzer:
 
     def detect_qrs_complex_peaks_cleanest_channel(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False):
         """
-        Detects QRS complex peaks on the cleanest channel.
+        Detects QRS complex peaks on the cleanest channel with improved stability.
 
         Args:
             data: numpy array of shape (num_channels, num_samples). Raw data.
@@ -674,8 +769,8 @@ class Analyzer:
                 - Average HRV (SDNN in ms) across channels
         """             
         # 1. Find cleanest channel and get segmentations
-        best_channel_idx, (labels, resampled_data, confidence) = self.find_cleanest_channel(data, print_results=False)  
-
+        best_channel_idx, (labels, resampled_data, confidence) = self.find_cleanest_channel(data, print_results=False) 
+        
         if labels.size == 0:
             warnings.warn("Segmentation data is empty, cannot detect peaks.")
             return [], resampled_data, best_channel_idx, 0.0, 0.0
@@ -684,39 +779,20 @@ class Analyzer:
         labels_ch = labels[best_channel_idx]
         resampled_data_ch = resampled_data[best_channel_idx]
         confidence_ch = confidence[best_channel_idx]
-        T_resampled = labels_ch.shape[0]
         sampling_rate_resampled = 250  # Hardcoded based on previous logic
 
         # Convert min length from seconds to samples
         min_qrs_length_samples = int(min_qrs_length_sec * sampling_rate_resampled)
         min_distance_samples = int(min_distance_sec * sampling_rate_resampled)  # Convert min distance to samples
 
-        # 2. Find QRS intervals efficiently using np.diff
+        # 2. Find QRS segments using improved method
         qrs_label = self.LABEL_TO_IDX["QRS"]
-        is_qrs = (labels == qrs_label).astype(np.int8)
-        diff_qrs = np.diff(is_qrs, prepend=0, append=0)  # Pad to catch start/end
-
-        qrs_starts = np.where(diff_qrs == 1)[0]
-        qrs_ends = np.where(diff_qrs == -1)[0]  # End index is exclusive
-
-        if len(qrs_starts) != len(qrs_ends) or np.any(qrs_starts >= qrs_ends):
-            warnings.warn("Mismatch in QRS start/end markers. Peak detection might be incomplete.")
-            # Attempt to fix simple cases (e.g., starts/ends at array boundaries)
-            if len(qrs_starts) > len(qrs_ends) and qrs_starts[-1] < T_resampled:
-                qrs_ends = np.append(qrs_ends, T_resampled)
-            if len(qrs_ends) > len(qrs_starts) and qrs_ends[0] > 0:
-                qrs_starts = np.insert(qrs_starts, 0, 0)
-            min_len = min(len(qrs_starts), len(qrs_ends))
-            qrs_starts = qrs_starts[:min_len]
-            qrs_ends = qrs_ends[:min_len]
-            valid = qrs_starts < qrs_ends
-            qrs_starts = qrs_starts[valid]
-            qrs_ends = qrs_ends[valid]
-
+        qrs_segments = self._detect_qrs_segments(labels_ch, qrs_label)
+        
         peak_positions = []
 
-        # 3. Iterate through found QRS intervals
-        for start, end in zip(qrs_starts, qrs_ends):
+        # 3. Process each QRS segment
+        for start, end in qrs_segments:
             length = end - start
             if length < min_qrs_length_samples:
                 continue
@@ -754,7 +830,7 @@ class Analyzer:
                 rr_intervals_sec = rr_intervals_samples / sampling_rate_resampled
                 rr_intervals_ms = rr_intervals_sec * 1000
 
-                # Basic outlier removal for RR intervals (e.g., remove physiologically implausible values)
+                # Basic outlier removal for RR intervals
                 plausible_rr_ms = rr_intervals_ms[(rr_intervals_ms > 200) & (rr_intervals_ms < 2000)]
 
                 if len(plausible_rr_ms) > 1:
@@ -777,10 +853,59 @@ class Analyzer:
 
         return peak_positions, resampled_data, best_channel_idx, heart_rate, hrv_sdnn_ms
 
+    @staticmethod
+    def _detect_qrs_segments(labels_ch, qrs_label):
+        """
+        More robust QRS segment detection function.
+        
+        Args:
+            labels_ch: Channel labels array
+            qrs_label: The label index for QRS segments
+        
+        Returns:
+            List of tuples containing (start_idx, end_idx) for each valid QRS segment
+        """
+        # Get QRS mask
+        is_qrs = (labels_ch == qrs_label).astype(np.int8)
+        
+        # Find continuous segments using run-length encoding approach
+        # This handles incomplete segments at boundaries better
+        where_changes = np.where(np.diff(is_qrs, prepend=0, append=0) != 0)[0]
+        
+        # No changes means either all QRS or no QRS
+        if len(where_changes) == 0:
+            if is_qrs[0] == 1:  # All signal is QRS
+                return [(0, len(is_qrs))]
+            else:  # No QRS found
+                return []
+                
+        # Process change points to get valid segments
+        segments = []
+        
+        # Initial state (0=non-QRS, 1=QRS)
+        state = 0 if is_qrs[0] == 0 else 1
+        start_idx = 0 if state == 1 else None
+        
+        for change_point in where_changes:
+            if state == 0:  # Transition from non-QRS to QRS
+                start_idx = change_point
+                state = 1
+            else:  # Transition from QRS to non-QRS
+                if start_idx is not None:  # Safety check
+                    segments.append((start_idx, change_point))
+                start_idx = None
+                state = 0
+        
+        # Handle case where signal ends during QRS
+        if state == 1 and start_idx is not None:
+            segments.append((start_idx, len(is_qrs)))
+            
+        return segments
+
 
     def detect_qrs_complex_peaks_all_channels(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False):
         """
-        Detects QRS complex peaks for all channels and calculates HR and HRV.
+        Detects QRS complex peaks for all channels and calculates HR and HRV with improved stability.
 
         Args:
             data: numpy array of shape (num_channels, num_samples). Raw data.
@@ -804,40 +929,22 @@ class Analyzer:
             return {}, resampled_data, cleanest_channel, 0.0, 0.0
 
         num_channels = labels.shape[0]
-        T_resampled = labels.shape[1]
         sampling_rate_resampled = 250  # Hardcoded based on previous logic
         min_qrs_length_samples = int(min_qrs_length_sec * sampling_rate_resampled)
-        min_distance_samples = int(min_distance_sec * sampling_rate_resampled)  # Convert min distance to samples
+        min_distance_samples = int(min_distance_sec * sampling_rate_resampled)
         qrs_label = self.LABEL_TO_IDX["QRS"]
         peak_positions_all_channels = {}
 
         all_heart_rates = []
         all_hrv_sdnn = []
 
-        # Step 2: Process each channel independently
+        # Process each channel independently
         for ch_idx in range(num_channels):
-            is_qrs = (labels[ch_idx] == qrs_label).astype(np.int8)
-            diff_qrs = np.diff(is_qrs, prepend=0, append=0)
-
-            qrs_starts = np.where(diff_qrs == 1)[0]
-            qrs_ends = np.where(diff_qrs == -1)[0]
-
-            if len(qrs_starts) != len(qrs_ends) or np.any(qrs_starts >= qrs_ends):
-                warnings.warn(f"Channel {ch_idx}: Mismatch in QRS start/end markers. Peak detection might be incomplete.")
-                if len(qrs_starts) > len(qrs_ends) and qrs_starts[-1] < T_resampled:
-                    qrs_ends = np.append(qrs_ends, T_resampled)
-                if len(qrs_ends) > len(qrs_starts) and qrs_ends[0] > 0:
-                    qrs_starts = np.insert(qrs_starts, 0, 0)
-                min_len = min(len(qrs_starts), len(qrs_ends))
-                qrs_starts = qrs_starts[:min_len]
-                qrs_ends = qrs_ends[:min_len]
-                valid = qrs_starts < qrs_ends
-                qrs_starts = qrs_starts[valid]
-                qrs_ends = qrs_ends[valid]
-
+            # Use the improved QRS segment detection
+            qrs_segments = self._detect_qrs_segments(labels[ch_idx], qrs_label)
             peak_positions = []
 
-            for start, end in zip(qrs_starts, qrs_ends):
+            for start, end in qrs_segments:
                 length = end - start
                 if length < min_qrs_length_samples:
                     continue
@@ -851,7 +958,7 @@ class Analyzer:
                 peak_absolute_idx = start + peak_relative_idx
                 peak_positions.append(peak_absolute_idx)
 
-            # 4. Post-process to ensure minimum distance between peaks
+            # Post-process to ensure minimum distance between peaks
             peak_positions = sorted(list(set(peak_positions)))  # Ensure unique and sorted
             filtered_peaks = []
 
@@ -862,7 +969,7 @@ class Analyzer:
             peak_positions = filtered_peaks
             peak_positions_all_channels[ch_idx] = peak_positions
 
-            # Step 3: Calculate HR and HRV (optional)
+            # Calculate HR and HRV
             if len(peak_positions) > 1:
                 rr_intervals_samples = np.diff(peak_positions)
                 rr_intervals_sec = rr_intervals_samples / sampling_rate_resampled
@@ -875,7 +982,6 @@ class Analyzer:
                     hrv_sdnn_ms = np.std(plausible_rr_ms)
                     all_heart_rates.append(heart_rate)
                     all_hrv_sdnn.append(hrv_sdnn_ms)
-
 
         avg_heart_rate = np.mean(all_heart_rates) if all_heart_rates else 0.0
         avg_hrv_sdnn = np.mean(all_hrv_sdnn) if all_hrv_sdnn else 0.0
@@ -1022,13 +1128,19 @@ class Analyzer:
                 for suffix, target_list in zip(['_x', '_y', '_z'], [x_data, y_data, z_data]):
                     channel_name = quspin_id + suffix
                     channel_index = self.quspin_channel_dict.get(channel_name, None)
+                    
 
                     # Check if the channel is in the exclusion list
-                    if channel_index is None or (self.sensor_channels_to_exclude and self.sensor_channels_to_exclude.get(key, None) and channel_name in self.sensor_channels_to_exclude.get(key,[])):
+                    if channel_index is None:
+                        continue
+                    
+                    elif (self.sensor_channels_to_exclude and self.sensor_channels_to_exclude.get(key, None) and channel_name in self.sensor_channels_to_exclude.get(key,[])):
+                        data[channel_index] = np.zeros(data.shape[-1])
                         continue
 
                     elif self.sensor_channels_to_exclude and "*"+suffix in self.sensor_channels_to_exclude.get(key, []):
                         # *_x skips every channel with _x
+                        data[channel_index] = np.zeros(data.shape[-1])
                         continue
 
                     else:
@@ -1134,247 +1246,14 @@ class Analyzer:
         try:
             ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter)
             S_ica = ica.fit_transform(arr_cleaned.T).T
-        except:
-            print("All channels are empty")
+        except Exception as e:
+            print(f"ICA failed: {e}")
             return None
 
         # detect heart beat signal from the ICA components
 
-        return S_ica  #, heart_beat_signal_index
+        return S_ica  # shape: (n_cols*n_rows, num_samples)
 
-    def detect_qrst_with_t_bounds(self, signal, time):
-        """
-        Detect Q, R, S, T points and T wave boundaries in an ECG/MCG-like signal of a single heartbeat window.
-        Specifically designed to handle both positive and negative R peaks.
-
-        Parameters:
-        -----------
-        signal : array-like
-            The ECG/MCG signal.
-        time : array-like
-            Time points corresponding to the signal.
-
-        Returns:
-        --------
-        dict
-            Dictionary containing indices and time values for Q, R, S, T points
-            and T wave boundaries (start, end).
-        """
-        
-        def lorentzian(x, A, x0, gamma):
-            """Lorentzian function for curve fitting."""
-            return A / (1 + ((x - x0) / gamma) ** 2)
-
-        # Convert inputs to numpy arrays if they aren't already
-        signal_array = np.array(signal)
-        time_array = np.array(time)
-        
-        # Get absolute amplitude for threshold calculations
-        abs_signal = np.abs(signal_array)
-        signal_mean = np.mean(abs_signal)
-        signal_std = np.std(abs_signal)
-
-        # Find peaks in BOTH positive and negative directions
-        # For positive peaks (R peaks)
-        pos_peaks, _ = find_peaks(signal_array, height=signal_mean + 0.5 * signal_std, distance=len(signal_array) // 4)
-        
-        # For negative peaks (S peaks)
-        neg_peaks, _ = find_peaks(-signal_array, height=signal_mean + 0.5 * signal_std, distance=len(signal_array) // 4)
-        
-        # Determine if R peak is positive or negative
-        is_r_negative = False
-        r_idx = None
-
-        # Handle cases where both positive and negative peaks are detected
-        if len(pos_peaks) > 0 and len(neg_peaks) > 0:
-            max_pos_peak = np.max(signal_array[pos_peaks])
-            max_neg_peak = np.max(-signal_array[neg_peaks])
-            
-            if max_neg_peak > max_pos_peak:
-                is_r_negative = True
-                r_idx = neg_peaks[np.argmax(-signal_array[neg_peaks])]
-            else:
-                r_idx = pos_peaks[np.argmax(signal_array[pos_peaks])]
-        elif len(pos_peaks) > 0:
-            r_idx = pos_peaks[np.argmax(signal_array[pos_peaks])]
-        elif len(neg_peaks) > 0:
-            is_r_negative = True
-            r_idx = neg_peaks[np.argmax(-signal_array[neg_peaks])]
-        else:
-            raise ValueError("No R peaks detected. Signal may be too noisy or too flat.")
-        
-        # Find Q and S points based on R peak polarity
-        q_search_window = max(0, r_idx - int(len(signal_array) * 0.07))
-        q_segment = signal_array[q_search_window:r_idx]
-        
-        if len(q_segment) > 0:
-            if is_r_negative:
-                q_idx = q_search_window + np.argmax(q_segment)
-            else:
-                q_idx = q_search_window + np.argmin(q_segment)
-        else:
-            q_idx = r_idx  # Fallback if window is empty
-
-        s_search_end = min(len(signal_array), r_idx + int(len(signal_array) * 0.07))
-        s_segment = signal_array[r_idx:s_search_end]
-        
-        if len(s_segment) > 0:
-            if is_r_negative:
-                s_idx = r_idx + np.argmax(s_segment)
-            else:
-                s_idx = r_idx + np.argmin(s_segment)
-        else:
-            s_idx = r_idx  # Fallback if window is empty
-        
-        # Find P wave (preceding Q)
-        p_search_start = max(0, q_idx - int(len(signal_array) * 0.25))
-        p_search_end = q_idx - int(len(signal_array) * 0.1)
-        p_segment = signal_array[p_search_start:p_search_end]
-        
-        p_pos_peaks, _ = find_peaks(p_segment, height=0)
-        p_neg_peaks, _ = find_peaks(-p_segment, height=0)
-        
-        if len(p_pos_peaks) > 0 and len(p_neg_peaks) > 0:
-            max_p_pos = np.max(p_segment[p_pos_peaks])
-            max_p_neg = np.max(-p_segment[p_neg_peaks])
-            
-            if max_p_pos > max_p_neg:
-                p_relative_idx = p_pos_peaks[np.argmax(p_segment[p_pos_peaks])]
-            else:
-                p_relative_idx = p_neg_peaks[np.argmax(-p_segment[p_neg_peaks])]
-        elif len(p_pos_peaks) > 0:
-            p_relative_idx = p_pos_peaks[np.argmax(p_segment[p_pos_peaks])]
-        elif len(p_neg_peaks) > 0:
-            p_relative_idx = p_neg_peaks[np.argmax(-p_segment[p_neg_peaks])]
-        else:
-            p_relative_idx = np.argmax(np.abs(p_segment))
-        
-        p_idx = p_search_start + p_relative_idx
-
-        # Find T wave (peak after S)
-        t_search_start = s_idx + 80  # Skip a few samples to avoid S
-        t_search_end = min(len(signal_array), s_idx + int(len(signal_array) * 0.4))
-        
-        t_idx = None
-        t_segment = None  # Initialize t_segment here to avoid UnboundLocalError
-        t_relative_idx = None  # Initialize t_relative_idx 
-        
-        if t_search_end <= t_search_start:
-            t_idx = s_idx  # Fallback if window is invalid
-            t_start_idx = t_idx
-            t_end_idx = t_idx
-        else:
-            t_segment = signal_array[t_search_start:t_search_end]
-            
-            # T wave typically has the same polarity as the R wave in standard leads
-            # but can be opposite in MCG signals sometimes
-            # We'll look for both positive and negative T peaks and pick the most prominent
-            t_pos_peaks, _ = find_peaks(t_segment, height=0)
-            t_neg_peaks, _ = find_peaks(-t_segment, height=0)
-            
-            if len(t_pos_peaks) > 0 and len(t_neg_peaks) > 0:
-                max_t_pos = np.max(t_segment[t_pos_peaks]) if len(t_pos_peaks) > 0 else 0
-                max_t_neg = np.max(-t_segment[t_neg_peaks]) if len(t_neg_peaks) > 0 else 0
-                
-                if max_t_pos > max_t_neg:
-                    t_relative_idx = t_pos_peaks[np.argmax(t_segment[t_pos_peaks])]
-                    t_is_positive = True
-                else:
-                    t_relative_idx = t_neg_peaks[np.argmax(-t_segment[t_neg_peaks])]
-                    t_is_positive = False
-            elif len(t_pos_peaks) > 0:
-                t_relative_idx = t_pos_peaks[np.argmax(t_segment[t_pos_peaks])]
-                t_is_positive = True
-            elif len(t_neg_peaks) > 0:
-                t_relative_idx = t_neg_peaks[np.argmax(-t_segment[t_neg_peaks])]
-                t_is_positive = False
-            else:
-                # If no clear peak, use the maximum absolute deviation from baseline
-                t_relative_idx = np.argmax(np.abs(t_segment))
-                t_is_positive = t_segment[t_relative_idx] > 0
-                
-            t_idx = t_search_start + t_relative_idx
-
-        # Default values in case the try block fails
-        t_start_idx = t_idx if t_idx is not None else s_idx
-        t_end_idx = t_idx if t_idx is not None else s_idx
-
-        # Only attempt curve fitting if we have valid t_segment and t_relative_idx
-        if t_segment is not None and t_relative_idx is not None and len(t_segment) > 0:
-            try:
-                # Create a symmetrical window around the T wave for fitting
-                # First, determine a reasonable window size for analysis
-                window_half_width = min(50, len(t_segment) // 4)  # Use smaller of 50 samples or 1/4 of T segment
-                
-                # Create symmetrical indices for fitting, centered on T peak
-                fit_start_idx = max(0, t_relative_idx - window_half_width)
-                fit_end_idx = min(len(t_segment), t_relative_idx + window_half_width)
-                
-                # Extract the segment for fitting
-                x_data = np.arange(fit_start_idx, fit_end_idx)
-                y_data = t_segment[fit_start_idx:fit_end_idx]
-                
-                # Initial guess for Lorentzian fitting: [Amplitude, Peak position (t_relative_idx), Width]
-                # Adjust amplitude based on T wave polarity
-                peak_amplitude = t_segment[t_relative_idx]
-                initial_guess = [peak_amplitude, t_relative_idx, window_half_width / 2.5]
-                
-                # Perform the Lorentzian fitting
-                popt, _ = curve_fit(lorentzian, x_data, y_data, p0=initial_guess)
-                A, x0, gamma = popt  # Unpack the fitted parameters
-
-                # Compute the Full Width at Half Maximum (FWHM)
-                fwhm = 3 * gamma  # Use 3.0 times gamma for a standard definition of T wave boundaries
-                
-                # Define the start and end indices based on FWHM (in a symmetric window around the T peak)
-                # Ensure symmetry around the fitted peak (x0)
-                start_fwhm_idx = max(0, int(x0 - fwhm))
-                end_fwhm_idx = min(len(t_segment) - 1, int(x0 + fwhm))
-                
-                # If boundaries are asymmetric due to signal limits, adjust to maintain symmetry
-                width_to_start = x0 - start_fwhm_idx
-                width_to_end = end_fwhm_idx - x0
-                symmetric_width = min(width_to_start, width_to_end)
-                
-                # Redefine boundaries to be perfectly symmetrical
-                start_fwhm_idx = max(0, int(x0 - symmetric_width))
-                end_fwhm_idx = min(len(t_segment) - 1, int(x0 + symmetric_width))
-                
-                # Adjust these indices to the overall signal range (taking t_search_start into account)
-                t_start_idx = start_fwhm_idx + t_search_start
-                t_end_idx = end_fwhm_idx + t_search_start
-                
-                # Final bounds check
-                t_start_idx = max(0, min(len(signal_array) - 1, t_start_idx))
-                t_end_idx = max(0, min(len(signal_array) - 1, t_end_idx))
-
-            except (RuntimeError, ValueError) as e:
-                # Fallback if fitting fails: use a fixed symmetrical window around detected T peak
-                print(f"T wave fitting failed: {e}")
-                fallback_window = min(30, len(t_segment) // 6)  # Conservative window
-                t_start_idx = max(0, t_idx - fallback_window)
-                t_end_idx = min(len(signal_array) - 1, t_idx + fallback_window)
-
-        # Compile results
-        results = {
-            'p_idx': p_idx,
-            'q_idx': q_idx,
-            'r_idx': r_idx,
-            's_idx': s_idx,
-            't_idx': t_idx if t_idx is not None else s_idx,  # T peak position (manually detected)
-            't_start_idx': t_start_idx,  # T wave start
-            't_end_idx': t_end_idx,  # T wave end
-            'p_time': time_array[p_idx],
-            'q_time': time_array[q_idx],
-            'r_time': time_array[r_idx],
-            's_time': time_array[s_idx],
-            't_time': time_array[t_idx if t_idx is not None else s_idx],
-            't_start_time': time_array[t_start_idx],
-            't_end_time': time_array[t_end_idx],
-            'is_r_negative': is_r_negative
-        }
-        
-        return results
 
     def create_heat_map_animation(self, data, cleanest_i, cleanest_j, output_file='animation.mp4', interval=100, resolution=500, stride=1, direction='x', key="Brustlage", dynamic_scale=True):
         
