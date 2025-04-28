@@ -1,17 +1,16 @@
 data w/o noise:
 
-Eval Loss: 0.9024 | Accuracy: 0.8390
+Eval Loss: 0.8990 | Accuracy: 0.8423
               precision    recall  f1-score   support
 
-     No Wave     0.8598    0.8322    0.8458    142196
-      P Wave     0.7851    0.7857    0.7854     32724
-         QRS     0.8642    0.8647    0.8644     32804
-      T Wave     0.8102    0.8690    0.8385     62276
+     No Wave     0.8669    0.8312    0.8487    129300
+      P Wave     0.7875    0.8151    0.8011     29456
+         QRS     0.8664    0.8661    0.8663     29428
+      T Wave     0.8075    0.8695    0.8374     55816
 
-    accuracy                         0.8390    270000
-   macro avg     0.8298    0.8379    0.8335    270000
-weighted avg     0.8398    0.8390    0.8391    270000
-
+    accuracy                         0.8423    244000
+   macro avg     0.8321    0.8455    0.8384    244000
+weighted avg     0.8436    0.8423    0.8425    244000
 
 
 noisy data:

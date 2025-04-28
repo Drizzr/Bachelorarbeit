@@ -32,7 +32,7 @@ def load_model(load_dir, device):
     with open(param_path) as f:
         args = json.load(f).get("args", {})
 
-    model = ECGSegmenter()
+    model = DENS_ECG_segmenter()
 
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
@@ -166,9 +166,9 @@ def evaluate(model, dataloader, loss_fn, device, num_classes, output_dir, sample
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/MCGSegmentator_s/checkpoints/best")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/DENS_Model/checkpoints/best")
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/qtdb/processed/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/MCGSegmentator_s/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/DENS_Model/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
@@ -192,7 +192,7 @@ def main():
         augmentation_prob=0.00,
     )
 
-    dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=True, num_workers=args.num_workers)
+    dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=False, num_workers=args.num_workers)
 
     sample_info = None
     if args.plot_sample_index is not None and 0 <= args.plot_sample_index < len(dataset):

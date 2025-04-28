@@ -38,7 +38,7 @@ class ResidualBlock(nn.Module):
 
 
 class ECGSegmenter(nn.Module):
-    def __init__(self, num_classes=4, input_channels=1, hidden_channels=16, 
+    def __init__(self, num_classes=4, input_channels=1, hidden_channels=16,  # 32, 64 for xl
                 lstm_hidden=20, dropout_rate=0.3, max_seq_len=2000):
         super().__init__()
         
