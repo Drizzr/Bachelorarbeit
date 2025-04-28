@@ -1,254 +1,372 @@
-import numpy as np
-from nptdms import TdmsFile
-import matplotlib.pyplot as plt
-from scipy import signal
-import ast
-from sklearn.decomposition import FastICA
-import matplotlib.pyplot as plt
-from scipy.signal import correlate
-import plotly.graph_objects as go
-from matplotlib.animation import FuncAnimation
-import matplotlib.colors as mcolors
-from scipy.interpolate import griddata
 import os
-import pandas as pd
 import re
 import json
-from scipy.interpolate import interp1d
-from MCG_segmentation.model.model import ECGSegmenter, DENS_ECG_segmenter
+import ast
+import warnings
+import logging
+import numpy as np
+import pandas as pd
 import torch
-import warnings  # Use warnings instead of print for less intrusive messages
-from scipy.signal import savgol_filter
+from nptdms import TdmsFile
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.animation import FuncAnimation
+import plotly.graph_objects as go
+from scipy import signal
+from scipy.interpolate import griddata
+from scipy.signal import correlate, savgol_filter, butter, filtfilt
+from sklearn.decomposition import FastICA
 
+# Attempt to import local MCG_segmentation package
+try:
+    from MCG_segmentation.model.model import ECGSegmenter
+except ImportError:
+    logging.warning("Could not import ECGSegmenter. Segmentation features will be unavailable.")
+    ECGSegmenter = None
 
-
-
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 class Analyzer:
+    """Analyzer class for processing and analyzing MCG (Magnetocardiography) data from TDMS files.
 
-    # --- Constants (Match Training/Evaluation) ---
+    This class provides methods for loading, filtering, segmenting, and visualizing MCG data,
+    including heart vector projections, QRS complex detection, and heatmap animations.
+    """
+
+    # Class constants
     CLASS_NAMES_MAP = {0: "No Wave", 1: "P Wave", 2: "QRS", 3: "T Wave"}
     SEGMENT_COLORS = {0: "silver", 1: "lightblue", 2: "lightcoral", 3: "lightgreen"}
     LABEL_TO_IDX = {v: k for k, v in CLASS_NAMES_MAP.items()}
-    
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") # mps is not supported in this version of numpy
-    
-    print(f"Using device: {DEVICE}")
+    DEFAULT_SAMPLING_RATE = 1000
+    DEFAULT_SCALING = 2.7 / 1000
+    DEFAULT_NUM_CHANNELS = 48
+    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/MCGSegmentator_s/checkpoints/best"
 
-    def __init__(self, filename = "", add_filename = "", log_file_path = "", 
-                sensor_channels_to_excllude = {"Brustlage": ["NL_x"], "Rueckenlage": ["NL_x"]}, 
-                scaling = 2.7/1000, sampling = 1000, 
-                num_ch = 48, model_check_point_dir = "MCG_segmentation/MCGSegmentator_s/checkpoints/best"):
-        
+    # Determine device for PyTorch computations
+    try:
+        if torch.cuda.is_available():
+            DEVICE = torch.device("cuda")
+        else:
+            DEVICE = torch.device("cpu")
+        logging.info(f"Using device: {DEVICE}")
+    except Exception as e:
+        logging.warning(f"Failed to determine device, defaulting to CPU. Error: {e}")
+        DEVICE = torch.device("cpu")
+
+    def __init__(
+        self,
+        filename="",
+        add_filename="",
+        log_file_path="",
+        sensor_channels_to_exclude=None,
+        scaling=DEFAULT_SCALING,
+        sampling_rate=DEFAULT_SAMPLING_RATE,
+        num_ch=DEFAULT_NUM_CHANNELS,
+        model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR
+    ):
+        """Initialize the Analyzer with data and model configurations.
+
+        Args:
+            filename (str): Path to the primary TDMS data file.
+            add_filename (str): Path to the additional TDMS data file.
+            log_file_path (str): Path to the QZFM log file with sensor mappings.
+            sensor_channels_to_exclude (dict, optional): Channels to exclude per run key.
+            scaling (float): Scaling factor for TDMS data.
+            sampling_rate (int): Sampling rate of the TDMS data in Hz.
+            num_ch (int): Number of channels for plotting.
+            model_checkpoint_dir (str): Directory with trained segmentation model.
+        """
+        # Input validation
+        if not isinstance(scaling, (int, float)) or scaling <= 0:
+            raise ValueError("Scaling must be a positive number")
+        if not isinstance(sampling_rate, int) or sampling_rate <= 0:
+            raise ValueError("Sampling rate must be a positive integer")
+        if not isinstance(num_ch, int) or num_ch <= 0:
+            raise ValueError("Number of channels must be a positive integer")
+
+        # Initialize attributes
         self.filename = filename
-        self.add_filename =   add_filename
-        self.log_file_path  = log_file_path
-
+        self.add_filename = add_filename
+        self.log_file_path = log_file_path
         self.scaling = scaling
-        self.sampling_rate = sampling
+        self.sampling_rate = sampling_rate
         self.num_ch = num_ch
+        self.sensor_channels_to_exclude = sensor_channels_to_exclude or {}
+        self.data = {}
+        self.add_data = {}
+        self.key_list = []
+        self.quspin_gen_dict = {}
+        self.quspin_channel_dict = {}
+        self.quspin_position_list = []
 
-        try:
-            self.data = self.import_tdms(self.filename, self.scaling)
-            self.add_data = self.import_tdms(self.add_filename, self.scaling)
-            self.sensor_channels_to_exclude = sensor_channels_to_excllude # Dictionary with sensors to exclude f.e. {"Brust": ["F1_x", "OX_y"]}
+        # Load data and sensor mappings
+        self._load_tdms_files()
+        self._load_sensor_log_file()
 
+        # Adjust channel mappings for compatibility
+        for key, value in self.quspin_channel_dict.items():
+            if abs(value) >= 100:
+                sign = -1 if value < 0 else 1
+                last_two_digits = abs(value) % 100
+                new_value = 31 + last_two_digits
+                self.quspin_channel_dict[key] = sign * new_value
 
-            self.quspin_gen_dict, self.quspin_channel_dict, self.quspin_position_list =  self.load_data_from_file(self.log_file_path)
+        if self.data:
+            self.key_list = list(self.data.keys())
+            logging.info(f"Available runs: {', '.join(self.key_list)}")
 
-            for key, value in self.quspin_channel_dict.items():
-                if abs(value) >= 100:  # Überprüfen, ob der absolute Wert drei Ziffern hat
-                    sign = -1 if value < 0 else 1
-                    last_two_digits = abs(value) % 100  # Die letzten zwei Ziffern des Werts extrahieren
-                    new_value = 31 + last_two_digits  # Neuen Wert berechnen
-                    self.quspin_channel_dict[key] = sign * new_value  # Wert im Dictionary aktualisieren
-            
-            self.key_list = [key for key in self.data]
-
-            print(f"Runs in this Session: {', '.join(self.key_list)} \n")
-        except FileNotFoundError:
-            print(f"Emtpy Initialization, no TDMS file found. \n")
-
-            self.data = {}
-            self.add_data = {}
-            self.key_list = []
-
+        # Configure plotting
         plt.rcParams['agg.path.chunksize'] = 100000000
         self.cmap = plt.get_cmap('nipy_spectral')
-        self.cmaplist = [self.cmap(x) for x in np.linspace(0,1,num=48)]
+        self.cmaplist = [self.cmap(x) for x in np.linspace(0, 1, num=self.num_ch)]
 
+        # Load segmentation model
+        self.model = self._load_segmentation_model(model_checkpoint_dir)
 
-        try:
-            self.model = self.load_trained_model(model_check_point_dir, self.DEVICE)
-        except Exception as e:
-            print(f"FATAL: Could not load model. Error: {e}")
-            self.model = None
+    def _load_segmentation_model(self, checkpoint_dir):
+        """Load the trained ECGSegmenter model from the checkpoint directory.
 
-    @staticmethod
-    def load_trained_model(checkpoint_dir, device):
-        """Loads the 'best' trained ECGSegmentator model."""
-        print(f"Loading model from: {checkpoint_dir}")
+        Args:
+            checkpoint_dir (str): Path to the directory containing model.pth and params.json.
+
+        Returns:
+            ECGSegmenter: Loaded model instance, or None if loading fails.
+        """
+        if ECGSegmenter is None:
+            logging.warning("ECGSegmenter not available. Returning None.")
+            return None
+
         best_model_path = os.path.join(checkpoint_dir, "model.pth")
         best_params_path = os.path.join(checkpoint_dir, "params.json")
+
         if not os.path.exists(best_model_path) or not os.path.exists(best_params_path):
-            raise FileNotFoundError(f"model.pth or params.json not found in {checkpoint_dir}")
-        with open(best_params_path, "r") as f:
-            params = json.load(f); checkpoint_args = params.get("args", {})
-            num_classes=checkpoint_args.get("num_classes", 4); num_heads=checkpoint_args.get("num_heads", 4)
-            dropout_rate=checkpoint_args.get("dropout_rate", 0.3)
-            # Load other args if needed by model init
-            print(f"Loaded model args: num_classes={num_classes}, num_heads={num_heads}, dropout={dropout_rate}")
-        model =  ECGSegmenter() # Add other args if needed
-        try: 
-            model.load_state_dict(torch.load(best_model_path, map_location=device))
-        except RuntimeError as e: 
-            print("\n*** Error loading state_dict: Model architecture mismatch? ***"); raise e
-        
-        model.to(device); model.eval(); print("Model loaded successfully.")
-        
+            raise FileNotFoundError(f"Model files not found in {checkpoint_dir}")
+
+        model = ECGSegmenter()
+        try:
+            model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
+            model.to(self.DEVICE)
+            model.eval()
+            logging.info(f"Model loaded from {best_model_path}")
+        except RuntimeError as e:
+            logging.error(f"Failed to load model state_dict: {e}")
+            raise
+
         return model
-    
-    @staticmethod
-    def import_tdms(filename, scaling):
-        data = {}
-        with TdmsFile.read(filename) as tdms_file:
-            for group in tdms_file.groups():
-                no_of_channels = len(group.channels())
-                no_of_samples = len(group.channels()[0].read_data(scaled=True))
-                data_array = np.zeros((no_of_samples, no_of_channels+1))
-            
-                for i, channel in enumerate(group.channels()):
-                    # Access numpy array of data for channel:
-                    data_array[:, i+1] = channel.read_data(scaled=True)/scaling        
-                data_array[:, 0] = np.linspace(0, (no_of_samples-1), no_of_samples)
-                                            #* properties['wf_increment'], no_of_samples)
-                data[group.name] = data_array
-        return data
+
+    def _load_tdms_files(self):
+        """Load primary and additional TDMS files into data dictionaries."""
+        try:
+            if self.filename:
+                self.data = self._import_tdms(self.filename, self.scaling)
+                logging.info(f"Loaded primary TDMS file: {self.filename}")
+            if self.add_filename:
+                self.add_data = self._import_tdms(self.add_filename, self.scaling)
+                logging.info(f"Loaded additional TDMS file: {self.add_filename}")
+        except FileNotFoundError as e:
+            logging.error(f"TDMS file not found: {e}")
+            self.data = {}
+            self.add_data = {}
+        except Exception as e:
+            logging.error(f"Error loading TDMS files: {e}")
+            self.data = {}
+            self.add_data = {}
 
     @staticmethod
-    def load_data_from_file(file_path):
-        with open(file_path, 'r') as file:
-            data = ast.literal_eval(file.read())
-            quspin_gen_dict = data.get('quspin_gen_dict', {})
-            quspin_channel_dict = data.get('quspin_channel_dict', {})
-            quspin_position_list =data.get('quspin_position_list', [])
-        return quspin_gen_dict, quspin_channel_dict, quspin_position_list
-    
+    def _import_tdms(filename, scaling):
+        """Import data from a TDMS file.
+
+        Args:
+            filename (str): Path to the TDMS file.
+            scaling (float): Scaling factor for the data.
+
+        Returns:
+            dict: Dictionary with group names as keys and data arrays as values.
+        """
+        data = {}
+        try:
+            with TdmsFile.read(filename) as tdms_file:
+                for group in tdms_file.groups():
+                    channels = group.channels()
+                    if not channels:
+                        continue
+                    no_of_samples = len(channels[0].read_data(scaled=True))
+                    data_array = np.zeros((no_of_samples, len(channels) + 1))
+                    data_array[:, 0] = np.linspace(0, no_of_samples - 1, no_of_samples)
+                    for i, channel in enumerate(channels):
+                        data_array[:, i + 1] = channel.read_data(scaled=True) / scaling
+                    data[group.name] = data_array
+        except Exception as e:
+            logging.error(f"Error importing TDMS file {filename}: {e}")
+            return {}
+        return data
+
+    def _load_sensor_log_file(self):
+        """Load sensor mapping from the QZFM log file."""
+        if not self.log_file_path:
+            logging.warning("No log file path provided. Sensor mapping unavailable.")
+            return
+
+        try:
+            with open(self.log_file_path, 'r') as file:
+                log_data = ast.literal_eval(file.read())
+            self.quspin_gen_dict = log_data.get('quspin_gen_dict', {})
+            self.quspin_channel_dict = log_data.get('quspin_channel_dict', {})
+            self.quspin_position_list = log_data.get('quspin_position_list', [])
+            logging.info(f"Loaded sensor log file: {self.log_file_path}")
+        except FileNotFoundError:
+            logging.error(f"Sensor log file not found: {self.log_file_path}")
+        except (SyntaxError, ValueError) as e:
+            logging.error(f"Invalid format in sensor log file: {e}")
+        except Exception as e:
+            logging.error(f"Error loading sensor log file: {e}")
+
     @staticmethod
-    def bandstop_filter(data, center_frequency, bandwidth, sampling_rate, order = 4):
+    def bandstop_filter(data, center_frequency, bandwidth, sampling_rate, order=4):
+        """Apply a bandstop filter to the data.
+
+        Args:
+            data (np.ndarray): Input signal.
+            center_frequency (float): Center frequency to filter out.
+            bandwidth (float): Bandwidth of the filter.
+            sampling_rate (float): Sampling rate of the signal.
+            order (int): Filter order.
+
+        Returns:
+            np.ndarray: Filtered signal.
+        """
         nyquist = 0.5 * sampling_rate
         low_cutoff = (center_frequency - bandwidth / 2) / nyquist
         high_cutoff = (center_frequency + bandwidth / 2) / nyquist
-        b, a = signal.butter(order, [low_cutoff, high_cutoff], btype='bandstop', analog=False)
-        filtered_signal = signal.filtfilt(b, a, data)
-        return filtered_signal
-    
+        b, a = signal.butter(order, [low_cutoff, high_cutoff], btype='bandstop')
+        return signal.filtfilt(b, a, data)
+
     @staticmethod
     def bandpass_filter(data, fs, lowcut, highcut, order=4):
+        """Apply a bandpass filter to the data.
+
+        Args:
+            data (np.ndarray): Input signal.
+            fs (float): Sampling frequency.
+            lowcut (float): Low cutoff frequency.
+            highcut (float): High cutoff frequency.
+            order (int): Filter order.
+
+        Returns:
+            np.ndarray: Filtered signal.
         """
-        Einfacher Bandpass-Filter zur Rauschreduktion.
-        """
-        from scipy.signal import butter, filtfilt
-        
         nyq = 0.5 * fs
         low = lowcut / nyq
         high = highcut / nyq
         b, a = butter(order, [low, high], btype='band')
         return filtfilt(b, a, data)
-    
+
     @staticmethod
     def apply_lowpass_filter(data, sampling_rate, cutoff_frequency, order=2):
+        """Apply a lowpass filter to the data.
+
+        Args:
+            data (np.ndarray): Input signal.
+            sampling_rate (float): Sampling rate.
+            cutoff_frequency (float): Cutoff frequency.
+            order (int): Filter order.
+
+        Returns:
+            np.ndarray: Filtered signal.
+        """
         nyquist = 0.5 * sampling_rate
         normal_cutoff = cutoff_frequency / nyquist
-        b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
-        filtered_data = signal.filtfilt(b, a, data, axis=1)
-        return filtered_data
-    
+        b, a = signal.butter(order, normal_cutoff, btype='low')
+        return signal.filtfilt(b, a, data, axis=1)
+
     @staticmethod
     def apply_highpass_filter(data, sampling_rate, cutoff_frequency, order=2):
+        """Apply a highpass filter to the data.
+
+        Args:
+            data (np.ndarray): Input signal.
+            sampling_rate (float): Sampling rate.
+            cutoff_frequency (float): Cutoff frequency.
+            order (int): Filter order.
+
+        Returns:
+            np.ndarray: Filtered signal.
+        """
         nyquist = 0.5 * sampling_rate
         normal_cutoff = cutoff_frequency / nyquist
-        b, a = signal.butter(order, normal_cutoff, btype='high', analog=False)
-        filtered_data = signal.filtfilt(b, a, data, axis=1)
-        return filtered_data
-    
+        b, a = signal.butter(order, normal_cutoff, btype='high')
+        return signal.filtfilt(b, a, data, axis=1)
+
     @staticmethod
     def remove_drift_and_offset(signal, time):
+        """Remove drift and offset from the signal using polynomial detrending.
+
+        Args:
+            signal (np.ndarray): Input signal.
+            time (np.ndarray): Time vector.
+
+        Returns:
+            np.ndarray: Detrended signal.
         """
-        Verbesserte Methode zur Entfernung von Drift und Offset.
-        Verwendet robuste polynomiale Anpassung niedriger Ordnung.
-        """
-        # Polynom 3. Grades für Trendentfernung
-        detrended = signal - np.polynomial.polynomial.polyval(time, 
-                                np.polynomial.polynomial.polyfit(time, signal, 3))
-        
-        # Median als robuste Baseline-Schätzung
+        detrended = signal - np.polynomial.polynomial.polyval(
+            time, np.polynomial.polynomial.polyfit(time, signal, 3)
+        )
         baseline = np.median(detrended)
-        
         return detrended - baseline
-    
+
     @staticmethod
-    def plot4x4(data, time, name,path=None, save = False):
-        nrows = len(data)
-        ncols = len(data[0])
-        
-        fig, elem= plt.subplots(nrows=nrows,ncols=ncols, sharex=True, figsize=(33/2.54,22/2.54),dpi=100)  
+    def plot4x4(data, time, name, path=None, save=False):
+        """Plot a 4x4 grid of time series data.
+
+        Args:
+            data (np.ndarray): Data array of shape (rows, cols, samples).
+            time (np.ndarray): Time vector.
+            name (str): Title of the plot.
+            path (str, optional): Directory to save the plot.
+            save (bool): Whether to save the plot.
+        """
+        nrows, ncols = data.shape[:2]
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, sharex=True, figsize=(33/2.54, 22/2.54), dpi=100)
         fig.suptitle(f"{name}", y=0.95)
-        row = 0
-        col = 0
 
         for row in range(nrows):
             for col in range(ncols):
-                d = data[row][col]          
-                if len(d)>0 and not np.all(d==0):
-                    elem[row,col].plot(time, d, '-')
-                    #elem[row,col].axvline(window_left, color = "red", alpha= 0.3)
-                    elem[row,col].grid(True,linestyle='dotted',alpha=0.7)
-                    # elem[row,col].set_yscale("symlog")
+                ax = axes[row, col] if nrows > 1 else axes[col]
+                d = data[row, col]
+                if len(d) > 0 and not np.all(d == 0):
+                    ax.plot(time, d, '-')
+                    ax.grid(True, linestyle='dotted', alpha=0.7)
                 else:
-                    elem[row,col].text(0.4, 0.5,'No Data', fontsize=12, color='red', alpha=0.5, ha='center', va='center')
-        fig.text(0.5, 0.08, 'time [s]', ha='center', va='center', fontsize=12)
-        fig.text(0.08, 0.5, 'magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
-        if save:
-            plt.savefig(path+f'{name}_4x4plot.png')
+                    ax.text(0.4, 0.5, 'No Data', fontsize=12, color='red', alpha=0.5, ha='center', va='center')
+
+        fig.text(0.5, 0.08, 'Time [s]', ha='center', va='center', fontsize=12)
+        fig.text(0.08, 0.5, 'Magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
+        if save and path:
+            plt.savefig(os.path.join(path, f'{name}_4x4plot.png'), dpi=100)
         plt.show()
-    
-    @staticmethod
-    def plot_zoomable_mulit_channel(data, time, title, channels = [1]):
-        # -> needs single run type data
-        # data shape (c, T)
-        # time shape (T,)
 
-        fig = go.Figure()
-        for ch in channels:
-            fig.add_trace(go.Scatter(x=time, y=data[ch], mode='lines', name=f'Channel {ch}'))
+    def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None):
+        """Plot a 2D projection of the heart vector with metrics.
 
-        fig.update_layout(
-            title=title,
-            title_x=0.5,  # center the title
-            width=1000,
-            height=600,
-            margin=dict(l=50, r=50, t=80, b=50),
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            font=dict(size=14),
-            dragmode='pan',
-            uirevision=True,
-            xaxis_title='Time [s]',
-            yaxis_title='Field Strength [nT]',
-            xaxis=dict(showline=True, showgrid=False, showticklabels=True, linecolor='rgb(204, 204, 204)', linewidth=2, ticks='outside', tickfont=dict(family='Arial', size=12, color='rgb(82, 82, 82)')),
-            yaxis=dict(showline=True, showgrid=False, showticklabels=True, linecolor='rgb(204, 204, 204)', linewidth=2, ticks='outside', tickfont=dict(family='Arial', size=12, color='rgb(82, 82, 82)')),
-        )
-        fig.show(config={'scrollZoom': True})
-    
-    @staticmethod
-    def heart_vector_projection(data, name, label):
-        component1 = np.array(data[0])
-        component2 = np.array(data[1])
-        
-        fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
-        fig.suptitle(f"Projections of 'MHV', {name}", fontsize=16, fontweight='bold', y=1.05)
-        
+        Args:
+            component1 (np.ndarray): First component data.
+            component2 (np.ndarray): Second component data.
+            proj_name (str): Name of the projection (e.g., 'xy-Projection').
+            title_suffix (str): Suffix for the plot title.
+            ax (matplotlib.axes.Axes, optional): Axes to plot on.
+
+        Returns:
+            matplotlib.axes.Axes: The plotted axes.
+        """
+        standalone_plot = ax is None
+        if standalone_plot:
+            fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
+
+        # Plot styling
         ax.grid(True, linestyle='--', alpha=0.7)
         ax.set_facecolor('#f5f5f5')
         ax.spines['top'].set_visible(False)
@@ -256,160 +374,127 @@ class Analyzer:
         ax.spines['left'].set_color('gray')
         ax.spines['bottom'].set_color('gray')
         ax.tick_params(axis='both', which='major', labelsize=10, colors='gray')
-        
         ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
         ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
-        
-        ax.plot(component1, component2, label=label, color='dodgerblue', linewidth=2.5, linestyle='-')
-        ax.fill(component1, component2, alpha=0.2, color='dodgerblue')
-        
-        for i in range(0, len(component1)-1, 10):
-            arrow_start = [component1[i], component2[i]]
-            arrow_end = [component1[i + 1], component2[i + 1]]
-            ax.annotate('', xy=arrow_end, xytext=arrow_start,
-                        arrowprops=dict(facecolor='red', edgecolor='red', arrowstyle='->', linewidth=2))
-        
-        # Calculate enclosed area using Shoelace Theorem
-        area = 0.5 * np.abs(np.dot(component1, np.roll(component2, 1)) - np.dot(component2, np.roll(component1, 1)))
-        
-        try:
-            # Calculate T-distance (T-beg to T-max)
-            t_beg = np.array([component1[0], component2[0]])
-            t_max_idx = np.argmax(component2**2 + component1**2)  # Assuming T-max is the max point in component2
-            t_max = np.array([component1[t_max_idx], component2[t_max_idx]])
-            t_distance = np.linalg.norm(t_beg - t_max)
-            
-            # Calculate Start-End Ratio
-            t_end = np.array([component1[-1], component2[-1]])
-            vector_t_beg_to_max = t_max - t_beg
-            vector_t_end_to_max = t_max - t_end
-            start_end_ratio = np.linalg.norm(vector_t_beg_to_max) / np.linalg.norm(vector_t_end_to_max)
-            
-            # Display calculated values
-            ax.text(0.05, 0.95, f'Enclosed Area: {area:.2f}\nT-Distance: {t_distance:.2f}\nStart-End Ratio: {start_end_ratio:.2f}',
-                    transform=ax.transAxes, fontsize=12, fontweight='bold', color='black', verticalalignment='top',
-                    bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
-        except Exception as e:
-            print(f"Error calculating metrics: {e}")
-        
-        # Set symmetric axis limits
-        x_min, x_max = ax.get_xlim()
-        y_min, y_max = ax.get_ylim()
-        max_abs = max(abs(x_min), abs(x_max), abs(y_min), abs(y_max))
-        ax.set_xlim(-max_abs, max_abs)
-        ax.set_ylim(-max_abs, max_abs)
-        
-        ax.set_xlabel('$B_1$ [pT]', fontsize=12)
-        ax.set_ylabel('$B_1$ [pT]', fontsize=12)
-        ax.xaxis.set_label_coords(0.95, 0.5)
-        ax.yaxis.set_label_coords(0.5, 0.95)
-        
-        locs_x = ax.get_xticks()
-        locs_y = ax.get_yticks()
-        
-        xlabels = [f"{x:.0f}" if abs(x) > 0.001 else "" for x in locs_x]
-        ylabels = [f"{y:.0f}" if abs(y) > 0.001 else "" for y in locs_y]
-        
+        ax.set_aspect('equal', adjustable='box')
+
+        # Plot data
+        color_map = {"xy-Projection": 'dodgerblue', "xz-Projection": 'orange', "yz-Projection": 'forestgreen'}
+        plot_color = color_map.get(proj_name, 'purple')
+        ax.plot(component1, component2, label=proj_name, color=plot_color, linewidth=2.0)
+
+        # Add directional arrows
+        arrow_stride = max(1, len(component1) // 20)
+        for i in range(0, len(component1) - arrow_stride, arrow_stride):
+            next_idx = min(i + 1, len(component1) - 1)
+            vec = np.array([component1[next_idx], component2[next_idx]]) - np.array([component1[i], component2[i]])
+            if np.linalg.norm(vec) > 1e-6:
+                ax.annotate('', xy=(component1[next_idx], component2[next_idx]), xytext=(component1[i], component2[i]),
+                            arrowprops=dict(facecolor='red', edgecolor='red', arrowstyle='->', linewidth=1.5))
+
+        # Calculate metrics
+        metrics_text = "Metrics N/A"
+        if len(component1) > 2:
+            try:
+                area = 0.5 * np.abs(np.dot(component1, np.roll(component2, 1)) - np.dot(component2, np.roll(component1, 1)))
+                magnitudes = component1**2 + component2**2
+                t_max_idx = np.argmax(magnitudes)
+                t_distance = np.linalg.norm(np.array([component1[t_max_idx], component2[t_max_idx]]) - np.array([component1[0], component2[0]]))
+                dist_max_to_end = np.linalg.norm(np.array([component1[t_max_idx], component2[t_max_idx]]) - np.array([component1[-1], component2[-1]]))
+                start_end_ratio = t_distance / (dist_max_to_end + 1e-9)
+                metrics_text = f'Area: {area:.2f}\nT-Dist: {t_distance:.2f}\nS/E Ratio: {start_end_ratio:.2f}'
+            except Exception as e:
+                logging.warning(f"Error calculating metrics for {proj_name}: {e}")
+                metrics_text = "Metrics Error"
+
+        ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, fontsize=9, fontweight='bold', color='black',
+                verticalalignment='top', bbox=dict(facecolor='white', edgecolor='gray', alpha=0.8, boxstyle='round,pad=0.3'))
+
+        # Set axes limits
+        max_limit = max(np.max(np.abs(ax.get_xlim())), np.max(np.abs(ax.get_ylim()))) * 1.1
+        ax.set_xlim(-max_limit, max_limit)
+        ax.set_ylim(-max_limit, max_limit)
+
+        # Set labels
+        labels = {
+            "xy-Projection": ('$B_x$ [pT]', '$B_y$ [pT]'),
+            "xz-Projection": ('$B_x$ [pT]', '$B_z$ [pT]'),
+            "yz-Projection": ('$B_y$ [pT]', '$B_z$ [pT]')
+        }
+        ax.set_xlabel(labels.get(proj_name, ('Component 1', 'Component 2'))[0], fontsize=12)
+        ax.set_ylabel(labels.get(proj_name, ('Component 1', 'Component 2'))[1], fontsize=12)
+
+        # Format ticks
+        locs_x, locs_y = ax.get_xticks(), ax.get_yticks()
+        xlabels = [f"{x:.0f}" if abs(x) > 1e-3 * max_limit else "" for x in locs_x]
+        ylabels = [f"{y:.0f}" if abs(y) > 1e-3 * max_limit else "" for y in locs_y]
         ax.set_xticks(locs_x)
         ax.set_xticklabels(xlabels)
         ax.set_yticks(locs_y)
         ax.set_yticklabels(ylabels)
-        
-        if label:
-            ax.legend(fontsize=10, loc='best', frameon=True, facecolor='white', edgecolor='gray')
-        
-        plt.tight_layout()
-        plt.show()
-    
-    @staticmethod
-    def heart_vector_projections(heart_vector_data, name, save=False, path=None):
-        x = heart_vector_data[0]
-        y = heart_vector_data[1]
-        z = heart_vector_data[2]
-        
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5), dpi=200)
-        fig.suptitle(f"Projections of 'MHV', {name}", fontsize=16, fontweight='bold', y=1.05)
-        
-        projections = [(x, y, 'xy-Projection', 'dodgerblue'), 
-                    (x, z, 'xz-Projection', 'orange'), 
-                    (y, z, 'yz-Projection', 'forestgreen')]
-        
-        for ax, (comp1, comp2, label, color) in zip(axes, projections):
-            ax.grid(True, linestyle='--', alpha=0.7)
-            ax.set_facecolor('#f5f5f5')
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.spines['left'].set_color('gray')
-            ax.spines['bottom'].set_color('gray')
-            ax.tick_params(axis='both', which='major', labelsize=10, colors='gray')
-            ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
-            ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
-            
-            ax.plot(comp1, comp2, label=label, color=color, linewidth=2.5, linestyle='-')
-            ax.fill(comp1, comp2, alpha=0.2, color=color)
-            
-            for i in range(0, len(comp1)-1, 10):
-                arrow_start = [comp1[i], comp2[i]]
-                arrow_end = [comp1[i + 1], comp2[i + 1]]
-                ax.annotate('', xy=arrow_end, xytext=arrow_start,
-                            arrowprops=dict(facecolor='red', edgecolor='red', arrowstyle='->', linewidth=2))
-            
+
+        ax.legend(fontsize=10, loc='lower right', frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
+
+        if standalone_plot:
+            plt.suptitle(f"Heart Vector Projection: {proj_name}{' - ' + title_suffix if title_suffix else ''}", fontsize=16, fontweight='bold')
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            plt.show()
+
+        return ax
+
+    def plot_all_heart_vector_projections(self, heart_vector_components, title_suffix="", save_path=None):
+        """Plot XY, XZ, and YZ projections of the heart vector.
+
+        Args:
+            heart_vector_components (np.ndarray): Shape (3, num_samples) with Bx, By, Bz.
+            title_suffix (str): Suffix for the plot title.
+            save_path (str, optional): Path to save the plot.
+        """
+        if heart_vector_components.shape[0] != 3 or heart_vector_components.ndim != 2:
+            logging.error("heart_vector_components must have shape (3, num_samples)")
+            return
+
+        bx, by, bz = heart_vector_components
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6), dpi=150)
+        fig.suptitle(f"Mean Heart Vector Projections{': ' + title_suffix if title_suffix else ''}", fontsize=16, fontweight='bold', y=0.98)
+
+        for ax, (comp1, comp2, name) in zip(axes, [(bx, by, 'xy-Projection'), (bx, bz, 'xz-Projection'), (by, bz, 'yz-Projection')]):
+            self.plot_heart_vector_projection(comp1, comp2, name, ax=ax)
+            ax.set_title("")
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        if save_path:
             try:
-                area = 0.5 * np.abs(np.dot(comp1, np.roll(comp2, 1)) - np.dot(comp2, np.roll(comp1, 1)))
-                t_beg = np.array([comp1[0], comp2[0]])
-                t_max_idx = np.argmax(comp1**2 + comp1**2)
-                t_max = np.array([comp1[t_max_idx], comp2[t_max_idx]])
-                t_distance = np.linalg.norm(t_beg - t_max)
-                t_end = np.array([comp1[-1], comp2[-1]])
-                start_end_ratio = np.linalg.norm(t_max - t_beg) / np.linalg.norm(t_max - t_end)
-                
-                ax.text(0.05, 0.95, f'Area: {area:.2f}\nT-Distance: {t_distance:.2f}\nS/E Ratio: {start_end_ratio:.2f}',
-                        transform=ax.transAxes, fontsize=10, fontweight='bold', color='black', verticalalignment='top',
-                        bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'))
+                plt.savefig(save_path, dpi=200, bbox_inches='tight')
+                logging.info(f"Saved projections plot to: {save_path}")
             except Exception as e:
-                print(f"Error calculating metrics: {e}")
-            
-            ax.legend(fontsize=10, loc='best', frameon=True, facecolor='white', edgecolor='gray')
-            
-            x_min, x_max = ax.get_xlim()
-            y_min, y_max = ax.get_ylim()
-            max_abs = max(abs(x_min), abs(x_max), abs(y_min), abs(y_max))
-            ax.set_xlim(-max_abs, max_abs)
-            ax.set_ylim(-max_abs, max_abs)
-        
-        axes[0].set_xlabel('Bx [pT]', fontsize=12)
-        axes[0].set_ylabel('By [pT]', fontsize=12)
-        axes[1].set_xlabel('Bx [pT]', fontsize=12)
-        axes[1].set_ylabel('Bz [pT]', fontsize=12)
-        axes[2].set_xlabel('By [pT]', fontsize=12)
-        axes[2].set_ylabel('Bz [pT]', fontsize=12)
-        
-        plt.tight_layout()
+                logging.error(f"Failed to save projections plot: {e}")
         plt.show()
-        
-        if save and path is not None:
-            plt.savefig(path + f'{name}_heart_vector_proj.png', bbox_inches='tight', dpi=200)
 
+    def plot_segmented_signal(self, signal, pred, axs=None):
+        """Plot a signal with predicted segmentation labels.
 
-
-    def plot_segmented_signal(self, signal, pred, axs = None):
-        """Plot signal with true/predicted labels."""
+        Args:
+            signal (np.ndarray): Input signal, shape (T,).
+            pred (np.ndarray): Predicted labels, shape (T,).
+            axs (matplotlib.axes.Axes, optional): Axes to plot on.
+        """
         signal = signal.squeeze()
         pred = pred.squeeze()
-
         t = np.arange(len(signal))
 
         if axs is None:
-            fig, axs = plt.subplots(1, 1, figsize=(15, 8), sharex=True)
+            fig, axs = plt.subplots(figsize=(15, 8))
+            standalone = True
+        else:
+            standalone = False
 
-
-        # --- Panel 1: Signal + True Dots + Predicted Background ---
         axs.plot(t, signal, color='black', linewidth=0.8, label='Signal (Processed)')
         axs.grid(True, linestyle=':', alpha=0.7)
 
         current_start_idx = 0
         legend_handles_map = {}
-        line_signal, = axs.plot([],[], color='black', linewidth=0.8, label='Signal')  # Dummy for legend
+        line_signal, = axs.plot([], [], color='black', linewidth=0.8, label='Signal')
         legend_handles_map['Signal'] = line_signal
 
         for k in range(1, len(pred)):
@@ -422,7 +507,6 @@ class Analyzer:
                     legend_handles_map[f'Pred: {label_name}'] = h
                 current_start_idx = k
 
-        # Final segmen
         label_idx = pred[current_start_idx]
         label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
         color = self.SEGMENT_COLORS.get(label_idx, 'gray')
@@ -430,8 +514,6 @@ class Analyzer:
         if f'Pred: {label_name}' not in legend_handles_map:
             legend_handles_map[f'Pred: {label_name}'] = h
 
-
-        # Combined legend
         combined_handles = [legend_handles_map['Signal']]
         combined_labels = ['Signal']
         for i in sorted(self.CLASS_NAMES_MAP.keys()):
@@ -442,10 +524,10 @@ class Analyzer:
                 combined_labels.append(label_name_pred)
 
         axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
+        if standalone:
+            plt.show()
 
-        plt.show()
-
-    def segment_heart_beat_intervall(self, data: torch.Tensor, min_duration: int = 15):
+    def _segment_heart_beat_intervall(self, data: torch.Tensor, min_duration_samples: int = 15):
         """
         Segments the heart beat interval. Classifies each data point as:
         0) No Wave, 1) P-Wave, 2) QRS, 3) T-Wave.
@@ -493,7 +575,7 @@ class Analyzer:
                 end = i  # exclusive
 
                 segment_length = end - start
-                if segment_length < min_duration:
+                if segment_length < min_duration_samples:
                     # Determine neighboring segments
                     left_label = labels_arr[start - 1] if start > 0 else None
                     right_label = labels_arr[end] if end < time_steps else None
@@ -529,7 +611,8 @@ class Analyzer:
         return predicted_indices, confidence_scores
 
 
-    def segment_entire_run(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5):
+
+    def segment_entire_run(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, resample: bool = True):
         """
         Segment the entire run (potentially T > 2000) using a sliding window.
 
@@ -549,7 +632,7 @@ class Analyzer:
             raise ValueError("Overlap must be between 0.0 and < 1.0")
 
         # --- Resampling (Keep original logic, seems reasonable) ---
-        if self.sampling_rate != 250:
+        if self.sampling_rate != 250 and resample:
             num_samples_target = int(data.shape[-1] * (250 / self.sampling_rate))
 
             if num_samples_target == 0:
@@ -620,7 +703,7 @@ class Analyzer:
             # Add small epsilon to avoid division by zero
             segment = torch.where(max_vals > 1e-6, segment / (max_vals + 1e-9), segment)
             # --- Get Segment Labels ---
-            labels, confidences = self.segment_heart_beat_intervall(segment)
+            labels, confidences = self._segment_heart_beat_intervall(segment)
 
             # --- Combine Results (Optimized) ---
             # Update final arrays where current confidence is higher
@@ -639,8 +722,7 @@ class Analyzer:
         # Squeeze the channel dimension out of the returned data
         return final_labels, resampled_data_np.squeeze(axis=1), final_confidences
 
-
-    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.7, plausibility_weight: float = 0.3):
+    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.75, plausibility_weight: float = 0.25):
         """
         Find the channel with the clearest signal based on segmentation confidence
         and physiological plausibility.
@@ -994,202 +1076,175 @@ class Analyzer:
                 print("No valid heart rates detected across channels.")
 
         return peak_positions_all_channels, resampled_data, cleanest_channel, avg_heart_rate, avg_hrv_sdnn
+    
 
-        
-    def plotting_time_series(self, data, time, num_ch, name, path = None, save = False):
-        fig, elem= plt.subplots(nrows=1,ncols=1, sharex=True, figsize=(10, 4))  
-        fig.suptitle(name,size='small', y=0.99)
-        if num_ch>1:
-            # linienstile = ['-', '--', '-.', ':']
-            for i in range(num_ch):
-                elem.plot(time, data[i], alpha=0.4,color=self.cmaplist[i], label = f"Ch {i+1}")
-            elem.grid(alpha=0.7)
-            elem.minorticks_on()
-            elem.grid(True,which='minor',linestyle='dotted',alpha=0.7)
-            elem.set_xlabel('Time [s]')
-            elem.set_ylabel('B [pT]')#("V")#
-            fig.subplots_adjust(top= 0.95, bottom=0.25)
-        else:
-            elem.plot(time, data,"-", label = "Single Channel")
-            elem.grid(alpha=0.7)
-            elem.minorticks_on()
-            elem.grid(True,which='minor',linestyle='dotted',alpha=0.7)
-            elem.set_xlabel('Time [s]')
-            elem.set_ylabel('B [pT]')#("V")#
-            fig.subplots_adjust(bottom=0.2)
-        if save:
-            plt.savefig(path+f'{name}_B_vs_time.png')
-        plt.show()
-
-
-    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4):
-        """
-        Computes the average windowed QRS waveform per channel around each peak.
+    def plotting_time_series(self, data, time, num_ch, name, path=None, save=False):
+        """Plot time series data for multiple channels.
 
         Args:
-            data: numpy array of shape (num_channels, num_samples).
-            peak_positions: Either a list of peak indices (for a single channel)
-                            or a dict[channel_idx] = list of peak indices.
-            window_left: Seconds to include to the left of the peak.
-            window_right: Seconds to include to the right of the peak.
+            data (np.ndarray): Data array, shape (num_channels, num_samples).
+            time (np.ndarray): Time vector.
+            num_ch (int): Number of channels.
+            name (str): Plot title.
+            path (str, optional): Directory to save the plot.
+            save (bool): Whether to save the plot.
+        """
+        fig, ax = plt.subplots(figsize=(10, 4))
+        fig.suptitle(name, size='small', y=0.99)
+
+        if num_ch > 1:
+            for i in range(num_ch):
+                ax.plot(time, data[i], alpha=0.4, color=self.cmaplist[i], label=f"Ch {i+1}")
+        else:
+            ax.plot(time, data, "-", label="Single Channel")
+
+        ax.grid(alpha=0.7)
+        ax.minorticks_on()
+        ax.grid(True, which='minor', linestyle='dotted', alpha=0.7)
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('B [pT]')
+        fig.subplots_adjust(top=0.95, bottom=0.25 if num_ch > 1 else 0.2)
+
+        if save and path:
+            plt.savefig(os.path.join(path, f'{name}_B_vs_time.png'), dpi=100)
+        plt.show()
+
+    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4):
+        """Compute average windowed QRS waveform around peaks.
+
+        Args:
+            data (np.ndarray): Data array, shape (num_channels, num_samples).
+            peak_positions (list or dict): Peak indices or dict of peak indices per channel.
+            window_left (float): Seconds to include left of the peak.
+            window_right (float): Seconds to include right of the peak.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray]:
-                avg_channels: (num_channels, window_length) average waveform per channel.
-                time_window: (window_length,) corresponding time vector.
+            tuple: (avg_channels (np.ndarray), time_window (np.ndarray)).
         """
         samples_left = int(window_left * 250)
         samples_right = int(window_right * 250)
         window_length = samples_left + samples_right
-
+        num_channels = data.shape[0]
         avg_channels = []
-
         is_multichannel = isinstance(peak_positions, dict)
 
-        num_channels = data.shape[0]
-
         for ch in range(num_channels):
-            if is_multichannel:
-                peaks = peak_positions.get(ch, [])
-            else:
-                peaks = peak_positions  # Apply same peaks to all channels
-
+            peaks = peak_positions.get(ch, []) if is_multichannel else peak_positions
             windows = []
             for pos in peaks:
                 if pos - samples_left < 0 or pos + samples_right > data.shape[1]:
-                    continue  # Skip if window would be incomplete
-                window = data[ch, pos - samples_left : pos + samples_right]
+                    continue
+                window = data[ch, pos - samples_left:pos + samples_right]
                 time = np.linspace(0, len(window) / self.sampling_rate, num=len(window), endpoint=False)
-                window_detrended = self.remove_drift_and_offset(window, time)
-                windows.append(window_detrended)
-
-            if windows:
-                mean_window = np.mean(windows, axis=0)
-            else:
-                mean_window = np.zeros(window_length)  # Fallback if no valid windows
-
-            avg_channels.append(mean_window)
+                windows.append(self.remove_drift_and_offset(window, time))
+            avg_channels.append(np.mean(windows, axis=0) if windows else np.zeros(window_length))
 
         time_window = np.linspace(0, window_length / 250, num=window_length, endpoint=False)
-
         return np.array(avg_channels), time_window
 
     def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2):
-        filtered_data =  self.bandstop_filter(data, bandstop_freq, 2, self.sampling_rate, order = 2)
-        filtered_data =  self.bandstop_filter(filtered_data, bandstop_freq, 3, self.sampling_rate, order = 3)
-        filtered_data =  self.bandstop_filter(filtered_data, bandstop_freq*2, 3, self.sampling_rate, order = 3)
-        filtered_data = self.apply_lowpass_filter(filtered_data, self.sampling_rate, lowpass_freq, order=3)
+        """Apply a default combination of filters to the data.
 
-        filtered_data = self.apply_highpass_filter(filtered_data, self.sampling_rate, highpass_freq , order=2)
-        filtered_data = signal.savgol_filter(
-            filtered_data,
-            window_length=savgol_window,
-            polyorder=savgol_polyorder,
-            axis=1  # Entlang der Zeitachse
-        )
-        #filtered_data = filtered_data[:,sampling*2:sampling*-2]
-        return filtered_data
-    
-    def change_to_consistent_coordinate_system(self, data):
-        uniform_cosy_data = []
-        for quspin, ch in self.quspin_channel_dict.items(): 
-            if "-" in str(ch):
-                sign = (-1)
-            else:
-                sign = 1
-            # sign = np.sign(ch)
-            ch = abs(int(ch))
-            data[ch] *= sign
-            
-            if "y" in quspin:
-                data[ch] *=(-1)
-            elif self.quspin_gen_dict[quspin[:-2]]==2:
-                data[ch] *=(-1)
-        uniform_cosy_data = data
-        
-        
-        return uniform_cosy_data
-    
-    def get_field_directions(self, data, key):
+        Args:
+            data (np.ndarray): Input data, shape (num_channels, num_samples).
+            bandstop_freq (float): Center frequency for bandstop filter.
+            lowpass_freq (float): Cutoff frequency for lowpass filter.
+            highpass_freq (float): Cutoff frequency for highpass filter.
+            savgol_window (int): Window length for Savitzky-Golay filter.
+            savgol_polyorder (int): Polynomial order for Savitzky-Golay filter.
+
+        Returns:
+            np.ndarray: Filtered data.
         """
-        Extracts x, y, z directional field data for each QuSpin sensor.
+        filtered_data = data
+        for bandwidth, order in [(2, 2), (3, 3), (3, 3)]:
+            filtered_data = self.bandstop_filter(filtered_data, bandstop_freq * (2 if bandwidth == 3 else 1), bandwidth, self.sampling_rate, order)
+        filtered_data = self.apply_lowpass_filter(filtered_data, self.sampling_rate, lowpass_freq, order=3)
+        filtered_data = self.apply_highpass_filter(filtered_data, self.sampling_rate, highpass_freq, order=2)
+        filtered_data = signal.savgol_filter(filtered_data, window_length=savgol_window, polyorder=savgol_polyorder, axis=1)
+        return filtered_data
+
+    def change_to_consistent_coordinate_system(self, data):
+        """Adjust data to a consistent coordinate system based on sensor mappings.
+
+        Args:
+            data (np.ndarray): Input data, shape (num_channels, num_samples).
+
+        Returns:
+            np.ndarray: Adjusted data.
+        """
+        for quspin, ch in self.quspin_channel_dict.items():
+            sign = -1 if str(ch).startswith('-') else 1
+            ch_idx = abs(int(ch))
+            data[ch_idx] *= sign
+            if 'y' in quspin or self.quspin_gen_dict.get(quspin[:-2], 0) == 2:
+                data[ch_idx] *= -1
+        return data
+
+    def get_field_directions(self, data, key):
+        """Extract x, y, z field data for QuSpin sensors.
+
+        Args:
+            data (np.ndarray): Input data, shape (num_channels, num_samples).
+            key (str): Run key for sensor exclusion.
+
+        Returns:
+            tuple: (x_data, y_data, z_data), each of shape (rows, cols, samples).
         """
         num_rows = len(self.quspin_position_list)
-        num_cols = num_rows  # assuming fixed 4 sensors per row
-
-        # Initialize empty containers for the x, y, z data
-        x_data = np.zeros((num_rows, num_cols, data.shape[-1]))
-        y_data = np.zeros((num_rows, num_cols, data.shape[-1]))
-        z_data = np.zeros((num_rows, num_cols, data.shape[-1]))
+        x_data = np.zeros((num_rows, num_rows, data.shape[-1]))
+        y_data = np.zeros((num_rows, num_rows, data.shape[-1]))
+        z_data = np.zeros((num_rows, num_rows, data.shape[-1]))
 
         for row_idx, row in enumerate(self.quspin_position_list):
             for col_idx, quspin_id in enumerate(row):
-    
-                for suffix, target_list in zip(['_x', '_y', '_z'], [x_data, y_data, z_data]):
+                for suffix, target in zip(['_x', '_y', '_z'], [x_data, y_data, z_data]):
                     channel_name = quspin_id + suffix
-                    channel_index = self.quspin_channel_dict.get(channel_name, None)
-                    
-
-                    # Check if the channel is in the exclusion list
-                    if channel_index is None:
+                    channel_index = self.quspin_channel_dict.get(channel_name)
+                    if channel_index is None or (self.sensor_channels_to_exclude.get(key) and channel_name in self.sensor_channels_to_exclude.get(key, [])) or \
+                       (self.sensor_channels_to_exclude.get(key) and f"*{suffix}" in self.sensor_channels_to_exclude.get(key, [])):
                         continue
-                    
-                    elif (self.sensor_channels_to_exclude and self.sensor_channels_to_exclude.get(key, None) and channel_name in self.sensor_channels_to_exclude.get(key,[])):
-                        data[channel_index] = np.zeros(data.shape[-1])
-                        continue
+                    channel_index = abs(int(channel_index))
+                    target[row_idx, col_idx, :] = data[channel_index]
 
-                    elif self.sensor_channels_to_exclude and "*"+suffix in self.sensor_channels_to_exclude.get(key, []):
-                        # *_x skips every channel with _x
-                        data[channel_index] = np.zeros(data.shape[-1])
-                        continue
-
-                    else:
-                        # Ensure the channel index is a valid integer
-                        channel_index = abs(int(channel_index))
-                        # Extract the data for the channel
-                        channel_series = data[channel_index]
-                        target_list[row_idx, col_idx, :] = channel_series
-        
         return x_data, y_data, z_data
 
-    def align_multi_channel_signal(self, signal1, signal2, lag_cutoff=int(2000), plot=True):
-        ox_y_channel = self.quspin_channel_dict.get("OX_y", None)
-        f1_y_channel = self.quspin_channel_dict.get("F1_y", None)
+    def align_multi_channel_signal(self, signal1, signal2, lag_cutoff=2000, plot=True):
+        """Align two multi-channel signals using cross-correlation.
 
-        # Select alignment channels
-        f1_y_data = signal1[abs(int(f1_y_channel))] * np.sign(f1_y_channel)
-        ox_y_data = signal2[31 - abs(int(ox_y_channel))] * np.sign(ox_y_channel)
+        Args:
+            signal1 (np.ndarray): First signal, shape (num_channels, num_samples).
+            signal2 (np.ndarray): Second signal, shape (num_channels, num_samples).
+            lag_cutoff (int): Maximum lag for correlation.
+            plot (bool): Whether to plot alignment results.
 
-        # Ensure lag_cutoff is within bounds
+        Returns:
+            tuple: (aligned_signal2 (np.ndarray), lag (int)).
+        """
+        ox_y_channel = self.quspin_channel_dict.get("OX_y")
+        f1_y_channel = self.quspin_channel_dict.get("F1_y")
+        if ox_y_channel is None or f1_y_channel is None:
+            raise ValueError("Required channels (OX_y or F1_y) not found")
+
+        f1_y_data = signal1[abs(int(f1_y_channel))] * np.sign(int(f1_y_channel))
+        ox_y_data = signal2[31 - abs(int(ox_y_channel))] * np.sign(int(ox_y_channel))
+
         if len(f1_y_data) < lag_cutoff or len(ox_y_data) < lag_cutoff:
-            raise ValueError("lag_cutoff exceeds the length of the signals")
+            raise ValueError("lag_cutoff exceeds signal length")
 
-        # Compute cross-correlation for alignment
         correlation = correlate(f1_y_data[:lag_cutoff], ox_y_data[:lag_cutoff], mode='full')
         lag = np.argmax(correlation) - (lag_cutoff - 1)
 
-        # Ensure signals are two-dimensional
-        if signal1.ndim == 1:
-            signal1 = signal1[:, np.newaxis]
-        if signal2.ndim == 1:
-            signal2 = signal2[:, np.newaxis]
+        signal1 = signal1[:, np.newaxis] if signal1.ndim == 1 else signal1
+        signal2 = signal2[:, np.newaxis] if signal2.ndim == 1 else signal2
 
-        # Align signal2 to signal1 using lag
         if lag > 0:
-            aligned_signal2 = np.pad(
-                signal2,
-                pad_width=((0, 0), (lag, 0)),
-                mode='constant'
-            )[:, :signal1.shape[1]]  # Crop back to match signal1
+            aligned_signal2 = np.pad(signal2, ((0, 0), (lag, 0)), mode='constant')[:, :signal1.shape[1]]
         else:
-            aligned_signal2 = signal2[:, -lag:]  # shift left
+            aligned_signal2 = signal2[:, -lag:]
             if aligned_signal2.shape[1] < signal1.shape[1]:
-                pad_width = signal1.shape[1] - aligned_signal2.shape[1]
-                aligned_signal2 = np.pad(
-                    aligned_signal2,
-                    pad_width=((0, 0), (0, pad_width)),
-                    mode='constant'
-                )
+                aligned_signal2 = np.pad(aligned_signal2, ((0, 0), (0, signal1.shape[1] - aligned_signal2.shape[1])), mode='constant')
+
         if plot:
             fig, ax = plt.subplots(2, 1, figsize=(10, 6))
             for i in range(signal1.shape[0]):
@@ -1197,21 +1252,31 @@ class Analyzer:
                 ax[1].plot(signal1[i, :lag_cutoff], color='blue')
             for i in range(signal2.shape[0]):
                 ax[0].plot(signal2[i, :lag_cutoff], color='orange')
-            
             for i in range(aligned_signal2.shape[0]):
                 ax[1].plot(aligned_signal2[i, :lag_cutoff], color='orange')
-
-            ax[0].set_title("Signal 1 (blue) and Signal 2 (orange) before alignment")
-            ax[1].set_title("Signal 1 (blue) and Signal 2 (orange) after alignment")
+            ax[0].set_title("Before Alignment")
+            ax[1].set_title("After Alignment")
             plt.tight_layout()
             plt.show()
-
 
         return aligned_signal2, lag
 
     def prepare_data(self, key, apply_default_filter=False, intervall_low=5, intervall_high=-5, plot_alignment=False, alignment_cutoff=2000):
-        intervall_low = intervall_low*self.sampling_rate
-        intervall_high = intervall_high*self.sampling_rate
+        """Prepare data for analysis by aligning and filtering.
+
+        Args:
+            key (str): Run key.
+            apply_default_filter (bool): Whether to apply default filters.
+            intervall_low (float): Start time in seconds.
+            intervall_high (float): End time in seconds.
+            plot_alignment (bool): Whether to plot alignment results.
+            alignment_cutoff (int): Cutoff for alignment correlation.
+
+        Returns:
+            tuple: ((x_data, y_data, z_data), time (np.ndarray), single_run (np.ndarray)).
+        """
+        intervall_low_samples = int(intervall_low * self.sampling_rate)
+        intervall_high_samples = int(intervall_high * self.sampling_rate)
 
         data1 = np.transpose(self.data[key])[1:, :]
         data2 = np.transpose(self.add_data[key])[1:, :]
@@ -1219,131 +1284,120 @@ class Analyzer:
         if apply_default_filter:
             data1 = self.default_filter_combination(data1)
             data2 = self.default_filter_combination(data2)
-        
-        
+
         aligned_data2, _ = self.align_multi_channel_signal(data1, data2, plot=plot_alignment, lag_cutoff=alignment_cutoff)
-
         min_length = min(data1.shape[1], aligned_data2.shape[1])
-        data1 = data1[:,:min_length]
-        aligned_data2 = aligned_data2[:,:min_length] 
+        single_run = np.concatenate((data1[:, :min_length], aligned_data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
+        time = np.linspace(0, len(single_run[0]) / self.sampling_rate, num=len(single_run[0]))
 
-        single_run = np.concatenate((data1, aligned_data2), axis=0)[:,intervall_low:intervall_high]
-        time = np.linspace(0,len(single_run[0])/self.sampling_rate,num=len(single_run[0]))
-
-        # aling data to the same coordinate system
         flipped_data = self.change_to_consistent_coordinate_system(single_run)
         x_data, y_data, z_data = self.get_field_directions(flipped_data, key)
-
         return (x_data, y_data, z_data), time, single_run
-    
-    def apply_ICA(self, data, max_iter=1000):
-        # data is inputtet as square matrix with possible enmpty channels -> data of type x_data, y_data, z_data
-        # Loop over each cell in the matrix and filter out empty channels
-        data = np.array(data).reshape(data.shape[0]*data.shape[1], -1)
 
-        # drop all zero channels
-        arr_cleaned = data[~np.all(data == 0, axis=1)]
-        try:
-            ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter)
-            S_ica = ica.fit_transform(arr_cleaned.T).T
-        except Exception as e:
-            print(f"ICA failed: {e}")
+    def apply_ICA(self, data, max_iter=1000):
+        """Apply Independent Component Analysis (ICA) to the data.
+
+        Args:
+            data (np.ndarray): Input data, shape (rows, cols, samples).
+            max_iter (int): Maximum iterations for ICA.
+
+        Returns:
+            np.ndarray: ICA components, or None if ICA fails.
+        """
+        data_reshaped = data.reshape(-1, data.shape[-1])
+        arr_cleaned = data_reshaped[~np.all(data_reshaped == 0, axis=1)]
+        if arr_cleaned.shape[0] == 0:
+            logging.warning("No non-zero channels for ICA")
             return None
 
-        # detect heart beat signal from the ICA components
-
-        return S_ica  # shape: (n_cols*n_rows, num_samples)
-
+        try:
+            ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter)
+            return ica.fit_transform(arr_cleaned.T).T
+        except Exception as e:
+            logging.error(f"ICA failed: {e}")
+            return None
 
     def create_heat_map_animation(self, data, cleanest_i, cleanest_j, output_file='animation.mp4', interval=100, resolution=500, stride=1, direction='x', key="Brustlage", dynamic_scale=True):
-        
-        """
-        data: 4x4xT array
-        cleanest_i, cleanest_j: indices of the cleanest channel
-        output_file: name of the output file
-        interval: time interval between frames in milliseconds
-        resolution: resolution of the heatmap
-        stride: number of frames to skip for animation
+        """Create an animated heatmap of the data.
 
-        returns: animation object and figure
-        """
+        Args:
+            data (np.ndarray): Data array, shape (rows, cols, samples).
+            cleanest_i (int): Row index of the cleanest channel.
+            cleanest_j (int): Column index of the cleanest channel.
+            output_file (str): Output file name for the animation.
+            interval (int): Frame interval in milliseconds.
+            resolution (int): Heatmap resolution.
+            stride (int): Frame stride.
+            direction (str): Field direction (x, y, z).
+            key (str): Run key.
+            dynamic_scale (bool): Whether to use dynamic color scaling.
 
-        # Custom colormap mit stärkerem Blau-Gelb-Gradienten
+        Returns:
+            tuple: (animation (FuncAnimation), figure (plt.Figure)).
+        """
         colors = ["black", "purple", "red", "yellow"]
         cmap = mcolors.LinearSegmentedColormap.from_list("custom_cmap", colors, N=256)
-        T = data.shape[-1]  # Anzahl der Zeitschritte
-
+        T = data.shape[-1]
         fig, (ax_main, ax_trace) = plt.subplots(1, 2, figsize=(14, 6))
-        
+
         x_highres = np.linspace(0, 3, resolution)
         y_highres = np.linspace(0, 3, resolution)
         xx_highres, yy_highres = np.meshgrid(x_highres, y_highres)
-        
-        heatmap = ax_main.imshow(np.zeros((resolution, resolution)), extent=[0, 3, 3, 0],
-                                origin='upper', cmap=cmap, interpolation='bilinear')
+
+        heatmap = ax_main.imshow(np.zeros((resolution, resolution)), extent=[0, 3, 3, 0], origin='upper', cmap=cmap, interpolation='bilinear')
         cbar = fig.colorbar(heatmap, ax=ax_main)
-        cbar.set_label(f'B-{direction} Feldstärke {key}', fontsize=14)
-        
+        cbar.set_label(f'B-{direction} Field Strength {key}', fontsize=14)
+
         sensor_points, = ax_main.plot([], [], 'ko', markersize=6, markeredgewidth=1)
-        cleanest_marker, = ax_main.plot([], [], 'go', markersize=12, markerfacecolor='none', markeredgewidth=3)
+        cleanest_marker, = ax_main.plot([cleanest_j], [3 - cleanest_i], 'go', markersize=12, markerfacecolor='none', markeredgewidth=3)
         time_text = ax_main.text(0.02, 0.95, '', transform=ax_main.transAxes, fontsize=14)
-        
         ax_main.set_xlim(-0.1, 3.1)
         ax_main.set_ylim(-0.1, 3.1)
-        
+
         time_series = data[cleanest_i, cleanest_j, :]
-        trace_plot, = ax_trace.plot(np.array(range(T)) * 1000 /self.sampling_rate, time_series, 'b-', label=f'Kanal ({cleanest_i}, {cleanest_j})')
+        trace_plot, = ax_trace.plot(np.array(range(T)) * 1000 / self.sampling_rate, time_series, 'b-', label=f'Channel ({cleanest_i}, {cleanest_j})')
         moving_point, = ax_trace.plot([], [], 'go', markersize=8)
-        ax_trace.set_xlim(0, T)
+        ax_trace.set_xlim(0, T * 1000 / self.sampling_rate)
         ax_trace.set_ylim(time_series.min(), time_series.max())
-        ax_trace.set_title('Zeitverlauf des festen saubersten Kanals', fontsize=16)
-        ax_trace.set_xlabel('Zeit [ms]', fontsize=14)
-        ax_trace.set_ylabel(f'B-{direction} Feldstärke {key}', fontsize=14)
+        ax_trace.set_title('Time Series of Cleanest Channel', fontsize=16)
+        ax_trace.set_xlabel('Time [ms]', fontsize=14)
+        ax_trace.set_ylabel(f'B-{direction} Field Strength {key}', fontsize=14)
         ax_trace.legend()
         ax_trace.grid(True)
-        
+
         def update(frame):
             current_data = data[:, :, frame]
-            
             if dynamic_scale:
                 valid_values = current_data[np.isfinite(current_data)]
                 if valid_values.size > 0:
-                    vmin, vmax = valid_values.min(), valid_values.max()
-                    heatmap.set_clim(vmin, vmax)
+                    heatmap.set_clim(valid_values.min(), valid_values.max())
 
             points, values, sensor_x, sensor_y = [], [], [], []
             for i in range(4):
                 for j in range(4):
-                    if np.isfinite(current_data[i, j]):
-                        if not np.all(current_data[i, j] == 0):
-                            points.append([j, 3-i])
-                            values.append(current_data[i, j])
-                            sensor_x.append(j)
-                            sensor_y.append(3-i)
-            
-            method = 'cubic' if len(points) > 3 else 'linear'
-            if points:
-                points, values = np.array(points), np.array(values)
-                interpolated_data = griddata(points, values, (xx_highres, yy_highres), method=method, fill_value=np.nan)
-                heatmap.set_array(interpolated_data)
-            
-            sensor_points.set_data(sensor_x, sensor_y)
-            time_text.set_text(f'Zeit: {frame*1000/self.sampling_rate} ms')
-            
-            moving_point.set_data([frame], [time_series[frame]])
-            
-            return heatmap, time_text, cleanest_marker, sensor_points, moving_point
-        
-        cleanest_marker.set_data([cleanest_j], [3-cleanest_i])
+                    if np.isfinite(current_data[i, j]) and not np.all(current_data[i, j] == 0):
+                        points.append([j, 3 - i])
+                        values.append(current_data[i, j])
+                        sensor_x.append(j)
+                        sensor_y.append(3 - i)
 
-        animation_T = [i for i in range(0, T, stride)]
+            if points:
+                interpolated_data = griddata(np.array(points), np.array(values), (xx_highres, yy_highres),
+                                            method='cubic' if len(points) > 3 else 'linear', fill_value=np.nan)
+                heatmap.set_array(interpolated_data)
+
+            sensor_points.set_data(sensor_x, sensor_y)
+            time_text.set_text(f'Time: {frame * 1000 / self.sampling_rate:.1f} ms')
+            moving_point.set_data([frame * 1000 / self.sampling_rate], [time_series[frame]])
+            return heatmap, time_text, cleanest_marker, sensor_points, moving_point
+
+        animation_T = range(0, T, stride)
         ani = FuncAnimation(fig, update, frames=animation_T, interval=interval, blit=True)
-        plt.tight_layout()
         ani.save(output_file, writer='ffmpeg', dpi=200)
+        plt.tight_layout()
         plt.show()
-        
         return ani, fig
-    
+
     def loop_over_dataset(self, function):
         # Load the overview Excel file
         overview = pd.read_excel("Data/overview.xlsx")
@@ -1358,7 +1412,7 @@ class Analyzer:
                 number = re.findall(r'\d+', dir)
                 patient_number = int(number[0]) if number else None
 
-                if overview.loc[overview["Porbanten Nr."] == patient_number, "runs"].values[0].strip() == "-":
+                if overview.loc[overview["Probanten Nr."] == patient_number, "runs"].values[0].strip() == "-":
                     print(f"No runs found for patient {patient_number}. Skipping...")
                     continue
 
@@ -1381,14 +1435,14 @@ class Analyzer:
                 if count >= 2:
                     # Load the log file and data
                     self.log_file_path = os.path.join(dir_path, "QZFM_log_file.txt")
-                    self.data = self.import_tdms(self.filename, self.scaling)
-                    self.key_list = overview.loc[overview["Porbanten Nr."] == patient_number, "runs"].values[0].strip().split(", ")
+                    self.data = self._import_tdms(self.filename, self.scaling)
+                    self.key_list = overview.loc[overview["Probanten Nr."] == patient_number, "runs"].values[0].strip().split(", ")
 
-                    self.add_data = self.import_tdms(self.add_filename, self.scaling)
-                    self.sensor_channels_to_exclude = json.loads(overview.loc[overview["Porbanten Nr."] == patient_number, "Sensors to exclude"].values[0])
+                    self.add_data = self._import_tdms(self.add_filename, self.scaling)
+                    self.sensor_channels_to_exclude = json.loads(overview.loc[overview["Probanten Nr."] == patient_number, "Sensors to exclude"].values[0])
 
                     # Load data for quspin channels
-                    self.quspin_gen_dict, self.quspin_channel_dict, self.quspin_position_list = self.load_data_from_file(self.log_file_path)
+                    self._load_sensor_log_file()
 
                     # Update the quspin channel dictionary based on value conditions
                     for key, value in self.quspin_channel_dict.items():
@@ -1410,8 +1464,5 @@ class Analyzer:
                 print(f"Skipping non-patient directory: {dir}")
 
 
-
-
 if __name__ == "__main__":
-    # Example usage
     analyzer = Analyzer()
