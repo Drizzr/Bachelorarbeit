@@ -722,7 +722,7 @@ class Analyzer:
         # Squeeze the channel dimension out of the returned data
         return final_labels, resampled_data_np.squeeze(axis=1), final_confidences
 
-    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.75, plausibility_weight: float = 0.25):
+    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.80, plausibility_weight: float = 0.2):
         """
         Find the channel with the clearest signal based on segmentation confidence
         and physiological plausibility.
@@ -933,7 +933,7 @@ class Analyzer:
             else:
                 print("No peaks detected.")
 
-        return peak_positions, resampled_data, best_channel_idx, heart_rate, hrv_sdnn_ms
+        return peak_positions, resampled_data, best_channel_idx, labels, heart_rate, hrv_sdnn_ms
 
     @staticmethod
     def _detect_qrs_segments(labels_ch, qrs_label):
@@ -1075,7 +1075,7 @@ class Analyzer:
             else:
                 print("No valid heart rates detected across channels.")
 
-        return peak_positions_all_channels, resampled_data, cleanest_channel, avg_heart_rate, avg_hrv_sdnn
+        return peak_positions_all_channels, resampled_data, cleanest_channel, labels, avg_heart_rate, avg_hrv_sdnn
     
 
     def plotting_time_series(self, data, time, num_ch, name, path=None, save=False):
