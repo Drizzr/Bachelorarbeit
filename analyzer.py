@@ -1209,35 +1209,40 @@ class Analyzer:
 
         return x_data, y_data, z_data
 
+
     def align_multi_channel_signal(self, signal1, signal2, lag_cutoff=2000, plot=True):
-        """Align two multi-channel signals using cross-correlation.
+        """
+        Align two multi-channel signals using cross-correlation based on the mean across channels.
+        In the beginning of the run a distinct signal is required to estimate the lag. F.e. a rectangular wave
 
         Args:
             signal1 (np.ndarray): First signal, shape (num_channels, num_samples).
             signal2 (np.ndarray): Second signal, shape (num_channels, num_samples).
-            lag_cutoff (int): Maximum lag for correlation.
-            plot (bool): Whether to plot alignment results.
+            lag_cutoff (int): Maximum number of samples to consider for lag estimation.
+            plot (bool): Whether to plot before/after alignment.
 
         Returns:
-            tuple: (aligned_signal2 (np.ndarray), lag (int)).
+            tuple: (aligned_signal2 (np.ndarray), lag (int))
         """
-        ox_y_channel = self.quspin_channel_dict.get("OX_y")
-        f1_y_channel = self.quspin_channel_dict.get("F1_y")
-        if ox_y_channel is None or f1_y_channel is None:
-            raise ValueError("Required channels (OX_y or F1_y) not found")
 
-        f1_y_data = signal1[abs(int(f1_y_channel))] * np.sign(int(f1_y_channel))
-        ox_y_data = signal2[31 - abs(int(ox_y_channel))] * np.sign(int(ox_y_channel))
+        # Ensure correct shape (channels, samples)
+        signal1 = signal1 if signal1.ndim == 2 else signal1[:, np.newaxis]
+        signal2 = signal2 if signal2.ndim == 2 else signal2[:, np.newaxis]
 
-        if len(f1_y_data) < lag_cutoff or len(ox_y_data) < lag_cutoff:
-            raise ValueError("lag_cutoff exceeds signal length")
+        # Check signal lengths
+        min_len = min(signal1.shape[1], signal2.shape[1])
+        if min_len < lag_cutoff:
+            raise ValueError(f"lag_cutoff ({lag_cutoff}) exceeds signal length ({min_len})")
 
-        correlation = correlate(f1_y_data[:lag_cutoff], ox_y_data[:lag_cutoff], mode='full')
+        # Compute mean across channels
+        mean_signal1 = np.mean(signal1[:, :lag_cutoff], axis=0)
+        mean_signal2 = np.mean(signal2[:, :lag_cutoff], axis=0)
+
+        # Cross-correlate the two mean signals
+        correlation = correlate(mean_signal1, mean_signal2, mode='full')
         lag = np.argmax(correlation) - (lag_cutoff - 1)
 
-        signal1 = signal1[:, np.newaxis] if signal1.ndim == 1 else signal1
-        signal2 = signal2[:, np.newaxis] if signal2.ndim == 1 else signal2
-
+        # Shift signal2 according to lag
         if lag > 0:
             aligned_signal2 = np.pad(signal2, ((0, 0), (lag, 0)), mode='constant')[:, :signal1.shape[1]]
         else:
@@ -1245,21 +1250,29 @@ class Analyzer:
             if aligned_signal2.shape[1] < signal1.shape[1]:
                 aligned_signal2 = np.pad(aligned_signal2, ((0, 0), (0, signal1.shape[1] - aligned_signal2.shape[1])), mode='constant')
 
+        # Plot before and after alignment
         if plot:
-            fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+            fig, axs = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+            
             for i in range(signal1.shape[0]):
-                ax[0].plot(signal1[i, :lag_cutoff], color='blue')
-                ax[1].plot(signal1[i, :lag_cutoff], color='blue')
+                axs[0].plot(signal1[i, :lag_cutoff], color='blue', alpha=0.5)
             for i in range(signal2.shape[0]):
-                ax[0].plot(signal2[i, :lag_cutoff], color='orange')
+                axs[0].plot(signal2[i, :lag_cutoff], color='orange', alpha=0.5)
+            axs[0].set_title('Before Alignment')
+            
+            for i in range(signal1.shape[0]):
+                axs[1].plot(signal1[i, :lag_cutoff], color='blue', alpha=0.5)
             for i in range(aligned_signal2.shape[0]):
-                ax[1].plot(aligned_signal2[i, :lag_cutoff], color='orange')
-            ax[0].set_title("Before Alignment")
-            ax[1].set_title("After Alignment")
+                axs[1].plot(aligned_signal2[i, :lag_cutoff], color='orange', alpha=0.5)
+            axs[1].set_title('After Alignment')
+
+            for ax in axs:
+                ax.grid(True)
             plt.tight_layout()
             plt.show()
 
         return aligned_signal2, lag
+
 
     def prepare_data(self, key, apply_default_filter=False, intervall_low=5, intervall_high=-5, plot_alignment=False, alignment_cutoff=2000):
         """Prepare data for analysis by aligning and filtering.
@@ -1267,14 +1280,15 @@ class Analyzer:
         Args:
             key (str): Run key.
             apply_default_filter (bool): Whether to apply default filters.
-            intervall_low (float): Start time in seconds.
-            intervall_high (float): End time in seconds.
+            intervall_low (float): Start time in seconds from the start (f.e. 5).
+            intervall_high (float): End time in seconds from the end (f.e. -5).
             plot_alignment (bool): Whether to plot alignment results.
             alignment_cutoff (int): Cutoff for alignment correlation.
 
         Returns:
             tuple: ((x_data, y_data, z_data), time (np.ndarray), single_run (np.ndarray)).
         """
+
         intervall_low_samples = int(intervall_low * self.sampling_rate)
         intervall_high_samples = int(intervall_high * self.sampling_rate)
 
