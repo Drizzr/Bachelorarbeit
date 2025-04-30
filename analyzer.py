@@ -355,18 +355,11 @@ class Analyzer:
         plt.show()
 
     def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None):
-        """Plot a 2D projection of the heart vector with metrics.
+        """Plot a 2D projection of the heart vector with metrics and filled area."""
 
-        Args:
-            component1 (np.ndarray): First component data.
-            component2 (np.ndarray): Second component data.
-            proj_name (str): Name of the projection (e.g., 'xy-Projection').
-            title_suffix (str): Suffix for the plot title.
-            ax (matplotlib.axes.Axes, optional): Axes to plot on.
+        import matplotlib.pyplot as plt
+        import numpy as np
 
-        Returns:
-            matplotlib.axes.Axes: The plotted axes.
-        """
         standalone_plot = ax is None
         if standalone_plot:
             fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
@@ -383,10 +376,15 @@ class Analyzer:
         ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
         ax.set_aspect('equal', adjustable='box')
 
-        # Plot data
+        # Choose plot color
         color_map = {"xy-Projection": 'dodgerblue', "xz-Projection": 'orange', "yz-Projection": 'forestgreen'}
         plot_color = color_map.get(proj_name, 'purple')
+
+        # Plot line
         ax.plot(component1, component2, label=proj_name, color=plot_color, linewidth=2.0)
+
+        # Fill enclosed area
+        ax.fill(component1, component2, color=plot_color, alpha=0.3, label=f'{proj_name} Area')
 
         # Add directional arrows
         arrow_stride = max(1, len(component1) // 20)
@@ -401,17 +399,28 @@ class Analyzer:
         metrics_text = "Metrics N/A"
         if len(component1) > 2:
             try:
+                # Shoelace formula for area
                 area = 0.5 * np.abs(np.dot(component1, np.roll(component2, 1)) - np.dot(component2, np.roll(component1, 1)))
                 magnitudes = component1**2 + component2**2
                 t_max_idx = np.argmax(magnitudes)
-                t_distance = np.linalg.norm(np.array([component1[t_max_idx], component2[t_max_idx]]) - np.array([component1[0], component2[0]]))
-                dist_max_to_end = np.linalg.norm(np.array([component1[t_max_idx], component2[t_max_idx]]) - np.array([component1[-1], component2[-1]]))
+
+                t_distance = np.linalg.norm([component1[t_max_idx] - component1[0], component2[t_max_idx] - component2[0]])
+                dist_max_to_end = np.linalg.norm([component1[t_max_idx] - component1[-1], component2[t_max_idx] - component2[-1]])
                 start_end_ratio = t_distance / (dist_max_to_end + 1e-9)
-                metrics_text = f'Area: {area:.2f}\nT-Dist: {t_distance:.2f}\nS/E Ratio: {start_end_ratio:.2f}'
+
+                # Extra metrics: Compactness (Area / Perimeter²)
+                perimeter = np.sum(np.linalg.norm(np.diff(np.stack([component1, component2], axis=1), axis=0), axis=1))
+                compactness = (4 * np.pi * area) / (perimeter**2 + 1e-9)
+
+                metrics_text = (f'Area: {area:.1f}\n'
+                                f'T-Dist: {t_distance:.1f}\n'
+                                f'S/E Ratio: {start_end_ratio:.2f}\n'
+                                f'Compact: {compactness:.2f}')
             except Exception as e:
                 logging.warning(f"Error calculating metrics for {proj_name}: {e}")
                 metrics_text = "Metrics Error"
 
+        # Add metrics text
         ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, fontsize=9, fontweight='bold', color='black',
                 verticalalignment='top', bbox=dict(facecolor='white', edgecolor='gray', alpha=0.8, boxstyle='round,pad=0.3'))
 
@@ -441,11 +450,13 @@ class Analyzer:
         ax.legend(fontsize=10, loc='lower right', frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
 
         if standalone_plot:
-            plt.suptitle(f"Heart Vector Projection: {proj_name}{' - ' + title_suffix if title_suffix else ''}", fontsize=16, fontweight='bold')
+            plt.suptitle(f"Heart Vector Projection: {proj_name}{' - ' + title_suffix if title_suffix else ''}",
+                        fontsize=16, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             plt.show()
 
         return ax
+
 
     def plot_all_heart_vector_projections(self, heart_vector_components, title_suffix="", save_path=None):
         """Plot XY, XZ, and YZ projections of the heart vector.
@@ -731,7 +742,7 @@ class Analyzer:
         # Squeeze the channel dimension out of the returned data
         return final_labels, resampled_data_np.squeeze(axis=1), final_confidences
     
-    def _heart_beat_score(self, confidence: np.ndarray, labels: np.ndarray, confidence_weight: float = 0.80, plausibility_weight: float = 0.2):
+    def _heart_beat_score(self, confidence: np.ndarray, labels: np.ndarray, confidence_weight: float = 0.80, plausibility_weight: float = 0.2, zero_input_mask: np.ndarray = None,):
         """
         Calculate the heart beat score based on confidence and plausibility.
         Args:
@@ -787,6 +798,9 @@ class Analyzer:
 
         final_scores = (confidence_weight * normalized_confidence) + (plausibility_weight * plausibility_scores)
 
+        if zero_input_mask is not None:
+            final_scores[zero_input_mask] = 0.0
+
         return final_scores, mean_confidence, segment_percentages, plausibility_scores
     
 
@@ -817,13 +831,16 @@ class Analyzer:
         # Note: Pass short_segment_threshold here if needed, otherwise use default
         labels, resampled_data, confidence = self.segment_entire_run(data, window_size, overlap, resample=resample)
 
+        # Identify channels with all-zero input data
+        zero_input_mask = np.all(data == 0, axis=1)  # Shape: (num_channels,)
+
         # --- Scoring ---
         if labels.size == 0: # Handle case where segmentation returned empty
             warnings.warn("Segmentation returned empty results in find_cleanest_channel.")
             return 0, (labels, resampled_data, confidence)
 
         # Calculate mean confidence (axis=1 operates over time dimension T)
-        final_scores, mean_confidence, segment_percentages, plausibility_scores = self._heart_beat_score(confidence, labels, confidence_weight, plausibility_weight)
+        final_scores, mean_confidence, segment_percentages, plausibility_scores = self._heart_beat_score(confidence, labels, confidence_weight, plausibility_weight, zero_input_mask)
 
         # Find best channel
         best_channel = np.argmax(final_scores) if final_scores.size > 0 else 0
@@ -1170,6 +1187,7 @@ class Analyzer:
             if len(windows) > 0:
                 windows = np.array(windows)
                 final_labels, _, final_confidences = self.segment_entire_run(windows, resample=False)
+
                 scores, _, _, _ = self._heart_beat_score(final_confidences, final_labels)
                 
                 mask = scores > heart_beat_score_threshold
