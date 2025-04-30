@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 from scipy import signal
 from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
+from scipy.ndimage import gaussian_filter1d
 from sklearn.decomposition import FastICA
 
 # Attempt to import local MCG_segmentation package
@@ -42,6 +43,7 @@ class Analyzer:
     SEGMENT_COLORS = {0: "silver", 1: "lightblue", 2: "lightcoral", 3: "lightgreen"}
     LABEL_TO_IDX = {v: k for k, v in CLASS_NAMES_MAP.items()}
     DEFAULT_SAMPLING_RATE = 1000
+    TARGET_SAMPLING_RATE = 250
     DEFAULT_SCALING = 2.7 / 1000
     DEFAULT_NUM_CHANNELS = 48
     DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/MCGSegmentator_s/checkpoints/best"
@@ -65,6 +67,7 @@ class Analyzer:
         sensor_channels_to_exclude=None,
         scaling=DEFAULT_SCALING,
         sampling_rate=DEFAULT_SAMPLING_RATE,
+        target_sampling_rate=TARGET_SAMPLING_RATE,
         num_ch=DEFAULT_NUM_CHANNELS,
         model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR
     ):
@@ -77,6 +80,7 @@ class Analyzer:
             sensor_channels_to_exclude (dict, optional): Channels to exclude per run key.
             scaling (float): Scaling factor for TDMS data.
             sampling_rate (int): Sampling rate of the TDMS data in Hz.
+            target_sampling_rate (int): Target sampling rate for resampling. (default: 250 Hz since the model is trained on 250 Hz)
             num_ch (int): Number of channels for plotting.
             model_checkpoint_dir (str): Directory with trained segmentation model.
         """
@@ -94,6 +98,7 @@ class Analyzer:
         self.log_file_path = log_file_path
         self.scaling = scaling
         self.sampling_rate = sampling_rate
+        self.target_sampling_rate = target_sampling_rate
         self.num_ch = num_ch
         self.sensor_channels_to_exclude = sensor_channels_to_exclude or {}
         self.data = {}
@@ -617,7 +622,7 @@ class Analyzer:
         Segment the entire run (potentially T > 2000) using a sliding window.
 
         Args:
-            data: numpy array of shape (b, 1, T). Assumes data is pre-filtered.
+            data: numpy array of shape (b, T). Assumes data is pre-filtered.
                 Normalization happens per window. Sampling rate is handled.
             window_size: Size of the sliding window for inference.
             overlap: Fraction of overlap between consecutive windows (0.0 to < 1.0).
@@ -627,13 +632,17 @@ class Analyzer:
                     resampled data (b, T_resampled),
                     final confidence scores (b, T_resampled))
         """
+        if data.ndim != 2:
+            raise ValueError("Data must be 2D (b, T)")
+
+        data = data.reshape(data.shape[0], 1, data.shape[1]) # Ensure data is 3D
 
         if not (0.0 <= overlap < 1.0):
             raise ValueError("Overlap must be between 0.0 and < 1.0")
 
         # --- Resampling (Keep original logic, seems reasonable) ---
-        if self.sampling_rate != 250 and resample:
-            num_samples_target = int(data.shape[-1] * (250 / self.sampling_rate))
+        if self.sampling_rate != self.target_sampling_rate and resample:
+            num_samples_target = int(data.shape[-1] * (self.target_sampling_rate / self.sampling_rate))
 
             if num_samples_target == 0:
                 warnings.warn("Resampled length is zero. Cannot proceed.")
@@ -651,7 +660,7 @@ class Analyzer:
             resampled_data_list = []
             for i in range(data.shape[0]):
                 resampled_sample = signal.resample(data[i, 0, :], num_samples_target)
-                resampled_sample = savgol_filter(resampled_sample, window_length=7, polyorder=2, axis=-1)
+                resampled_sample = savgol_filter(resampled_sample, window_length=15, polyorder=2, axis=-1)
                 resampled_data_list.append(resampled_sample)
 
             resampled_data_np = np.stack(resampled_data_list, axis=0)
@@ -721,48 +730,27 @@ class Analyzer:
 
         # Squeeze the channel dimension out of the returned data
         return final_labels, resampled_data_np.squeeze(axis=1), final_confidences
-
-    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.80, plausibility_weight: float = 0.2):
+    
+    def _heart_beat_score(self, confidence: np.ndarray, labels: np.ndarray, confidence_weight: float = 0.80, plausibility_weight: float = 0.2):
         """
-        Find the channel with the clearest signal based on segmentation confidence
-        and physiological plausibility.
-
+        Calculate the heart beat score based on confidence and plausibility.
         Args:
-            data: numpy array of shape (num_channels, num_samples). Raw data.
-            window_size: Window size for segmentation.
-            overlap: Overlap between windows.
-
+            confidence: numpy array of shape (num_channels, num_samples). Confidence scores.
+            labels: numpy array of shape (num_channels, num_samples). Segmentation labels.
+            confidence_weight: Weight for the confidence score.
+            plausibility_weight: Weight for the plausibility score.
         Returns:
-            Tuple[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-                (Index of the best channel, (labels, resampled_data, confidence) for all channels)
+            numpy array of shape (num_channels,). Final scores for each channel.
         """
-        if data.ndim != 2:
-            raise ValueError(f"Input data must be 2D (num_channels, num_samples), got shape {data.shape}")
-        num_channels, num_samples = data.shape
-        if num_channels == 0 or num_samples == 0:
-            warnings.warn("Input data for find_cleanest_channel is empty.")
-            # Return dummy values
-            return 0, (np.empty((0,0), dtype=int), np.empty((0,0)), np.empty((0,0), dtype=float))
 
+        num_channels, _ = confidence.shape
+        
+        mean_confidence = np.mean(confidence, axis=-1) # Shape: (num_channels,)
 
-        # Reshape data to (num_channels, 1, num_samples) for segmentation function
-        data_reshaped = data.reshape(num_channels, 1, -1)
-
-        # Segment all channels - segment_entire_run handles batch (channel) dimension
-        # Note: Pass short_segment_threshold here if needed, otherwise use default
-        labels, resampled_data, confidence = self.segment_entire_run(data_reshaped, window_size, overlap)
-
-        # --- Scoring ---
-        if labels.size == 0: # Handle case where segmentation returned empty
-            warnings.warn("Segmentation returned empty results in find_cleanest_channel.")
-            return 0, (labels, resampled_data, confidence)
-
-        # Calculate mean confidence (axis=1 operates over time dimension T)
-        mean_confidence = np.mean(confidence, axis=1) # Shape: (num_channels,)
 
         # Calculate segment percentages
         segment_percentages = np.zeros((num_channels, 4))
-        total_samples_per_channel = labels.shape[1]
+        total_samples_per_channel = labels.shape[-1]
 
         if total_samples_per_channel > 0:
             for segment_type in range(4): # 0, 1, 2, 3
@@ -798,6 +786,44 @@ class Analyzer:
         normalized_confidence = mean_confidence / (max_conf + 1e-9) if max_conf > 0 else mean_confidence
 
         final_scores = (confidence_weight * normalized_confidence) + (plausibility_weight * plausibility_scores)
+
+        return final_scores, mean_confidence, segment_percentages, plausibility_scores
+    
+
+    def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.80, plausibility_weight: float = 0.2, resample: bool = True):
+        """
+        Find the channel with the clearest signal based on segmentation confidence
+        and physiological plausibility.
+
+        Args:
+            data: numpy array of shape (num_channels, num_samples). Raw data.
+            window_size: Window size for segmentation.
+            overlap: Overlap between windows.
+
+        Returns:
+            Tuple[int, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+                (Index of the best channel, (labels, resampled_data, confidence) for all channels)
+        """
+        if data.ndim != 2:
+            raise ValueError(f"Input data must be 2D (num_channels, num_samples), got shape {data.shape}")
+        num_channels, num_samples = data.shape
+        if num_channels == 0 or num_samples == 0:
+            warnings.warn("Input data for find_cleanest_channel is empty.")
+            # Return dummy values
+            return 0, (np.empty((0,0), dtype=int), np.empty((0,0)), np.empty((0,0), dtype=float))
+
+
+        # Segment all channels - segment_entire_run handles batch (channel) dimension
+        # Note: Pass short_segment_threshold here if needed, otherwise use default
+        labels, resampled_data, confidence = self.segment_entire_run(data, window_size, overlap, resample=resample)
+
+        # --- Scoring ---
+        if labels.size == 0: # Handle case where segmentation returned empty
+            warnings.warn("Segmentation returned empty results in find_cleanest_channel.")
+            return 0, (labels, resampled_data, confidence)
+
+        # Calculate mean confidence (axis=1 operates over time dimension T)
+        final_scores, mean_confidence, segment_percentages, plausibility_scores = self._heart_beat_score(confidence, labels, confidence_weight, plausibility_weight)
 
         # Find best channel
         best_channel = np.argmax(final_scores) if final_scores.size > 0 else 0
@@ -861,11 +887,10 @@ class Analyzer:
         labels_ch = labels[best_channel_idx]
         resampled_data_ch = resampled_data[best_channel_idx]
         confidence_ch = confidence[best_channel_idx]
-        sampling_rate_resampled = 250  # Hardcoded based on previous logic
 
         # Convert min length from seconds to samples
-        min_qrs_length_samples = int(min_qrs_length_sec * sampling_rate_resampled)
-        min_distance_samples = int(min_distance_sec * sampling_rate_resampled)  # Convert min distance to samples
+        min_qrs_length_samples = int(min_qrs_length_sec * self.target_sampling_rate)
+        min_distance_samples = int(min_distance_sec * self.target_sampling_rate)  # Convert min distance to samples
 
         # 2. Find QRS segments using improved method
         qrs_label = self.LABEL_TO_IDX["QRS"]
@@ -909,7 +934,7 @@ class Analyzer:
         if print_heart_rate:
             if len(peak_positions) > 1:
                 rr_intervals_samples = np.diff(peak_positions)
-                rr_intervals_sec = rr_intervals_samples / sampling_rate_resampled
+                rr_intervals_sec = rr_intervals_samples / self.target_sampling_rate
                 rr_intervals_ms = rr_intervals_sec * 1000
 
                 # Basic outlier removal for RR intervals
@@ -1011,9 +1036,8 @@ class Analyzer:
             return {}, resampled_data, cleanest_channel, 0.0, 0.0
 
         num_channels = labels.shape[0]
-        sampling_rate_resampled = 250  # Hardcoded based on previous logic
-        min_qrs_length_samples = int(min_qrs_length_sec * sampling_rate_resampled)
-        min_distance_samples = int(min_distance_sec * sampling_rate_resampled)
+        min_qrs_length_samples = int(min_qrs_length_sec * self.target_sampling_rate)
+        min_distance_samples = int(min_distance_sec * self.target_sampling_rate)  # Convert min distance to samples
         qrs_label = self.LABEL_TO_IDX["QRS"]
         peak_positions_all_channels = {}
 
@@ -1054,7 +1078,7 @@ class Analyzer:
             # Calculate HR and HRV
             if len(peak_positions) > 1:
                 rr_intervals_samples = np.diff(peak_positions)
-                rr_intervals_sec = rr_intervals_samples / sampling_rate_resampled
+                rr_intervals_sec = rr_intervals_samples / self.target_sampling_rate
                 rr_intervals_ms = rr_intervals_sec * 1000
                 plausible_rr_ms = rr_intervals_ms[(rr_intervals_ms > 200) & (rr_intervals_ms < 2000)]
 
@@ -1066,12 +1090,14 @@ class Analyzer:
                     all_hrv_sdnn.append(hrv_sdnn_ms)
 
         avg_heart_rate = np.mean(all_heart_rates) if all_heart_rates else 0.0
+        std_deviation_hr = np.std(all_heart_rates) if all_heart_rates else 0.0
         avg_hrv_sdnn = np.mean(all_hrv_sdnn) if all_hrv_sdnn else 0.0
+        std_deviation_hrv = np.std(all_hrv_sdnn) if all_hrv_sdnn else 0.0
 
         if print_heart_rate:
             if len(all_heart_rates) > 0:
-                print(f"Average Heart Rate: {avg_heart_rate:.2f} bpm")
-                print(f"Average Heart Rate Variability (SDNN): {avg_hrv_sdnn:.2f} ms")
+                print(f"Average Heart Rate: {avg_heart_rate:.2f} +/- {std_deviation_hr:.2f} bpm")
+                print(f"Average Heart Rate Variability (SDNN): {avg_hrv_sdnn:.2f} +/- {std_deviation_hrv:.2f} ms")
             else:
                 print("No valid heart rates detected across channels.")
 
@@ -1109,7 +1135,7 @@ class Analyzer:
             plt.savefig(os.path.join(path, f'{name}_B_vs_time.png'), dpi=100)
         plt.show()
 
-    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4):
+    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4, heart_beat_score_threshold=0.75):
         """Compute average windowed QRS waveform around peaks.
 
         Args:
@@ -1121,8 +1147,11 @@ class Analyzer:
         Returns:
             tuple: (avg_channels (np.ndarray), time_window (np.ndarray)).
         """
-        samples_left = int(window_left * 250)
-        samples_right = int(window_right * 250)
+        if peak_positions is None or len(peak_positions) == 0:
+            raise ValueError("No peak positions provided.")
+        
+        samples_left = int(window_left * self.target_sampling_rate)
+        samples_right = int(window_right * self.target_sampling_rate)
         window_length = samples_left + samples_right
         num_channels = data.shape[0]
         avg_channels = []
@@ -1137,10 +1166,24 @@ class Analyzer:
                 window = data[ch, pos - samples_left:pos + samples_right]
                 time = np.linspace(0, len(window) / self.sampling_rate, num=len(window), endpoint=False)
                 windows.append(self.remove_drift_and_offset(window, time))
-            avg_channels.append(np.mean(windows, axis=0) if windows else np.zeros(window_length))
+            
+            if len(windows) > 0:
+                windows = np.array(windows)
+                final_labels, _, final_confidences = self.segment_entire_run(windows, resample=False)
+                scores, _, _, _ = self._heart_beat_score(final_confidences, final_labels)
+                
+                mask = scores > heart_beat_score_threshold
+                windows = windows[mask]
 
-        time_window = np.linspace(0, window_length / 250, num=window_length, endpoint=False)
-        return np.array(avg_channels), time_window
+                avg_channels.append(np.mean(windows, axis=0))
+            
+            else:
+                avg_channels.append(np.zeros(window_length))
+
+        time_window = np.linspace(0, window_length / self.target_sampling_rate, num=window_length, endpoint=False)
+
+        avg_channels = gaussian_filter1d(avg_channels, sigma=4, axis=-1, mode='nearest')
+        return avg_channels, time_window
 
     def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2):
         """Apply a default combination of filters to the data.
@@ -1202,7 +1245,7 @@ class Analyzer:
                     channel_name = quspin_id + suffix
                     channel_index = self.quspin_channel_dict.get(channel_name)
                     if channel_index is None or (self.sensor_channels_to_exclude.get(key) and channel_name in self.sensor_channels_to_exclude.get(key, [])) or \
-                       (self.sensor_channels_to_exclude.get(key) and f"*{suffix}" in self.sensor_channels_to_exclude.get(key, [])):
+                    (self.sensor_channels_to_exclude.get(key) and f"*{suffix}" in self.sensor_channels_to_exclude.get(key, [])):
                         continue
                     channel_index = abs(int(channel_index))
                     target[row_idx, col_idx, :] = data[channel_index]
