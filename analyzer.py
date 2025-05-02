@@ -412,10 +412,19 @@ class Analyzer:
                 perimeter = np.sum(np.linalg.norm(np.diff(np.stack([component1, component2], axis=1), axis=0), axis=1))
                 compactness = (4 * np.pi * area) / (perimeter**2 + 1e-9)
 
-                metrics_text = (f'Area: {area:.1f}\n'
-                                f'T-Dist: {t_distance:.1f}\n'
+                # Average direction (in radians and degrees)
+                mean_dx = np.mean(component1)
+                mean_dy = np.mean(component2)
+                avg_angle_rad = np.arctan2(mean_dy, mean_dx)
+                avg_angle_deg = np.degrees(avg_angle_rad)
+
+
+                metrics_text = (f'Area: {area:.3f}\n'
+                                f'T-Dist: {t_distance:.2f}\n'
                                 f'S/E Ratio: {start_end_ratio:.2f}\n'
-                                f'Compact: {compactness:.2f}')
+                                f'Compact: {compactness:.4f}\n'
+                                f'Angle: {avg_angle_deg:.1f}°')
+                
             except Exception as e:
                 logging.warning(f"Error calculating metrics for {proj_name}: {e}")
                 metrics_text = "Metrics Error"
@@ -454,6 +463,9 @@ class Analyzer:
                         fontsize=16, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             plt.show()
+
+        # print out the metrics
+        logging.info(f"Metrics for {proj_name}: {metrics_text}")
 
         return ax
 
@@ -912,7 +924,7 @@ class Analyzer:
         # 2. Find QRS segments using improved method
         qrs_label = self.LABEL_TO_IDX["QRS"]
         qrs_segments = self._detect_qrs_segments(labels_ch, qrs_label)
-        
+  
         peak_positions = []
 
         # 3. Process each QRS segment
@@ -981,11 +993,9 @@ class Analyzer:
     def _detect_qrs_segments(labels_ch, qrs_label):
         """
         More robust QRS segment detection function.
-        
         Args:
             labels_ch: Channel labels array
             qrs_label: The label index for QRS segments
-        
         Returns:
             List of tuples containing (start_idx, end_idx) for each valid QRS segment
         """
@@ -997,33 +1007,27 @@ class Analyzer:
         where_changes = np.where(np.diff(is_qrs, prepend=0, append=0) != 0)[0]
         
         # No changes means either all QRS or no QRS
-        if len(where_changes) == 0:
+        if len(where_changes) <= 1:
             if is_qrs[0] == 1:  # All signal is QRS
                 return [(0, len(is_qrs))]
             else:  # No QRS found
                 return []
-                
+        
         # Process change points to get valid segments
         segments = []
         
-        # Initial state (0=non-QRS, 1=QRS)
-        state = 0 if is_qrs[0] == 0 else 1
-        start_idx = 0 if state == 1 else None
+        # Handle changes in pairs
+        for i in range(0, len(where_changes) - 1, 2):
+            start_idx = where_changes[i]
+            # Make sure we don't go out of bounds
+            if i + 1 < len(where_changes):
+                end_idx = where_changes[i + 1]
+                segments.append((start_idx, end_idx))
         
-        for change_point in where_changes:
-            if state == 0:  # Transition from non-QRS to QRS
-                start_idx = change_point
-                state = 1
-            else:  # Transition from QRS to non-QRS
-                if start_idx is not None:  # Safety check
-                    segments.append((start_idx, change_point))
-                start_idx = None
-                state = 0
+        # Handle odd number of change points (last segment extends to the end)
+        if len(where_changes) % 2 == 1:
+            segments.append((where_changes[-1], len(is_qrs)))
         
-        # Handle case where signal ends during QRS
-        if state == 1 and start_idx is not None:
-            segments.append((start_idx, len(is_qrs)))
-            
         return segments
 
 
