@@ -342,7 +342,8 @@ class Analyzer:
                     ax.plot(time, d, '-')
                     ax.grid(True, linestyle='dotted', alpha=0.7)
                 else:
-                    ax.text(0.4, 0.5, 'No Data', fontsize=12, color='red', alpha=0.5, ha='center', va='center')
+                    pass
+                    #ax.text(0.0, 0.0, 'No Data', fontsize=12, color='red', alpha=0.5, ha='center', va='center')
 
         fig.text(0.5, 0.08, 'Time [s]', ha='center', va='center', fontsize=12)
         fig.text(0.08, 0.5, 'Magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
