@@ -782,10 +782,8 @@ class Analyzer:
 
         # Combine scores
         # Normalize confidence to avoid scale issues if confidence varies widely
-        max_conf = np.max(mean_confidence)
-        normalized_confidence = mean_confidence / (max_conf + 1e-9) if max_conf > 0 else mean_confidence
 
-        final_scores = (confidence_weight * normalized_confidence) + (plausibility_weight * plausibility_scores)
+        final_scores = (confidence_weight * mean_confidence) + (plausibility_weight * plausibility_scores)
 
         if zero_input_mask is not None:
             final_scores[zero_input_mask] = 0.0
@@ -808,9 +806,10 @@ class Analyzer:
 
 
         Returns:
-            Tuple[int, Tuple[np.ndarray,  np.ndarray]]:
-                (Index of the best channel, (labels, confidence) for all channels)
+            Tuple[int, np.ndarray,  np.ndarray, np.ndarray]:
+                (Index of the best channel, labels, confidence, final scores for all channels)
                 Returns index 0 and empty arrays if input is invalid or segmentation fails.
+
         """
         if data.ndim != 2:
             raise ValueError(f"Input data must be 2D (num_channels, num_samples), got shape {data.shape}")
@@ -842,7 +841,7 @@ class Analyzer:
         if print_results:
             # --- Optional: Print results (keep original formatting) ---
             print("\nChannel Selection Results:")
-            print(f"{'Channel':<10}{'Mean Conf':<12}{'P-Wave %':<12}{'QRS %':<12}{'T-Wave %':<12}{'Plausibility':<15}{'Final Score':<12}")
+            print(f"{'Channel':<10}{'Conf':<12}{'P-Wave %':<12}{'QRS %':<12}{'T-Wave %':<12}{'Plausibility':<15}{'Final Score':<12}")
             print("-" * 85)
             for channel in range(num_channels):
                 print(f"{channel+1:<10}" 
@@ -855,7 +854,7 @@ class Analyzer:
             print("\nBest Channel Summary:")
             print(f"{'Channel':<10}: {best_channel+1}") # 0-based index
             if num_channels > 0:
-                print(f"{'Mean Conf':<10}: {mean_confidence[best_channel]:.4f}")
+                print(f"{'Conf':<10}: {mean_confidence[best_channel]:.4f}")
                 print(f"{'Plausibility':<10}: {plausibility_scores[best_channel]:.4f}")
                 print(f"{'Final Score':<10}: {final_scores[best_channel]:.4f}")
                 print("Segment Distribution:")
@@ -865,7 +864,7 @@ class Analyzer:
             # --- End Print ---
 
         # Return 0-based index and the full results
-        return best_channel, (labels, confidence)
+        return best_channel, labels, confidence, final_scores
 
 
     def detect_qrs_complex_peaks_cleanest_channel(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False):
@@ -888,7 +887,7 @@ class Analyzer:
                 - HRV (SDNN in ms) for the cleanest channel, or None.
         """            
         # 1. Find cleanest channel and get segmentations
-        best_channel_idx, (labels, confidence) = self.find_cleanest_channel(data, print_results=False) 
+        best_channel_idx, labels, confidence, _ = self.find_cleanest_channel(data, print_results=False) 
         
         if labels.size == 0:
             warnings.warn("Segmentation data is empty, cannot detect peaks.")
@@ -1035,7 +1034,7 @@ class Analyzer:
                 - Average heart rate across *valid* channels (bpm), or None.
                 - Average HRV (SDNN in ms) across *valid* channels, or None.
         """
-        cleanest_channel, (labels, confidence) = self.find_cleanest_channel(data, print_results=False)
+        cleanest_channel, labels, confidence, _ = self.find_cleanest_channel(data, print_results=False)
         
         if labels.size == 0:
             warnings.warn("Segmentation data is empty, cannot detect peaks.")
@@ -1175,7 +1174,7 @@ class Analyzer:
             
             if len(windows) > 0:
                 windows = np.array(windows)
-                final_labels, _, final_confidences = self.segment_entire_run(windows)
+                final_labels, final_confidences = self.segment_entire_run(windows)
 
                 scores, _, _, _ = self._heart_beat_score(final_confidences, final_labels)
                 
@@ -1259,6 +1258,44 @@ class Analyzer:
                     target[row_idx, col_idx, :] = data[channel_index]
 
         return x_data, y_data, z_data
+
+    
+    def invert_field_directions(self, x_data, y_data, z_data, key, num_channels=None):
+        """
+        Reconstruct the original data array from x, y, z field data.
+        Args:
+            x_data, y_data, z_data (np.ndarray): Field data arrays of shape (rows, cols, samples).
+            key (str): Run key for sensor exclusion.
+            num_channels (int, optional): Total number of channels in the original data.
+        Returns:
+            np.ndarray: Reconstructed data array with shape (num_channels, num_samples).
+        """
+        num_samples = x_data.shape[-1]
+        
+        if num_channels is None:
+            # Use all channel indices in the dict, including potentially unused ones
+            channel_indices = [abs(int(idx)) for idx in self.quspin_channel_dict.values()]
+            num_channels = max(channel_indices) + 1
+        
+        data = np.zeros((num_channels, num_samples))
+
+        
+        for row_idx, row in enumerate(self.quspin_position_list):
+            for col_idx, quspin_id in enumerate(row):
+                for suffix, source in zip(['_x', '_y', '_z'], [x_data, y_data, z_data]):
+                    channel_name = quspin_id + suffix
+                    channel_index = self.quspin_channel_dict.get(channel_name)
+
+                    # Skip channels that are excluded or don't exist - use exactly the same condition as in get_field_directions
+                    if channel_index is None or (self.sensor_channels_to_exclude.get(key) and channel_name in self.sensor_channels_to_exclude.get(key, [])) or \
+                    (self.sensor_channels_to_exclude.get(key) and f"*{suffix}" in self.sensor_channels_to_exclude.get(key, [])):
+                        continue
+                    
+                    channel_index = abs(int(channel_index))
+                    data[channel_index, :] = source[row_idx, col_idx, :]
+        
+        return data
+
 
 
     def align_multi_channel_signal(self, signal1, signal2, lag_cutoff=2000, plot=True):
@@ -1439,7 +1476,7 @@ class Analyzer:
 
 
 
-    def ICA_filter(self, data, heart_beat_score_threshold=0.85):
+    def ICA_filter(self, data, heart_beat_score_threshold=0.85, max_iter=1500, confidence_weight=0.8, plausibility_weight=0.2, print_result=False):
         """Apply ICA filtering to remove non-cardiac components based on segmentation scores.
 
         Assumes input data is at 250Hz.
@@ -1450,6 +1487,9 @@ class Analyzer:
             heart_beat_score_threshold (float): Min score for an ICA component to be kept.
             n_components (int, optional): Number of ICA components to find. Defaults to active channels.
             max_iter (int): Max iterations for ICA algorithm.
+            confidence_weight (float): Weight for confidence in heart beat detection.
+            plausibility_weight (float): Weight for plausibility in heart beat detection.
+            print_result (bool): If True, prints the cleanest channel and its score.
 
         Returns:
             Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] or Tuple[None, None, None, None]:
@@ -1474,20 +1514,15 @@ class Analyzer:
             data_2d = data
         
         # Apply ICA and get components along with reconstruction information
-        ica_components, mixing_matrix, mean, non_zero_indices, original_shape = self._apply_ICA(data_2d)
+        ica_components, mixing_matrix, mean, non_zero_indices, original_shape = self._apply_ICA(data_2d, max_iter=max_iter)
         
         if ica_components is None:
             logging.warning("ICA failed, returning None.")
             return None
         
         # Find cleanest channel for heart beat detection
-        best_channel_idx, (labels, confidence) = self.find_cleanest_channel(
-            data_2d, print_results=False
-        )
-        
-        # Calculate heart beat scores for each component
-        heart_beat_scores, mean_confidence, segment_percentages, plausibility_scores = self._heart_beat_score(
-            confidence, labels
+        best_channel_idx, labels, confidence, heart_beat_scores = self.find_cleanest_channel(
+            ica_components, print_results=print_result, confidence_weight=confidence_weight, plausibility_weight=plausibility_weight
         )
         
         # Create mask for components with scores above threshold
@@ -1512,7 +1547,7 @@ class Analyzer:
         if is_3d:
             result = result.reshape(data_shape)
         
-        return result, ica_components, best_channel_idx
+        return result, ica_components, best_channel_idx, score_mask
 
 
     def create_heat_map_animation(self, data, cleanest_i, cleanest_j, output_file='animation.mp4', interval=100, resolution=500, stride=1, direction='x', key="Brustlage", dynamic_scale=True):
@@ -1595,6 +1630,7 @@ class Analyzer:
         plt.tight_layout()
         plt.show()
         return ani, fig
+    
 
 
 if __name__ == "__main__":
