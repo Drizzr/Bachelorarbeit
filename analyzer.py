@@ -1,6 +1,4 @@
 import os
-import re
-import json
 import ast
 import warnings
 import logging
@@ -17,6 +15,7 @@ from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
 from scipy.ndimage import gaussian_filter1d
 from sklearn.decomposition import FastICA
+from matplotlib.widgets import Slider
 
 # Attempt to import local MCG_segmentation package
 try:
@@ -1141,7 +1140,7 @@ class Analyzer:
             plt.savefig(os.path.join(path, f'{name}_B_vs_time.png'), dpi=100)
         plt.show()
 
-    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4, heart_beat_score_threshold=0.75):
+    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4, heart_beat_score_threshold=0.7):
         """Compute average windowed QRS waveform around peaks.
 
         Args:
@@ -1178,12 +1177,13 @@ class Analyzer:
                 final_labels, final_confidences = self.segment_entire_run(windows)
 
                 scores, _, _, _ = self._heart_beat_score(final_confidences, final_labels)
-                
                 mask = scores > heart_beat_score_threshold
                 windows = windows[mask]
 
-                avg_channels.append(np.mean(windows, axis=0))
-            
+                if len(windows) > 0:
+                    avg_channels.append(np.mean(windows, axis=0))
+                else:
+                    avg_channels.append(np.zeros(window_length))
             else:
                 avg_channels.append(np.zeros(window_length))
 
@@ -1477,77 +1477,95 @@ class Analyzer:
 
 
 
-    def ICA_filter(self, data, heart_beat_score_threshold=0.85, max_iter=1500, confidence_weight=0.8, plausibility_weight=0.2, print_result=False):
-        """Apply ICA filtering to remove non-cardiac components based on segmentation scores.
-
-        Assumes input data is at 250Hz.
-
-        Args:
-            data (np.ndarray): Input data, shape (channels, samples) or
-                            (rows, cols, samples) for 3D grid data. Assumed 250Hz.
-            heart_beat_score_threshold (float): Min score for an ICA component to be kept.
-            n_components (int, optional): Number of ICA components to find. Defaults to active channels.
-            max_iter (int): Max iterations for ICA algorithm.
-            confidence_weight (float): Weight for confidence in heart beat detection.
-            plausibility_weight (float): Weight for plausibility in heart beat detection.
-            print_result (bool): If True, prints the cleanest channel and its score.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] or Tuple[None, None, None, None]:
-            - reconstructed_data: Filtered data with non-cardiac components removed, same shape as input.
-            - ica_components: The extracted ICA components (sources), shape (n_components, samples).
-            - component_scores: The calculated heart beat scores for each component.
-            - keep_mask: Boolean mask indicating which components were kept.
-            Returns (None, None, None, None) if ICA or scoring fails.
-        """
-        # Store original data shape
+    def ICA_filter(self, data, heart_beat_score_threshold=0.85, max_iter=5000,
+            confidence_weight=0.8, plausibility_weight=0.2, print_result=False,
+            plot_result=False):
+    
+        # Get the shape of the data
         data_shape = data.shape
-        
-        # Check if data is 2D or 3D
         if len(data_shape) not in [2, 3]:
-            raise ValueError(f"Input data must be 2D (channels, samples) or 3D (rows, cols, samples), got shape {data_shape}")
-        
-        # Reshape 3D data to 2D for processing
+            raise ValueError(f"Input data must be 2D or 3D, got shape {data_shape}")
+
+        # Check if the data is 3D or 2D
         is_3d = len(data_shape) == 3
         if is_3d:
             data_2d = data.reshape(data_shape[0] * data_shape[1], data_shape[2])
         else:
             data_2d = data
-        
-        # Apply ICA and get components along with reconstruction information
-        ica_components, mixing_matrix, mean, non_zero_indices, original_shape = self._apply_ICA(data_2d, max_iter=max_iter)
-        
+
+        # Apply ICA to the data
+        ica_components, mixing_matrix, mean, non_zero_indices, original_shape = self._apply_ICA(
+            data_2d, max_iter=max_iter
+        )
         if ica_components is None:
             logging.warning("ICA failed, returning None.")
-            return None
-        
-        # Find cleanest channel for heart beat detection
+            return None, None, None, None
+
+        # Perform heartbeat scoring
         best_channel_idx, labels, confidence, heart_beat_scores = self.find_cleanest_channel(
-            ica_components, print_results=print_result, confidence_weight=confidence_weight, plausibility_weight=plausibility_weight
+            ica_components,
+            print_results=print_result,
+            confidence_weight=confidence_weight,
+            plausibility_weight=plausibility_weight
         )
-        
-        # Create mask for components with scores above threshold
-        score_mask = heart_beat_scores > heart_beat_score_threshold
-        
-        # Filter components - set components with low heart beat scores to zero
-        filtered_components = ica_components.copy()
-        for i in range(filtered_components.shape[0]):
-            if not score_mask[i]:
-                filtered_components[i, :] = 0
-        
-        # Reconstruct the filtered data for non-zero channels only
-        reconstructed_clean_data = np.dot(mixing_matrix, filtered_components) + mean.reshape(-1, 1)
-        
-        # Initialize result array with zeros matching the processed shape
-        result = np.zeros((original_shape[0], original_shape[1]))
-        
-        # Place reconstructed data only in the non-zero channel positions
-        result[non_zero_indices] = reconstructed_clean_data
-        
-        # Reshape back to original data dimensions
-        if is_3d:
-            result = result.reshape(data_shape)
-        
+
+        # Function to apply filter based on the threshold
+        def apply_filter(threshold):
+            score_mask = heart_beat_scores > threshold
+            filtered_components = ica_components.copy()
+            filtered_components[~score_mask, :] = 0
+            reconstructed = np.dot(mixing_matrix, filtered_components) + mean.reshape(-1, 1)
+            result = np.zeros((original_shape[0], original_shape[1]))
+            result[non_zero_indices] = reconstructed
+            if is_3d:
+                result = result.reshape(data_shape)
+            return result, score_mask
+
+        # Get the filtered result based on the initial threshold
+        result, score_mask = apply_filter(heart_beat_score_threshold)
+
+        # If 3D and we want to plot the result
+        if is_3d and plot_result:
+            if data_shape[0] * data_shape[1] != 16:
+                print("Plotting supported only for 4x4 grid.")
+            else:
+                # Create a 4x4 grid plot
+                fig, axes = plt.subplots(nrows=data_shape[0], ncols=data_shape[1], sharex=True, figsize=(33/2.54, 22/2.54), dpi=100)
+                fig.text(0.5, 0.08, 'Time [s]', ha='center', va='center', fontsize=12)
+                fig.text(0.08, 0.5, 'Magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
+
+                length = min(data_shape[-1], 500)
+
+                def plot_grid(res, unfiltered_data):
+                    for i in range(data_shape[0]):
+                        for j in range(data_shape[1]):
+                            ax = axes[i, j]
+                            ax.clear()
+
+                            # Plot filtered signal (in blue)
+                            ax.plot(np.arange(length)/self.INTERNAL_SAMPLING_RATE, res[i, j, :length], label="Filtered Signal")
+
+                            # Plot unfiltered signal (in red dotted)
+                            ax.plot(np.arange(length)/self.INTERNAL_SAMPLING_RATE, unfiltered_data[i, j, :length], 'r:', label="Unfiltered Signal")
+
+                            ax.set_title(f"Ch {i*data_shape[1]+j+1}")
+                    fig.canvas.draw_idle()
+
+                plot_grid(result, data)
+
+                # Slider to dynamically update threshold
+                ax_slider = plt.axes([0.2, 0.05, 0.6, 0.03])
+                slider = Slider(ax_slider, 'Threshold', 0.0, 1.0,
+                                valinit=heart_beat_score_threshold, valstep=0.01)
+
+                def update(val):
+                    threshold = slider.val
+                    new_result, _ = apply_filter(threshold)
+                    plot_grid(new_result, data)
+
+                slider.on_changed(update)
+                plt.show()
+
         return result, ica_components, best_channel_idx, score_mask
 
 
