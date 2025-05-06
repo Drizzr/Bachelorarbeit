@@ -8,7 +8,7 @@ import json
 import numpy as np
 
 
-Patient = "P0330,76" #"P015/P015_S01_D2024-07-06"
+Patient = "P033" #"P015/P015_S01_D2024-07-06"
 run = None
 
 

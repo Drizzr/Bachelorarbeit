@@ -3,13 +3,11 @@ import ast
 import warnings
 import logging
 import numpy as np
-import pandas as pd
 import torch
 from nptdms import TdmsFile
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.animation import FuncAnimation
-import plotly.graph_objects as go
 from scipy import signal
 from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
@@ -126,105 +124,6 @@ class Analyzer:
         # Load segmentation model
         self.model = self._load_segmentation_model(model_checkpoint_dir)
 
-
-    def _load_segmentation_model(self, checkpoint_dir):
-        """Load the trained ECGSegmenter model from the checkpoint directory.
-
-        Args:
-            checkpoint_dir (str): Path to the directory containing model.pth and params.json.
-
-        Returns:
-            ECGSegmenter: Loaded model instance, or None if loading fails.
-        """
-        if ECGSegmenter is None:
-            logging.warning("ECGSegmenter not available. Returning None.")
-            return None
-
-        best_model_path = os.path.join(checkpoint_dir, "model.pth")
-        best_params_path = os.path.join(checkpoint_dir, "params.json")
-
-        if not os.path.exists(best_model_path) or not os.path.exists(best_params_path):
-            raise FileNotFoundError(f"Model files not found in {checkpoint_dir}")
-
-        model = ECGSegmenter()
-        try:
-            model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
-            model.to(self.DEVICE)
-            model.eval()
-            logging.info(f"Model loaded from {best_model_path}")
-        except RuntimeError as e:
-            logging.error(f"Failed to load model state_dict: {e}")
-            raise
-
-        return model
-
-    def _load_tdms_files(self):
-        """Load primary and additional TDMS files into data dictionaries."""
-        try:
-            if self.filename:
-                self.data = self._import_tdms(self.filename, self.scaling)
-                logging.info(f"Loaded primary TDMS file: {self.filename}")
-            if self.add_filename:
-                self.add_data = self._import_tdms(self.add_filename, self.scaling)
-                logging.info(f"Loaded additional TDMS file: {self.add_filename}")
-        except FileNotFoundError as e:
-            logging.error(f"TDMS file not found: {e}")
-            self.data = {}
-            self.add_data = {}
-        except Exception as e:
-            logging.error(f"Error loading TDMS files: {e}")
-            self.data = {}
-            self.add_data = {}
-
-    @staticmethod
-    def _import_tdms(filename, scaling):
-        """Import data from a TDMS file.
-
-        Args:
-            filename (str): Path to the TDMS file.
-            scaling (float): Scaling factor for the data.
-
-        Returns:
-            dict: Dictionary with group names as keys and data arrays as values.
-        """
-        data = {}
-        try:
-            with TdmsFile.read(filename) as tdms_file:
-                for group in tdms_file.groups():
-                    channels = group.channels()
-                    if not channels:
-                        continue
-                    no_of_samples = len(channels[0].read_data(scaled=True))
-                    data_array = np.zeros((no_of_samples, len(channels) + 1))
-                    data_array[:, 0] = np.linspace(0, no_of_samples - 1, no_of_samples)
-                    for i, channel in enumerate(channels):
-                        data_array[:, i + 1] = channel.read_data(scaled=True) / scaling
-                    data[group.name] = data_array
-        except Exception as e:
-            logging.error(f"Error importing TDMS file {filename}: {e}")
-            return {}
-        return data
-
-    def _load_sensor_log_file(self):
-        """Load sensor mapping from the QZFM log file."""
-        if not self.log_file_path:
-            logging.warning("No log file path provided. Sensor mapping unavailable.")
-            return
-
-        try:
-            with open(self.log_file_path, 'r') as file:
-                log_data = ast.literal_eval(file.read())
-            self.quspin_gen_dict = log_data.get('quspin_gen_dict', {})
-            self.quspin_channel_dict = log_data.get('quspin_channel_dict', {})
-            self.quspin_position_list = log_data.get('quspin_position_list', [])
-            logging.info(f"Loaded sensor log file: {self.log_file_path}")
-        except FileNotFoundError:
-            logging.error(f"Sensor log file not found: {self.log_file_path}")
-        except (SyntaxError, ValueError) as e:
-            logging.error(f"Invalid format in sensor log file: {e}")
-        except Exception as e:
-            logging.error(f"Error loading sensor log file: {e}")
-
     @staticmethod
     def bandstop_filter(data, center_frequency, bandwidth, sampling_rate, order=4):
         """Apply a bandstop filter to the data.
@@ -319,35 +218,476 @@ class Analyzer:
         return detrended - baseline
 
     @staticmethod
-    def plot4x4(data, time, name, path=None, save=False):
-        """Plot a 4x4 grid of time series data.
+    def plot_sensor_matrix(data, time, name, path=None, save=False):
+        """
+        Plot a grid of time series data (e.g., from a sensor array) as subplots.
 
-        Args:
-            data (np.ndarray): Data array of shape (rows, cols, samples).
-            time (np.ndarray): Time vector.
-            name (str): Title of the plot.
-            path (str, optional): Directory to save the plot.
-            save (bool): Whether to save the plot.
+        Each subplot shows the time-domain signal from one sensor channel in a structured 
+        nrows x ncols grid, typically representing the physical layout of sensors.
+
+        Parameters:
+        ----------
+        data : np.ndarray
+            3D array of shape (nrows, ncols, samples), representing sensor signals.
+        time : np.ndarray
+            1D time vector corresponding to the third dimension of `data`.
+        name : str
+            Title for the figure and base filename (if saving).
+        path : str, optional
+            Directory where the plot will be saved (if `save` is True).
+        save : bool, optional
+            Whether to save the plot as a PNG image (default is False).
         """
         nrows, ncols = data.shape[:2]
-        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, sharex=True, figsize=(33/2.54, 22/2.54), dpi=100)
-        fig.suptitle(f"{name}", y=0.95)
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, sharex=True,
+                                figsize=(33/2.54, 22/2.54), dpi=100)
+        fig.suptitle(name, fontsize=14, fontweight='bold', y=0.98)
 
         for row in range(nrows):
             for col in range(ncols):
                 ax = axes[row, col] if nrows > 1 else axes[col]
-                d = data[row, col]
-                if len(d) > 0 and not np.all(d == 0):
-                    ax.plot(time, d, '-')
-                    ax.grid(True, linestyle='dotted', alpha=0.7)
+                signal = data[row, col]
+                if len(signal) > 0 and not np.all(signal == 0):
+                    ax.plot(time, signal, '-', linewidth=0.8)
                 else:
-                    pass
-                    #ax.text(0.0, 0.0, 'No Data', fontsize=12, color='red', alpha=0.5, ha='center', va='center')
+                    ax.text(0.5, 0.5, 'No Data', ha='center', va='center',
+                            fontsize=10, color='red', alpha=0.5)
+                ax.grid(True, linestyle='dotted', alpha=0.7)
 
-        fig.text(0.5, 0.08, 'Time [s]', ha='center', va='center', fontsize=12)
-        fig.text(0.08, 0.5, 'Magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
+        # Global axis labels
+        fig.text(0.5, 0.06, 'Time [s]', ha='center', fontsize=12)
+        fig.text(0.06, 0.5, 'Magnetic Field [pT]', va='center', rotation='vertical', fontsize=12)
+
+        plt.subplots_adjust(wspace=0.1, hspace=0.2, left=0.08, bottom=0.1, right=0.98, top=0.93)
+
         if save and path:
-            plt.savefig(os.path.join(path, f'{name}_4x4plot.png'), dpi=100)
+            os.makedirs(path, exist_ok=True)
+            plt.savefig(os.path.join(path, f'{name}_sensor_matrix.png'), bbox_inches='tight')
+        plt.show()
+
+    @staticmethod
+    def _detect_qrs_segments(labels_ch, qrs_label):
+        """
+        Detects continuous segments where the label matches qrs_label.
+
+        Args:
+            labels_ch (np.ndarray): 1D array of labels for a single channel.
+            qrs_label (int): The integer label representing the QRS complex.
+
+        Returns:
+            List[Tuple[int, int]]: A list of tuples, where each tuple is (start_idx, end_idx)
+                                of a QRS segment (end index is exclusive).
+        """
+        # Get QRS mask
+        is_qrs = (labels_ch == qrs_label).astype(np.int8)
+        
+        # Find continuous segments using run-length encoding approach
+        # This handles incomplete segments at boundaries better
+        where_changes = np.where(np.diff(is_qrs, prepend=0, append=0) != 0)[0]
+        
+        # No changes means either all QRS or no QRS
+        if len(where_changes) <= 1:
+            if is_qrs[0] == 1:  # All signal is QRS
+                return [(0, len(is_qrs))]
+            else:  # No QRS found
+                return []
+        
+        # Process change points to get valid segments
+        segments = []
+        
+        # Handle changes in pairs
+        for i in range(0, len(where_changes) - 1, 2):
+            start_idx = where_changes[i]
+            # Make sure we don't go out of bounds
+            if i + 1 < len(where_changes):
+                end_idx = where_changes[i + 1]
+                segments.append((start_idx, end_idx))
+        
+        # Handle odd number of change points (last segment extends to the end)
+        if len(where_changes) % 2 == 1:
+            segments.append((where_changes[-1], len(is_qrs)))
+        
+        return segments
+
+    @staticmethod
+    def _import_tdms(filename, scaling):
+        """Import data from a TDMS file.
+
+        Args:
+            filename (str): Path to the TDMS file.
+            scaling (float): Scaling factor for the data.
+
+        Returns:
+            dict: Dictionary with group names as keys and data arrays as values.
+        """
+        data = {}
+        try:
+            with TdmsFile.read(filename) as tdms_file:
+                for group in tdms_file.groups():
+                    channels = group.channels()
+                    if not channels:
+                        continue
+                    no_of_samples = len(channels[0].read_data(scaled=True))
+                    data_array = np.zeros((no_of_samples, len(channels) + 1))
+                    data_array[:, 0] = np.linspace(0, no_of_samples - 1, no_of_samples)
+                    for i, channel in enumerate(channels):
+                        data_array[:, i + 1] = channel.read_data(scaled=True) / scaling
+                    data[group.name] = data_array
+        except Exception as e:
+            logging.error(f"Error importing TDMS file {filename}: {e}")
+            return {}
+        return data
+
+    def _load_segmentation_model(self, checkpoint_dir):
+        """Load the trained ECGSegmenter model from the checkpoint directory.
+
+        Args:
+            checkpoint_dir (str): Path to the directory containing model.pth and params.json.
+
+        Returns:
+            ECGSegmenter: Loaded model instance, or None if loading fails.
+        """
+        if ECGSegmenter is None:
+            logging.warning("ECGSegmenter not available. Returning None.")
+            return None
+
+        best_model_path = os.path.join(checkpoint_dir, "model.pth")
+        best_params_path = os.path.join(checkpoint_dir, "params.json")
+
+        if not os.path.exists(best_model_path) or not os.path.exists(best_params_path):
+            raise FileNotFoundError(f"Model files not found in {checkpoint_dir}")
+
+        model = ECGSegmenter()
+        try:
+            model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
+            model.to(self.DEVICE)
+            model.eval()
+            logging.info(f"Model loaded from {best_model_path}")
+        except RuntimeError as e:
+            logging.error(f"Failed to load model state_dict: {e}")
+            raise
+
+        return model
+
+    def _load_tdms_files(self):
+        """Load primary and additional TDMS files into data dictionaries."""
+        try:
+            if self.filename:
+                self.data = self._import_tdms(self.filename, self.scaling)
+                logging.info(f"Loaded primary TDMS file: {self.filename}")
+            if self.add_filename:
+                self.add_data = self._import_tdms(self.add_filename, self.scaling)
+                logging.info(f"Loaded additional TDMS file: {self.add_filename}")
+        except FileNotFoundError as e:
+            logging.error(f"TDMS file not found: {e}")
+            self.data = {}
+            self.add_data = {}
+        except Exception as e:
+            logging.error(f"Error loading TDMS files: {e}")
+            self.data = {}
+            self.add_data = {}
+
+    def _load_sensor_log_file(self):
+        """Load sensor mapping from the QZFM log file."""
+        if not self.log_file_path:
+            logging.warning("No log file path provided. Sensor mapping unavailable.")
+            return
+
+        try:
+            with open(self.log_file_path, 'r') as file:
+                log_data = ast.literal_eval(file.read())
+            self.quspin_gen_dict = log_data.get('quspin_gen_dict', {})
+            self.quspin_channel_dict = log_data.get('quspin_channel_dict', {})
+            self.quspin_position_list = log_data.get('quspin_position_list', [])
+            logging.info(f"Loaded sensor log file: {self.log_file_path}")
+        except FileNotFoundError:
+            logging.error(f"Sensor log file not found: {self.log_file_path}")
+        except (SyntaxError, ValueError) as e:
+            logging.error(f"Invalid format in sensor log file: {e}")
+        except Exception as e:
+            logging.error(f"Error loading sensor log file: {e}")
+
+    def _heart_beat_score(self, confidence: np.ndarray, labels: np.ndarray, confidence_weight: float = 0.80, plausibility_weight: float = 0.2, zero_input_mask: np.ndarray = None,):
+        """
+        Calculate the heart beat score based on confidence and plausibility.
+        Args:
+            confidence: numpy array of shape (num_channels, num_samples). Confidence scores.
+            labels: numpy array of shape (num_channels, num_samples). Segmentation labels.
+            confidence_weight: Weight for the confidence score.
+            plausibility_weight: Weight for the plausibility score.
+        Returns:
+            numpy array of shape (num_channels,). Final scores for each channel.
+        """
+
+        num_channels, _ = confidence.shape
+        
+        mean_confidence = np.mean(confidence, axis=-1) # Shape: (num_channels,)
+
+
+        # Calculate segment percentages
+        segment_percentages = np.zeros((num_channels, 4))
+        total_samples_per_channel = labels.shape[-1]
+
+        if total_samples_per_channel > 0:
+            for segment_type in range(4): # 0, 1, 2, 3
+                segment_counts = np.sum(labels == segment_type, axis=1) # Sum over time axis
+                segment_percentages[:, segment_type] = (segment_counts / total_samples_per_channel) * 100
+        # Else: percentages remain zero
+
+        # Define ideal ranges (consider making these class attributes or constants)
+        p_wave_range = (8, 15)      # Relaxed P-wave: 8-15%
+        qrs_range = (8, 15)         # Relaxed QRS: 8-15%
+        t_wave_range = (15, 30)     # Relaxed T-wave: 15-30%
+
+        # Calculate plausibility scores (vectorized)
+        p_percent = segment_percentages[:, self.LABEL_TO_IDX["P Wave"]]
+        qrs_percent = segment_percentages[:, self.LABEL_TO_IDX["QRS"]]
+        t_percent = segment_percentages[:, self.LABEL_TO_IDX["T Wave"]]
+
+        # Deviations (calculate difference from range boundaries)
+        p_dev = np.maximum(0, p_wave_range[0] - p_percent) + np.maximum(0, p_percent - p_wave_range[1])
+        qrs_dev = np.maximum(0, qrs_range[0] - qrs_percent) + np.maximum(0, qrs_percent - qrs_range[1])
+        t_dev = np.maximum(0, t_wave_range[0] - t_percent) + np.maximum(0, t_percent - t_wave_range[1])
+
+        total_deviation = p_dev + qrs_dev + t_dev
+
+        # Normalize deviation - use a max possible deviation or just invert
+        # Simple inversion: Higher score for lower deviation. Add epsilon for stability.
+        # Scale factor can be adjusted based on expected deviation range.
+        plausibility_scores = 1.0 / (1.0 + total_deviation * 0.1) # Smaller multiplier = less sensitive
+
+        # Combine scores
+        # Normalize confidence to avoid scale issues if confidence varies widely
+
+        final_scores = (confidence_weight * mean_confidence) + (plausibility_weight * plausibility_scores)
+
+        if zero_input_mask is not None:
+            final_scores[zero_input_mask] = 0.0
+
+        return final_scores, mean_confidence, segment_percentages, plausibility_scores
+    
+    def _segment_heart_beat_intervall(self, data: torch.Tensor, min_duration_sec: int = 0.015):
+        """
+        Segment the entire run (potentially T > 2000) using a sliding window.
+        Assumes input data is already at the INTERNAL_SAMPLING_RATE (250 Hz).
+
+        Args:
+            data: numpy array of shape (b, T). Assumes data is pre-filtered
+                and at 250 Hz. Normalization happens per window.
+            window_size: Size of the sliding window for inference.
+            overlap: Fraction of overlap between consecutive windows (0.0 to < 1.0).
+
+        Returns:
+            Tuple of (final segmentation labels (b, T),
+                    final confidence scores (b, T))
+        """
+        if data.numel() == 0:
+            warnings.warn("No data to segment.")
+            batch_size = data.shape[0]
+            return np.empty((batch_size, 0), dtype=int), np.empty((batch_size, 0), dtype=float)
+
+        # Constants
+        max_len = 2000
+
+
+        # Clip long sequences
+        if data.shape[-1] > max_len:
+            warnings.warn(f"Data length ({data.shape[-1]}) exceeds maximum ({max_len}). Truncating.")
+            data = data[..., :max_len]
+
+        data = data.to(self.DEVICE)
+
+        with torch.no_grad():
+            logits = self.model(data)
+            probabilities =  torch.softmax(logits, dim=-1)
+            confidence_scores_pt, predicted_indices_pt = torch.max(probabilities, dim=-1)
+
+            predicted_indices = predicted_indices_pt.cpu().numpy()
+            confidence_scores = confidence_scores_pt.cpu().numpy()
+
+        # --- Postprocessing to fix short artifacts ---
+        batch_size, time_steps = predicted_indices.shape
+        for b in range(batch_size):
+            labels_arr = predicted_indices[b]
+            i = 0
+            while i < time_steps:
+                current_label = labels_arr[i]
+                start = i
+                while i < time_steps and labels_arr[i] == current_label:
+                    i += 1
+                end = i  # exclusive
+
+                segment_length = end - start
+                if segment_length < min_duration_sec * self.INTERNAL_SAMPLING_RATE:
+                    # Determine neighboring segments
+                    left_label = labels_arr[start - 1] if start > 0 else None
+                    right_label = labels_arr[end] if end < time_steps else None
+
+                    # Count left and right neighbor lengths
+                    left_len = 0
+                    if left_label is not None:
+                        j = start - 1
+                        while j >= 0 and labels_arr[j] == left_label:
+                            left_len += 1
+                            j -= 1
+
+                    right_len = 0
+                    if right_label is not None:
+                        j = end
+                        while j < time_steps and labels_arr[j] == right_label:
+                            right_len += 1
+                            j += 1
+
+                    # Decide which neighbor to copy
+                    if left_len >= right_len and left_label is not None:
+                        new_label = left_label
+                    elif right_label is not None:
+                        new_label = right_label
+                    else:
+                        new_label = 0  # fallback if no neighbors
+
+                    # Reassign short segment
+                    labels_arr[start:end] = new_label
+
+            predicted_indices[b] = labels_arr
+
+        return predicted_indices, confidence_scores
+
+    def _change_to_consistent_coordinate_system(self, data):
+        """Adjust data to a consistent coordinate system based on sensor mappings.
+
+        Args:
+            data (np.ndarray): Input data, shape (num_channels, num_samples).
+
+        Returns:
+            np.ndarray: Adjusted data.
+        """
+        for quspin, ch in self.quspin_channel_dict.items():
+            sign = -1 if str(ch).startswith('-') else 1
+            ch_idx = abs(int(ch))
+            data[ch_idx] *= sign
+            if 'y' in quspin or self.quspin_gen_dict.get(quspin[:-2], 0) == 2:
+                data[ch_idx] *= -1
+        return data
+
+    def _apply_ICA(self, data, max_iter=1000):
+        """
+        Apply Independent Component Analysis (ICA) to the data. Helper function.
+
+        Args:
+            data (np.ndarray): Input data, shape (channels, samples).
+            max_iter (int): Maximum iterations for ICA.
+            n_components (int, optional): Number of components to extract. If None, defaults to number of non-zero channels.
+
+
+        Returns:
+            tuple: (ICA components, mixing matrix, mean, non_zero_indices, original_channel_count) or
+                (None, None, None, None, None) if ICA fails.
+        """
+        # Store original shape for reconstruction
+        original_shape = data.shape
+        
+        # Reshape and identify non-zero channels
+        data_reshaped = data.reshape(-1, data.shape[-1])
+        non_zero_mask = ~np.all(data_reshaped == 0, axis=1)
+        non_zero_indices = np.where(non_zero_mask)[0]
+        arr_cleaned = data_reshaped[non_zero_mask]
+        
+        if arr_cleaned.shape[0] == 0:
+            logging.warning("No non-zero channels for ICA")
+            return None, None, None, None, None
+        
+        try:
+            # Apply ICA - transpose for sklearn's expected format
+            ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter)
+            components = ica.fit_transform(arr_cleaned.T).T
+            
+            # Store mixing matrix and mean for reconstruction
+            mixing_matrix = ica.mixing_
+            mean = ica.mean_
+            
+            return components, mixing_matrix, mean, non_zero_indices, original_shape
+        except Exception as e:
+            logging.error(f"ICA failed: {e}")
+            return None, None, None, None, None
+
+    def plot_lsd_multichannel(self, data, noise_theos, freqs, name, labels, channels,  path, save = False):
+
+        """
+        Plots the Linear Spectral Density (LSD) of multichannel time-series data using Welch's method.
+
+        This method computes and visualizes the LSD for specified channels, optionally overlaying theoretical noise 
+        levels and saving the plot to disk. The secondary Y-axis shows the corresponding linear amplitude scale.
+
+        Parameters:
+        ----------
+        data : np.ndarray
+            2D array where each row corresponds to a signal from one channel (shape: channels x time).
+        noise_theos : list or np.ndarray
+            Theoretical noise floor values for each channel, used for reference lines.
+        freqs : list or np.ndarray
+            Sampling frequency for each channel.
+        name : str
+            A string used in the plot title and filename (if saved).
+        labels : list of str
+            List of labels for each channel to display in the legend.
+        channels : list of int
+            Indices of the channels to plot.
+        path : str
+            Directory path where the plot will be saved (if `save` is True).
+        save : bool, optional
+            If True, saves the plot as a PNG file in the given `path` (default is False).
+
+        Notes:
+        -----
+        - Uses a Nuttall window and NENBW of 1.9761 for spectral estimation.
+        - Adds a secondary y-axis to convert LSD to linear amplitude scale.
+        - The function displays the plot regardless of the `save` option.
+
+        Raises:
+        ------
+        ValueError
+            If the input arrays/lists are inconsistent in length or incorrectly formatted.
+        """
+
+        nenbw=1.9761
+        fig, elem= plt.subplots(nrows=1,ncols=1, sharex=True, figsize=(10,5),dpi=100)  
+
+        for ind,ch in enumerate(channels):
+            f_bins,Pxx=signal.welch(data[ch], fs=freqs[ind],nperseg=int(freqs[ind])*100, window='nuttall', return_onesided=True, scaling='density')
+            
+            Lxx=np.sqrt(Pxx)
+            enbw=f_bins[1]*nenbw #calculated from acutal f_res
+            elem.loglog(f_bins,Lxx,label=f'{labels[ind]}',color=self.cmaplist[ind*int(len(self.cmaplist)/len(channels))], alpha = 0.5)
+            if noise_theos[0] !=np.mean(noise_theos) and (ind<len(channels)):
+                
+                elem.plot(f_bins,np.full(len(f_bins),noise_theos[ind]),
+                        label='Sensor theo.',color=self.cmaplist[ind],linestyle='-.')
+
+        def forward(x):
+            return x*np.sqrt(enbw)*np.sqrt(2)
+        def inverse(x):
+            return x/(np.sqrt(enbw)*np.sqrt(2))
+
+        elem.plot(f_bins,np.full(len(f_bins),noise_theos[ind]),
+                label='Sensor theo.',color=self.cmaplist[ind+1],linestyle='-.')
+        secax = elem.secondary_yaxis('right', functions=(forward, inverse))
+        secax.set_ylabel("LS (linear amplitude) [$ pT$]")
+        elem.set_xlabel('Frequency [Hz]')
+        elem.set_ylabel('LSD [$ pT$/$\sqrt{Hz}$]')
+        fig.suptitle('Magnetic flux linear spectral density '
+                    '[$ pT$/$\sqrt{Hz}$], NENBW=1.9761 bins\n '
+                    '$f_s$=%d Hz, $f_{res}$=%.3f Hz \n' %(freqs[ind],f_bins[1])+name,size='small',
+                    y=1.0)
+        elem.set_xlim(0.1)
+        elem.legend(loc='lower center',bbox_to_anchor=(0.5,-0.25),ncol=4)
+        elem.grid(alpha=0.7)
+        elem.minorticks_on()
+        elem.grid(True,which='minor',linestyle='dotted',alpha=0.7)
+        # elem.set_yticks([10,100,500, 1000, 5000, 1e4,5e4,1e5,5e5])
+        plt.subplots_adjust(top = 0.9, bottom = 0.2)
+        if save:
+            plt.savefig(path+f'{name}_LSD.png')
         plt.show()
 
     def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None):
@@ -401,9 +741,6 @@ class Analyzer:
                 t_max_idx = np.argmax(magnitudes)
 
                 t_distance = np.linalg.norm([component1[t_max_idx] - component1[0], component2[t_max_idx] - component2[0]])
-                dist_max_to_end = np.linalg.norm([component1[t_max_idx] - component1[-1], component2[t_max_idx] - component2[-1]])
-                start_end_ratio = t_distance / (dist_max_to_end + 1e-9)
-
                 # Extra metrics: Compactness (Area / Perimeter²)
                 perimeter = np.sum(np.linalg.norm(np.diff(np.stack([component1, component2], axis=1), axis=0), axis=1))
                 compactness = (4 * np.pi * area) / (perimeter**2 + 1e-9)
@@ -417,7 +754,6 @@ class Analyzer:
 
                 metrics_text = (f'Area: {area:.3f}\n'
                                 f'T-Dist: {t_distance:.2f}\n'
-                                f'S/E Ratio: {start_end_ratio:.2f}\n'
                                 f'Compact: {compactness:.4f}\n'
                                 f'Angle: {avg_angle_deg:.1f}°')
                 
@@ -464,7 +800,6 @@ class Analyzer:
         logging.info(f"Metrics for {proj_name}: {metrics_text}")
 
         return ax
-
 
     def plot_all_heart_vector_projections(self, heart_vector_components, title_suffix="", save_path=None):
         """Plot XY, XZ, and YZ projections of the heart vector.
@@ -554,94 +889,53 @@ class Analyzer:
         if standalone:
             plt.show()
 
-    def _segment_heart_beat_intervall(self, data: torch.Tensor, min_duration_sec: int = 0.015):
+    def butterfly_plot(self, data, time, num_ch, name, path=None, save=False):
         """
-        Segment the entire run (potentially T > 2000) using a sliding window.
-        Assumes input data is already at the INTERNAL_SAMPLING_RATE (250 Hz).
+        Plot time series data for multiple channels as a 'butterfly plot'.
 
-        Args:
-            data: numpy array of shape (b, T). Assumes data is pre-filtered
-                  and at 250 Hz. Normalization happens per window.
-            window_size: Size of the sliding window for inference.
-            overlap: Fraction of overlap between consecutive windows (0.0 to < 1.0).
-
-        Returns:
-            Tuple of (final segmentation labels (b, T),
-                    final confidence scores (b, T))
+        Parameters:
+        ----------
+        data : np.ndarray
+            2D array of shape (num_channels, num_samples).
+        time : np.ndarray
+            1D array of time points.
+        num_ch : int
+            Number of channels to plot.
+        name : str
+            Plot title and filename base (if saving).
+        path : str, optional
+            Directory where the plot will be saved if `save` is True.
+        save : bool
+            If True, saves the plot as a PNG image.
         """
-        if data.numel() == 0:
-            warnings.warn("No data to segment.")
-            batch_size = data.shape[0]
-            return np.empty((batch_size, 0), dtype=int), np.empty((batch_size, 0), dtype=float)
+        fig, ax = plt.subplots(figsize=(12, 5), dpi=120)
+        fig.suptitle(name, fontsize=14, fontweight='bold', y=1.02)
 
-        # Constants
-        max_len = 2000
+        for i in range(num_ch):
+            ax.plot(time, data[i], alpha=0.5, linewidth=1.0,
+                    color=self.cmaplist[i % len(self.cmaplist)],
+                    label=f"Ch {i+1}" if num_ch <= 10 else None)
 
+        ax.set_xlabel('Time [s]', fontsize=12)
+        ax.set_ylabel('Magnetic Field B [pT]', fontsize=12)
+        ax.grid(True, which='major', linestyle='-', alpha=0.6)
+        ax.grid(True, which='minor', linestyle=':', alpha=0.4)
+        ax.minorticks_on()
 
-        # Clip long sequences
-        if data.shape[-1] > max_len:
-            warnings.warn(f"Data length ({data.shape[-1]}) exceeds maximum ({max_len}). Truncating.")
-            data = data[..., :max_len]
+        # Add legend if channel count is manageable
+        if num_ch <= 10:
+            ax.legend(loc='upper right', fontsize=9, frameon=False, ncol=2)
 
-        data = data.to(self.DEVICE)
+        # Optional annotations for first and last channel
+        ax.annotate("Ch 1", xy=(time[-1], data[0][-1]), xytext=(-60, 5),
+                    textcoords='offset points', fontsize=8, color=self.cmaplist[0])
+        ax.annotate(f"Ch {num_ch}", xy=(time[-1], data[num_ch-1][-1]), xytext=(-60, -10),
+                    textcoords='offset points', fontsize=8, color=self.cmaplist[num_ch-1])
 
-        with torch.no_grad():
-            logits = self.model(data)
-            probabilities =  torch.softmax(logits, dim=-1)
-            confidence_scores_pt, predicted_indices_pt = torch.max(probabilities, dim=-1)
-
-            predicted_indices = predicted_indices_pt.cpu().numpy()
-            confidence_scores = confidence_scores_pt.cpu().numpy()
-
-        # --- Postprocessing to fix short artifacts ---
-        batch_size, time_steps = predicted_indices.shape
-        for b in range(batch_size):
-            labels_arr = predicted_indices[b]
-            i = 0
-            while i < time_steps:
-                current_label = labels_arr[i]
-                start = i
-                while i < time_steps and labels_arr[i] == current_label:
-                    i += 1
-                end = i  # exclusive
-
-                segment_length = end - start
-                if segment_length < min_duration_sec * self.INTERNAL_SAMPLING_RATE:
-                    # Determine neighboring segments
-                    left_label = labels_arr[start - 1] if start > 0 else None
-                    right_label = labels_arr[end] if end < time_steps else None
-
-                    # Count left and right neighbor lengths
-                    left_len = 0
-                    if left_label is not None:
-                        j = start - 1
-                        while j >= 0 and labels_arr[j] == left_label:
-                            left_len += 1
-                            j -= 1
-
-                    right_len = 0
-                    if right_label is not None:
-                        j = end
-                        while j < time_steps and labels_arr[j] == right_label:
-                            right_len += 1
-                            j += 1
-
-                    # Decide which neighbor to copy
-                    if left_len >= right_len and left_label is not None:
-                        new_label = left_label
-                    elif right_label is not None:
-                        new_label = right_label
-                    else:
-                        new_label = 0  # fallback if no neighbors
-
-                    # Reassign short segment
-                    labels_arr[start:end] = new_label
-
-            predicted_indices[b] = labels_arr
-
-        return predicted_indices, confidence_scores
-
-
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        if save and path:
+            plt.savefig(os.path.join(path, f'{name}_butterfly_plot.png'), bbox_inches='tight')
+        plt.show()
 
     def segment_entire_run(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5):
         """
@@ -731,66 +1025,6 @@ class Analyzer:
         # Squeeze the channel dimension out of the returned data
         return final_labels, final_confidences
     
-    def _heart_beat_score(self, confidence: np.ndarray, labels: np.ndarray, confidence_weight: float = 0.80, plausibility_weight: float = 0.2, zero_input_mask: np.ndarray = None,):
-        """
-        Calculate the heart beat score based on confidence and plausibility.
-        Args:
-            confidence: numpy array of shape (num_channels, num_samples). Confidence scores.
-            labels: numpy array of shape (num_channels, num_samples). Segmentation labels.
-            confidence_weight: Weight for the confidence score.
-            plausibility_weight: Weight for the plausibility score.
-        Returns:
-            numpy array of shape (num_channels,). Final scores for each channel.
-        """
-
-        num_channels, _ = confidence.shape
-        
-        mean_confidence = np.mean(confidence, axis=-1) # Shape: (num_channels,)
-
-
-        # Calculate segment percentages
-        segment_percentages = np.zeros((num_channels, 4))
-        total_samples_per_channel = labels.shape[-1]
-
-        if total_samples_per_channel > 0:
-            for segment_type in range(4): # 0, 1, 2, 3
-                segment_counts = np.sum(labels == segment_type, axis=1) # Sum over time axis
-                segment_percentages[:, segment_type] = (segment_counts / total_samples_per_channel) * 100
-        # Else: percentages remain zero
-
-        # Define ideal ranges (consider making these class attributes or constants)
-        p_wave_range = (8, 15)      # Relaxed P-wave: 8-15%
-        qrs_range = (8, 15)         # Relaxed QRS: 8-15%
-        t_wave_range = (15, 30)     # Relaxed T-wave: 15-30%
-
-        # Calculate plausibility scores (vectorized)
-        p_percent = segment_percentages[:, self.LABEL_TO_IDX["P Wave"]]
-        qrs_percent = segment_percentages[:, self.LABEL_TO_IDX["QRS"]]
-        t_percent = segment_percentages[:, self.LABEL_TO_IDX["T Wave"]]
-
-        # Deviations (calculate difference from range boundaries)
-        p_dev = np.maximum(0, p_wave_range[0] - p_percent) + np.maximum(0, p_percent - p_wave_range[1])
-        qrs_dev = np.maximum(0, qrs_range[0] - qrs_percent) + np.maximum(0, qrs_percent - qrs_range[1])
-        t_dev = np.maximum(0, t_wave_range[0] - t_percent) + np.maximum(0, t_percent - t_wave_range[1])
-
-        total_deviation = p_dev + qrs_dev + t_dev
-
-        # Normalize deviation - use a max possible deviation or just invert
-        # Simple inversion: Higher score for lower deviation. Add epsilon for stability.
-        # Scale factor can be adjusted based on expected deviation range.
-        plausibility_scores = 1.0 / (1.0 + total_deviation * 0.1) # Smaller multiplier = less sensitive
-
-        # Combine scores
-        # Normalize confidence to avoid scale issues if confidence varies widely
-
-        final_scores = (confidence_weight * mean_confidence) + (plausibility_weight * plausibility_scores)
-
-        if zero_input_mask is not None:
-            final_scores[zero_input_mask] = 0.0
-
-        return final_scores, mean_confidence, segment_percentages, plausibility_scores
-    
-
     def find_cleanest_channel(self, data: np.ndarray, window_size: int = 2000, overlap: float = 0.5, print_results: bool = True, confidence_weight: float = 0.80, plausibility_weight: float = 0.2):
         """
         Find the channel with the clearest signal based on segmentation confidence
@@ -865,7 +1099,6 @@ class Analyzer:
 
         # Return 0-based index and the full results
         return best_channel, labels, confidence, final_scores
-
 
     def detect_qrs_complex_peaks_cleanest_channel(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False):
         """
@@ -970,51 +1203,6 @@ class Analyzer:
 
         return peak_positions, best_channel_idx, labels, heart_rate, hrv_sdnn_ms
 
-    @staticmethod
-    def _detect_qrs_segments(labels_ch, qrs_label):
-        """
-        Detects continuous segments where the label matches qrs_label.
-
-        Args:
-            labels_ch (np.ndarray): 1D array of labels for a single channel.
-            qrs_label (int): The integer label representing the QRS complex.
-
-        Returns:
-            List[Tuple[int, int]]: A list of tuples, where each tuple is (start_idx, end_idx)
-                                of a QRS segment (end index is exclusive).
-        """
-        # Get QRS mask
-        is_qrs = (labels_ch == qrs_label).astype(np.int8)
-        
-        # Find continuous segments using run-length encoding approach
-        # This handles incomplete segments at boundaries better
-        where_changes = np.where(np.diff(is_qrs, prepend=0, append=0) != 0)[0]
-        
-        # No changes means either all QRS or no QRS
-        if len(where_changes) <= 1:
-            if is_qrs[0] == 1:  # All signal is QRS
-                return [(0, len(is_qrs))]
-            else:  # No QRS found
-                return []
-        
-        # Process change points to get valid segments
-        segments = []
-        
-        # Handle changes in pairs
-        for i in range(0, len(where_changes) - 1, 2):
-            start_idx = where_changes[i]
-            # Make sure we don't go out of bounds
-            if i + 1 < len(where_changes):
-                end_idx = where_changes[i + 1]
-                segments.append((start_idx, end_idx))
-        
-        # Handle odd number of change points (last segment extends to the end)
-        if len(where_changes) % 2 == 1:
-            segments.append((where_changes[-1], len(is_qrs)))
-        
-        return segments
-
-
     def detect_qrs_complex_peaks_all_channels(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False):
         """
         Detects QRS complex peaks for *all* channels independently. Assumes input data is at 250 Hz.
@@ -1108,38 +1296,6 @@ class Analyzer:
 
         return peak_positions_all_channels, cleanest_channel, labels, avg_heart_rate, avg_hrv_sdnn
     
-
-    def plotting_time_series(self, data, time, num_ch, name, path=None, save=False):
-        """Plot time series data for multiple channels.
-
-        Args:
-            data (np.ndarray): Data array, shape (num_channels, num_samples).
-            time (np.ndarray): Time vector.
-            num_ch (int): Number of channels.
-            name (str): Plot title.
-            path (str, optional): Directory to save the plot.
-            save (bool): Whether to save the plot.
-        """
-        fig, ax = plt.subplots(figsize=(10, 4))
-        fig.suptitle(name, size='small', y=0.99)
-
-        if num_ch > 1:
-            for i in range(num_ch):
-                ax.plot(time, data[i], alpha=0.4, color=self.cmaplist[i], label=f"Ch {i+1}")
-        else:
-            ax.plot(time, data, "-", label="Single Channel")
-
-        ax.grid(alpha=0.7)
-        ax.minorticks_on()
-        ax.grid(True, which='minor', linestyle='dotted', alpha=0.7)
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('B [pT]')
-        fig.subplots_adjust(top=0.95, bottom=0.25 if num_ch > 1 else 0.2)
-
-        if save and path:
-            plt.savefig(os.path.join(path, f'{name}_B_vs_time.png'), dpi=100)
-        plt.show()
-
     def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4, heart_beat_score_threshold=0.7):
         """Compute average windowed QRS waveform around peaks.
 
@@ -1215,23 +1371,6 @@ class Analyzer:
         filtered_data = signal.savgol_filter(filtered_data, window_length=savgol_window, polyorder=savgol_polyorder, axis=1)
         return filtered_data
 
-    def change_to_consistent_coordinate_system(self, data):
-        """Adjust data to a consistent coordinate system based on sensor mappings.
-
-        Args:
-            data (np.ndarray): Input data, shape (num_channels, num_samples).
-
-        Returns:
-            np.ndarray: Adjusted data.
-        """
-        for quspin, ch in self.quspin_channel_dict.items():
-            sign = -1 if str(ch).startswith('-') else 1
-            ch_idx = abs(int(ch))
-            data[ch_idx] *= sign
-            if 'y' in quspin or self.quspin_gen_dict.get(quspin[:-2], 0) == 2:
-                data[ch_idx] *= -1
-        return data
-
     def get_field_directions(self, data, key):
         """Extract x, y, z field data for QuSpin sensors.
 
@@ -1260,10 +1399,9 @@ class Analyzer:
 
         return x_data, y_data, z_data
 
-    
     def invert_field_directions(self, x_data, y_data, z_data, key, num_channels=None):
         """
-        Reconstruct the original data array from x, y, z field data.
+        Reconstruct the original data array from x, y, z field data. (inverse of get_field_directions)
         Args:
             x_data, y_data, z_data (np.ndarray): Field data arrays of shape (rows, cols, samples).
             key (str): Run key for sensor exclusion.
@@ -1296,8 +1434,6 @@ class Analyzer:
                     data[channel_index, :] = source[row_idx, col_idx, :]
         
         return data
-
-
 
     def align_multi_channel_signal(self, signal1, signal2, lag_cutoff=2000, plot=True):
         """
@@ -1362,7 +1498,6 @@ class Analyzer:
 
         return aligned_signal2, lag
 
-
     def prepare_data(self, key, apply_default_filter=False, intervall_low_sec=5, intervall_high_sec=-5, plot_alignment=False, alignment_cutoff_sec=2, input_sampling_rate=1000):
         """Prepare data for a given run key for analysis.
 
@@ -1408,7 +1543,7 @@ class Analyzer:
         single_run = np.concatenate((data1[:, :min_length], aligned_data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
         
 
-        flipped_data = self.change_to_consistent_coordinate_system(single_run)
+        flipped_data = self._change_to_consistent_coordinate_system(single_run)
 
         if input_sampling_rate != self.INTERNAL_SAMPLING_RATE:
             num_samples_target = int(flipped_data.shape[-1] * (self.INTERNAL_SAMPLING_RATE / input_sampling_rate))
@@ -1433,53 +1568,49 @@ class Analyzer:
         x_data, y_data, z_data = self.get_field_directions(resampled_data, key)
         return (x_data, y_data, z_data), time, resampled_data
 
-
-    def _apply_ICA(self, data, max_iter=1000):
-        """
-        Apply Independent Component Analysis (ICA) to the data. Helper function.
-
-        Args:
-            data (np.ndarray): Input data, shape (channels, samples).
-            max_iter (int): Maximum iterations for ICA.
-            n_components (int, optional): Number of components to extract. If None, defaults to number of non-zero channels.
-
-
-        Returns:
-            tuple: (ICA components, mixing matrix, mean, non_zero_indices, original_channel_count) or
-                (None, None, None, None, None) if ICA fails.
-        """
-        # Store original shape for reconstruction
-        original_shape = data.shape
-        
-        # Reshape and identify non-zero channels
-        data_reshaped = data.reshape(-1, data.shape[-1])
-        non_zero_mask = ~np.all(data_reshaped == 0, axis=1)
-        non_zero_indices = np.where(non_zero_mask)[0]
-        arr_cleaned = data_reshaped[non_zero_mask]
-        
-        if arr_cleaned.shape[0] == 0:
-            logging.warning("No non-zero channels for ICA")
-            return None, None, None, None, None
-        
-        try:
-            # Apply ICA - transpose for sklearn's expected format
-            ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter)
-            components = ica.fit_transform(arr_cleaned.T).T
-            
-            # Store mixing matrix and mean for reconstruction
-            mixing_matrix = ica.mixing_
-            mean = ica.mean_
-            
-            return components, mixing_matrix, mean, non_zero_indices, original_shape
-        except Exception as e:
-            logging.error(f"ICA failed: {e}")
-            return None, None, None, None, None
-
-
-
     def ICA_filter(self, data, heart_beat_score_threshold=0.85, max_iter=5000,
             confidence_weight=0.8, plausibility_weight=0.2, print_result=False,
             plot_result=False):
+        
+        """
+        Applies Independent Component Analysis (ICA) to filter heartbeat-related artifacts from multichannel signal data.
+
+        This method uses ICA to decompose the input signal into components, scores them based on heartbeat-related features,
+        and reconstructs the signal while removing components below a specified heartbeat score threshold.
+
+        Parameters:
+        ----------
+        data : np.ndarray
+            The input data array. Can be either 2D (channels x time) or 3D (grid_x x grid_y x time).
+        heart_beat_score_threshold : float, optional
+            Threshold for heartbeat component score above which components are retained (default is 0.85).
+        max_iter : int, optional
+            Maximum number of iterations for the ICA algorithm (default is 5000).
+        confidence_weight : float, optional
+            Weight of the confidence score in determining heartbeat relevance (default is 0.8).
+        plausibility_weight : float, optional
+            Weight of the plausibility score in determining heartbeat relevance (default is 0.2).
+        print_result : bool, optional
+            If True, prints the result of the component evaluation (default is False).
+        plot_result : bool, optional
+            If True and input is 3D (4x4 grid), displays an interactive plot for visual threshold adjustment (default is False).
+
+        Returns:
+        -------
+        result : np.ndarray
+            The filtered signal with heartbeat-related components removed or suppressed.
+        ica_components : np.ndarray
+            The independent components extracted from the original signal.
+        best_channel_idx : int
+            Index of the component with the highest combined score (best representing heartbeat activity).
+        score_mask : np.ndarray
+            Boolean array indicating which components were retained after thresholding.
+
+        Raises:
+        ------
+        ValueError
+            If input data is not 2D or 3D.
+        """
     
         # Get the shape of the data
         data_shape = data.shape
@@ -1524,17 +1655,22 @@ class Analyzer:
         # Get the filtered result based on the initial threshold
         result, score_mask = apply_filter(heart_beat_score_threshold)
 
-        # If 3D and we want to plot the result
         if is_3d and plot_result:
             if data_shape[0] * data_shape[1] != 16:
                 print("Plotting supported only for 4x4 grid.")
             else:
                 # Create a 4x4 grid plot
-                fig, axes = plt.subplots(nrows=data_shape[0], ncols=data_shape[1], sharex=True, figsize=(33/2.54, 22/2.54), dpi=100)
-                fig.text(0.5, 0.08, 'Time [s]', ha='center', va='center', fontsize=12)
-                fig.text(0.08, 0.5, 'Magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
+                fig, axes = plt.subplots(
+                    nrows=data_shape[0], ncols=data_shape[1],
+                    sharex=True,
+                    figsize=(33/2.54, 22/2.54), dpi=100
+                )
+
+                fig.text(0.5, 0.06, 'Time [s]', ha='center', va='center', fontsize=12)
+                fig.text(0.06, 0.5, 'Magnetic Field [pT]', ha='center', va='center', rotation='vertical', fontsize=12)
 
                 length = min(data_shape[-1], 500)
+                time_axis = np.arange(length) / self.INTERNAL_SAMPLING_RATE
 
                 def plot_grid(res, unfiltered_data):
                     for i in range(data_shape[0]):
@@ -1542,19 +1678,22 @@ class Analyzer:
                             ax = axes[i, j]
                             ax.clear()
 
-                            # Plot filtered signal (in blue)
-                            ax.plot(np.arange(length)/self.INTERNAL_SAMPLING_RATE, res[i, j, :length], label="Filtered Signal")
+                            # Plot filtered signal
+                            ax.plot(time_axis, res[i, j, :length], label="Filtered", color='blue', linewidth=0.8)
 
-                            # Plot unfiltered signal (in red dotted)
-                            ax.plot(np.arange(length)/self.INTERNAL_SAMPLING_RATE, unfiltered_data[i, j, :length], 'r:', label="Unfiltered Signal")
+                            # Plot original signal
+                            ax.plot(time_axis, unfiltered_data[i, j, :length], 'r:', label="Unfiltered", linewidth=0.8)
 
-                            ax.set_title(f"Ch {i*data_shape[1]+j+1}")
+                            ax.set_title(f"Ch {i * data_shape[1] + j + 1}", fontsize=9)
+                            ax.grid(True, linestyle='dotted', alpha=0.6)
+                            ax.tick_params(axis='both', labelsize=8)
+
                     fig.canvas.draw_idle()
 
                 plot_grid(result, data)
 
-                # Slider to dynamically update threshold
-                ax_slider = plt.axes([0.2, 0.05, 0.6, 0.03])
+                # Slider for dynamic threshold adjustment
+                ax_slider = plt.axes([0.2, 0.01, 0.6, 0.03])
                 slider = Slider(ax_slider, 'Threshold', 0.0, 1.0,
                                 valinit=heart_beat_score_threshold, valstep=0.01)
 
@@ -1564,10 +1703,10 @@ class Analyzer:
                     plot_grid(new_result, data)
 
                 slider.on_changed(update)
+                plt.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.12, hspace=0.4, wspace=0.3)
                 plt.show()
 
         return result, ica_components, best_channel_idx, score_mask
-
 
     def create_heat_map_animation(self, data, cleanest_i, cleanest_j, output_file='animation.mp4', interval=100, resolution=500, stride=1, direction='x', key="Brustlage", dynamic_scale=True):
         """Create an animated heatmap of the data.
