@@ -570,12 +570,220 @@ Tuple of:
 
 ### Visualization
 
-- `plot_sensor_matrix(data, time, name, ...)`: Plots sensor data in a grid layout.
-- `butterfly_plot(data, time, num_ch, name, ...)`: Overlays all channel signals.
-- `plot_segmented_signal(signal_250Hz, prediction_labels, ...)`: Plots a single channel's signal with colored P/QRS/T segments.
-- `plot_all_heart_vector_projections(heart_vector_components_250Hz, ...)`: Plots XY, XZ, YZ projections of the heart vector. `heart_vector_components` should be a (3, num_samples) array (Bx, By, Bz).
-- `plot_lsd_multichannel(data, noise_theos, freqs, name, ...)`: Plots Linear Spectral Density.
-- `create_heat_map_animation(data_grid_250Hz, cleanest_i, cleanest_j, ...)`: Creates an MP4 animation of spatial field distribution. `data_grid_250Hz` should be (rows, cols, samples).
+#### `plot_sensor_matrix`
+
+Plots a grid of time series data from a sensor array as subplots, representing the physical layout of sensors.
+
+The method performs the following steps:
+
+1. **Grid Setup**: Creates a subplot grid based on the sensor array dimensions.
+2. **Signal Plotting**: Plots each sensor’s time-domain signal or marks “No Data” for empty/invalid signals.
+3. **Styling**: Adds grid lines, global axis labels, and a figure title.
+4. **Optional Saving**: Saves the plot as a PNG if requested.
+
+**Usage**:
+
+```python
+Processor.plot_sensor_matrix(data, time, name="Sensor Grid", path="./plots", save=True)
+```
+
+![image](https://github.com/user-attachments/assets/2015e780-456a-49ec-b4c0-3eab05510e21)
+
+
+**Parameters**:
+
+| Name   | Type         | Default | Description                                                   |
+|--------|--------------|---------|---------------------------------------------------------------|
+| `data` | `np.ndarray` | —       | 3D array of shape `(nrows, ncols, samples)` with sensor signals. |
+| `time` | `np.ndarray` | —       | 1D time vector for the samples.                               |
+| `name` | `str`        | —       | Figure title and base filename if saving.                     |
+| `path` | `str`        | `None`  | Directory to save the plot if `save` is True.                 |
+| `save` | `bool`       | `False` | If True, saves the plot as a PNG.                             |
+
+**Returns**:
+None (displays the plot and optionally saves it).
+
+---
+
+#### `plot_lsd_multichannel`
+
+Plots the Linear Spectral Density (LSD) of multichannel time-series data using Welch’s method, assuming 250 Hz input.
+
+The method performs the following steps:
+
+1. **Spectral Estimation**: Computes LSD for each channel using a Nuttall window.
+2. **Visualization**: Plots LSD on a log-log scale with optional theoretical noise levels.
+3. **Dual Axis**: Adds a secondary y-axis for linear amplitude scale.
+4. **Styling**: Includes grid lines, legend, and frequency/amplitude labels.
+5. **Optional Saving**: Saves the plot as a PNG if requested.
+
+**Usage**:
+
+```python
+processor.plot_lsd_multichannel(data, noise_theos, freqs, name="LSD Plot", labels=["Ch1", "Ch2"], channels=[0, 1], path="./plots", save=True)
+```
+
+**Parameters**:
+
+| Name          | Type               | Default | Description                                                   |
+|---------------|--------------------|---------|---------------------------------------------------------------|
+| `data`        | `np.ndarray`       | —       | 2D array of shape `(channels, time)` with channel signals.    |
+| `noise_theos` | `list` or `np.ndarray` | —   | Theoretical noise floor values for each channel.              |
+| `freqs`       | `list` or `np.ndarray` | —   | Sampling frequencies for each channel.                        |
+| `name`        | `str`              | —       | Plot title and filename base if saving.                       |
+| `labels`      | `list of str`      | —       | Labels for each channel in the legend.                        |
+| `channels`    | `list of int`      | —       | Indices of channels to plot.                                  |
+| `path`        | `str`              | —       | Directory to save the plot if `save` is True.                 |
+| `save`        | `bool`             | `False` | If True, saves the plot as a PNG.                             |
+
+**Returns**:
+None (displays the plot and optionally saves it).
+
+**Raises**:
+* `ValueError`: If input arrays/lists are inconsistent in length or incorrectly formatted.
+
+---
+
+#### `plot_heart_vector_projection`
+
+Plots a 2D projection of the heart vector with metrics and a filled area, visualizing cardiac magnetic field components.
+
+The method performs the following steps:
+
+1. **Plot Setup**: Initializes a plot with equal aspect ratio and styled grid.
+2. **Data Plotting**: Plots the 2D projection line and fills the enclosed area.
+3. **Directional Arrows**: Adds arrows to indicate the vector’s direction.
+4. **Metrics Calculation**: Computes area, T-distance, compactness, and average angle using the shoelace formula and other metrics.
+5. **Annotations**: Displays metrics in a text box and labels axes based on projection type.
+6. **Optional Integration**: Can be used standalone or within a subplot.
+
+**Usage**:
+
+```python
+processor.plot_heart_vector_projection(component1, component2, proj_name="xy-Projection", title_suffix="Subject1")
+```
+
+![image](https://github.com/user-attachments/assets/755764c0-819b-4ff1-83cb-a3491631e6f9)
+
+
+**Parameters**:
+
+| Name           | Type         | Default | Description                                                   |
+|----------------|--------------|---------|---------------------------------------------------------------|
+| `component1`   | `np.ndarray` | —       | First component of the heart vector (e.g., Bx for xy-Projection). |
+| `component2`   | `np.ndarray` | —       | Second component of the heart vector (e.g., By for xy-Projection). |
+| `proj_name`    | `str`        | —       | Projection type (`xy-Projection`, `xz-Projection`, or `yz-Projection`). |
+| `title_suffix`| `str`        | `""`    | Optional suffix for the plot title.                           |
+| `ax`           | `matplotlib.axes.Axes` | `None` | Optional axis for plotting (if None, creates a new figure). |
+
+**Returns**:
+* `matplotlib.axes.Axes` — The axis object containing the plot.
+
+**Raises**:
+* `Exception`: Logs a warning if metrics calculation fails, displaying “Metrics Error”.
+
+---
+
+#### `plot_all_heart_vector_projections`
+
+Plots XY, XZ, and YZ projections of the heart vector in a single figure, visualizing all cardiac magnetic field components.
+
+The method performs the following steps:
+
+1. **Input Validation**: Ensures the input has shape `(3, num_samples)` for Bx, By, Bz.
+2. **Subplot Setup**: Creates a 1x3 subplot grid for the three projections.
+3. **Projection Plotting**: Calls `plot_heart_vector_projection` for each projection.
+4. **Styling**: Adds a unified title and adjusts layout.
+5. **Optional Saving**: Saves the plot as a PNG if a path is provided.
+
+**Usage**:
+
+```python
+processor.plot_all_heart_vector_projections(heart_vector_components, title_suffix="Subject1", save_path="./plots/projections.png")
+```
+
+**Parameters**:
+
+| Name                    | Type         | Default | Description                                                   |
+|-------------------------|--------------|---------|---------------------------------------------------------------|
+| `heart_vector_components` | `np.ndarray` | —     | Array of shape `(3, num_samples)` with Bx, By, Bz components. |
+| `title_suffix`          | `str`        | `""`    | Optional suffix for the plot title.                           |
+| `save_path`             | `str`        | `None`  | Path to save the plot as a PNG.                               |
+
+**Returns**:
+None (displays the plot and optionally saves it).
+
+**Raises**:
+* `Exception`: Logs an error if `heart_vector_components` has incorrect shape.
+
+---
+
+#### `plot_segmented_signal`
+
+Plots a signal with overlaid heart beat interval segmentations, assuming 250 Hz input.
+
+The method performs the following steps:
+
+1. **Signal Plotting**: Plots the input signal as a time series.
+2. **Segmentation Overlay**: Adds colored vertical spans for each segment (No Wave, P-Wave, QRS, T-Wave).
+3. **Legend Creation**: Builds a legend for the signal and segment types.
+4. **Styling**: Adds grid lines and labels.
+5. **Optional Integration**: Can be used standalone or within an existing axis.
+
+**Usage**:
+
+```python
+processor.plot_segmented_signal(signal, pred)
+```
+
+![image](https://github.com/user-attachments/assets/b84801ec-2e0e-4c94-9d95-8b0da44f2fd3)
+
+**Parameters**:
+
+| Name    | Type         | Default | Description                                                   |
+|---------|--------------|---------|---------------------------------------------------------------|
+| `signal`| `np.ndarray` | —       | Input signal array of shape `(T,)`.                           |
+| `pred`  | `np.ndarray` | —       | Predicted segment classifications of shape `(T,)`.            |
+| `axs`   | `matplotlib.axes.Axes` | `None` | Optional axis for plotting (if None, creates a new figure). |
+
+**Returns**:
+None (displays the plot).
+
+---
+
+#### `butterfly_plot`
+
+Creates a butterfly plot to visualize time series data from multiple channels overlaid on a single axis, assuming input data at 250 Hz.
+
+The method performs the following steps:
+
+1. **Initialization**: Sets up a figure with a single axis for plotting.
+2. **Channel Plotting**: Plots each channel’s time series data with distinct colors and transparency.
+3. **Grid and Labels**: Adds major and minor grid lines, time, and magnetic field labels.
+4. **Legend and Annotations**: Includes a legend for up to 10 channels and annotates the first and last channels.
+5. **Optional Saving**: Saves the plot as a PNG if requested.
+
+**Usage**:
+
+```python
+processor.butterfly_plot(data, time, num_ch=5, name="Signal Plot", path="./plots", save=True)
+```
+
+**Parameters**:
+
+| Name        | Type         | Default | Description                                                   |
+|-------------|--------------|---------|---------------------------------------------------------------|
+| `data`      | `np.ndarray` | —       | Input array of shape `(num_channels, num_samples)`.           |
+| `time`      | `np.ndarray` | —       | 1D array of time points corresponding to samples.             |
+| `num_ch`    | `int`        | —       | Number of channels to plot.                                   |
+| `name`      | `str`        | —       | Title of the plot and base filename if saving.                |
+| `path`      | `str`        | `None`  | Directory to save the plot if `save` is True.                 |
+| `save`      | `bool`       | `False` | If True, saves the plot as a PNG in the specified `path`.     |
+
+**Returns**:
+None (displays the plot and optionally saves it).
+
+![image](https://github.com/user-attachments/assets/50478143-9f66-44d2-96f3-73c2338fedfb)
 
 #### Static Utility Methods
 
