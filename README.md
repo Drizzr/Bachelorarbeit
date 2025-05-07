@@ -144,7 +144,7 @@ A typical workflow involves:
 3. Performing analysis such as segmentation, QRS detection, or ICA.
 4. Visualizing results.
 
-#### Data Preparation and Alignment
+### Data Preparation and Alignment
 
 #### `prepare_data`
 Prepares time-aligned, spatially-oriented data from multiple sensor recordings, handling alignment, filtering, resampling, and coordinate transformations in one streamlined step.
@@ -253,7 +253,7 @@ reconstructed = processor.invert_field_directions(x_data, y_data, z_data, key="r
 data (np.ndarray) — Reconstructed signal array (channels × samples).
 
 
-#### Signal Filtering
+### Signal Filtering
 
 #### `default_filter_combination`
 
