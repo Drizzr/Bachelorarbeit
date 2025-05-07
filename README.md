@@ -551,6 +551,9 @@ Plots Linear Spectral Density (LSD) of multi-channel data using Welch’s method
 analyzer.plot_lsd_multichannel(data, noise_theos, freqs, name="LSD Plot", labels=["Ch1", "Ch2"], channels=[0, 1], path="./plots", save=True)
 ```
 
+![Leermessung_Noise_Spectrum_Triax_Sensor_LSD](https://github.com/user-attachments/assets/d8217a25-4953-4f22-9028-807334be9a24)
+
+
 **Parameters**:
 | Parameter    | Type             | Default | Description                                 |
 |--------------|------------------|---------|---------------------------------------------|
