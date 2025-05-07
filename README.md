@@ -790,6 +790,49 @@ None (displays the plot and optionally saves it).
 
 ![image](https://github.com/user-attachments/assets/50478143-9f66-44d2-96f3-73c2338fedfb)
 
+
+#### `create_heat_map_animation`
+
+Creates an animated heatmap of sensor array data with a time series trace of the cleanest channel, assuming input data at 250 Hz.
+
+The method performs the following steps:
+
+1. **Figure Setup**: Initializes a figure with two subplots: one for the heatmap and one for the time series trace.
+2. **Heatmap Initialization**: Sets up a high-resolution interpolated heatmap using a custom colormap.
+3. **Sensor Markers**: Plots sensor locations and highlights the cleanest channel.
+4. **Time Series Plot**: Displays the time series of the cleanest channel with a moving marker.
+5. **Animation**: Updates the heatmap and trace for each frame, interpolating data and optionally adjusting the color scale dynamically.
+6. **Saving**: Saves the animation as a GIF or video file using FFmpeg.
+
+**Usage**:
+
+```python
+ani, fig = processor.create_heat_map_animation(data, cleanest_i=1, cleanest_j=2, output_file="heatmap_animation.gif", interval=100, resolution=500, stride=1, direction="x", key="Brustlage", dynamic_scale=True)
+```
+
+**Parameters**:
+
+| Name            | Type         | Default            | Description                                                   |
+|-----------------|--------------|--------------------|---------------------------------------------------------------|
+| `data`          | `np.ndarray` | —                  | Input array of shape `(rows, cols, samples)`.                 |
+| `cleanest_i`    | `int`        | —                  | Row index of the cleanest channel.                            |
+| `cleanest_j`    | `int`        | —                  | Column index of the cleanest channel.                         |
+| `output_file`   | `str`        | `"animation.gif"`  | Output file name for the animation (e.g., GIF or video).      |
+| `interval`      | `int`        | `100`              | Frame interval in milliseconds.                               |
+| `resolution`    | `int`        | `500`              | Heatmap resolution for interpolation.                         |
+| `stride`        | `int`        | `1`                | Frame stride for animation.                                   |
+| `direction`     | `str`        | `"x"`              | Field direction (`x`, `y`, or `z`) for labeling.              |
+| `key`           | `str`        | `"Brustlage"`      | Run key for labeling (e.g., anatomical location).             |
+| `dynamic_scale` | `bool`       | `True`             | If True, dynamically adjusts the heatmap color scale per frame. |
+
+**Returns**:
+Tuple of:
+
+* `matplotlib.animation.FuncAnimation` — The animation object.
+* `matplotlib.figure.Figure` — The figure object containing the plots.
+
+  
+
 #### Static Utility Methods
 
 The class includes static methods for signal processing (e.g., `bandstop_filter`, `apply_lowpass_filter`, `remove_drift_and_offset`) and plotting helpers.
