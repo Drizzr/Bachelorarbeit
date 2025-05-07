@@ -1296,7 +1296,7 @@ class Analyzer:
 
         return peak_positions_all_channels, cleanest_channel, labels, avg_heart_rate, avg_hrv_sdnn
     
-    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4, heart_beat_score_threshold=0.7):
+    def avg_window(self, data, peak_positions, window_left=0.3, window_right=0.4, heart_beat_score_threshold=0.7, sigma=1):
         """Compute average windowed QRS waveform around peaks.
 
         Args:
@@ -1304,6 +1304,8 @@ class Analyzer:
             peak_positions (list or dict): Peak indices or dict of peak indices per channel.
             window_left (float): Seconds to include left of the peak.
             window_right (float): Seconds to include right of the peak.
+            heart_beat_score_threshold (float): Threshold for heart beat score.
+            sigma (float): Standard deviation for Gaussian filter.
 
         Returns:
             tuple: (avg_channels (np.ndarray), time_window (np.ndarray)).
@@ -1345,7 +1347,7 @@ class Analyzer:
 
         time_window = np.linspace(0, window_length / self.INTERNAL_SAMPLING_RATE, num=window_length, endpoint=False)
 
-        avg_channels = gaussian_filter1d(avg_channels, sigma=2, axis=-1, mode='nearest')
+        avg_channels = gaussian_filter1d(avg_channels, sigma=sigma, axis=-1, mode='nearest')
         return avg_channels, time_window
 
     def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2, sampling_rate=1000):

@@ -498,6 +498,7 @@ avg_waveforms, time_window = analyzer.avg_window(data, peak_positions, window_le
 | `window_left`               | `float`          | `0.3`   | Seconds left of peak.                       |
 | `window_right`              | `float`          | `0.5`   | Seconds right of peak.                      |
 | `heart_beat_score_threshold`| `float`          | `0.0`   | Min score for window inclusion.             |
+| `sigma`                     | `float`          | `1`     | Std deviation for gaussian filter.          |
 
 **Returns**:
 - `np.ndarray`: Average waveforms `(channels, window_length)`.
