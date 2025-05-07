@@ -1345,7 +1345,7 @@ class Analyzer:
 
         time_window = np.linspace(0, window_length / self.INTERNAL_SAMPLING_RATE, num=window_length, endpoint=False)
 
-        avg_channels = gaussian_filter1d(avg_channels, sigma=4, axis=-1, mode='nearest')
+        avg_channels = gaussian_filter1d(avg_channels, sigma=2, axis=-1, mode='nearest')
         return avg_channels, time_window
 
     def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2, sampling_rate=1000):
@@ -1708,7 +1708,7 @@ class Analyzer:
 
         return result, ica_components, best_channel_idx, score_mask
 
-    def create_heat_map_animation(self, data, cleanest_i, cleanest_j, output_file='animation.mp4', interval=100, resolution=500, stride=1, direction='x', key="Brustlage", dynamic_scale=True):
+    def create_heat_map_animation(self, data, cleanest_i, cleanest_j, output_file='animation.gif', interval=100, resolution=500, stride=1, direction='x', key="Brustlage", dynamic_scale=True):
         """Create an animated heatmap of the data.
 
         Args:
@@ -1746,9 +1746,9 @@ class Analyzer:
         ax_main.set_ylim(-0.1, 3.1)
 
         time_series = data[cleanest_i, cleanest_j, :]
-        trace_plot, = ax_trace.plot(np.array(range(T)) * 1000 / self.sampling_rate, time_series, 'b-', label=f'Channel ({cleanest_i}, {cleanest_j})')
+        trace_plot, = ax_trace.plot(np.array(range(T)) * 1000 / self.INTERNAL_SAMPLING_RATE, time_series, 'b-', label=f'Channel ({cleanest_i}, {cleanest_j})')
         moving_point, = ax_trace.plot([], [], 'go', markersize=8)
-        ax_trace.set_xlim(0, T * 1000 / self.sampling_rate)
+        ax_trace.set_xlim(0, T * 1000 / self.INTERNAL_SAMPLING_RATE)
         ax_trace.set_ylim(time_series.min(), time_series.max())
         ax_trace.set_title('Time Series of Cleanest Channel', fontsize=16)
         ax_trace.set_xlabel('Time [ms]', fontsize=14)
@@ -1778,8 +1778,8 @@ class Analyzer:
                 heatmap.set_array(interpolated_data)
 
             sensor_points.set_data(sensor_x, sensor_y)
-            time_text.set_text(f'Time: {frame * 1000 / self.sampling_rate:.1f} ms')
-            moving_point.set_data([frame * 1000 / self.sampling_rate], [time_series[frame]])
+            time_text.set_text(f'Time: {frame * 1000 / self.INTERNAL_SAMPLING_RATE:.1f} ms')
+            moving_point.set_data([frame * 1000 / self.INTERNAL_SAMPLING_RATE], [time_series[frame]])
             return heatmap, time_text, cleanest_marker, sensor_points, moving_point
 
         animation_T = range(0, T, stride)
