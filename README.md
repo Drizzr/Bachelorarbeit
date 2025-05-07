@@ -146,7 +146,7 @@ A typical workflow involves:
 
 #### Data Preparation and Alignment
 
-`prepare_data`
+#### `prepare_data`
 Prepares time-aligned, spatially-oriented data from multiple sensor recordings, handling alignment, filtering, resampling, and coordinate transformations in one streamlined step.
 
 **Workflow**:
@@ -185,7 +185,7 @@ combined_run_data (np.ndarray): Combined and preprocessed raw signal (channels �
 ![image](https://github.com/user-attachments/assets/80065fda-0be1-4fd9-807e-5163a04950e8)
 
 
-`align_multi_channel_signal`
+#### `align_multi_channel_signal`
 Aligns two multichannel signals using cross-correlation of the averaged signal over channels, typically used for synchronizing measurements from multiple acquisition systems.
 
 **Usage**:
@@ -210,7 +210,8 @@ lag (int): Estimated lag in samples.
 Raises:
 
 ValueError — If lag_cutoff exceeds signal length.
-`get_field_directions`
+
+#### `get_field_directions`
 Converts multichannel flat data into spatial 3D field representations in x, y, z directions, using known sensor layout metadata, based on the log file specified in `log_file_path`.
 
 **Usage**:
@@ -231,7 +232,7 @@ x_data, y_data, z_data = processor.get_field_directions(data, key="run_01")
 x_data, y_data, z_data (np.ndarray): Arrays of shape (rows, cols, samples) for each field direction.
 
 
-`invert_field_directions`
+#### `invert_field_directions`
 Performs the inverse of get_field_directions, reconstructing the original channel-wise signal from 3D x/y/z field representations, based on the log file specified in `log_file_path`.
 
 **Usage**:
@@ -254,7 +255,7 @@ data (np.ndarray) — Reconstructed signal array (channels × samples).
 
 #### Signal Filtering
 
-`default_filter_combination`
+#### `default_filter_combination`
 
 Applies a predefined sequence of filters to multichannel signal data to remove noise and prepare it for further analysis. The pipeline includes:
 
