@@ -123,7 +123,7 @@ analyzer = Analyzer(
 - `num_ch` (int): Total number of channels expected after combining data. Default: 48.
 - `model_checkpoint_dir` (str): Directory containing `model.pth` and `params.json` for the `ECGSegmenter` model. Default: `MCG_segmentation/MCGSegmentator_s/checkpoints/best`.
 
-Upon initialization, the `Analyzer` loads TDMS data, sensor log information, and the segmentation model (if available). It sets up the computation device (CUDA/CPU/mps) for PyTorch.
+Upon initialization, the `Analyzer` loads TDMS data, sensor log information, and the segmentation model (if available). It sets up the computation device (CUDA/CPU/mps) for PyTorch. (the fastest option is selected automatically)
 
 ### Key Attributes
 
@@ -135,7 +135,7 @@ Upon initialization, the `Analyzer` loads TDMS data, sensor log information, and
 - `INTERNAL_SAMPLING_RATE` (int): Fixed at 250 Hz.
 - `DEVICE` (torch.device): Device (CPU or CUDA) for model computations.
 
-### Main Methods and Workflow
+### Main Methods
 
 A typical workflow involves:
 
@@ -144,23 +144,99 @@ A typical workflow involves:
 3. Performing analysis such as segmentation, QRS detection, or ICA.
 4. Visualizing results.
 
-#### Data Loading and Preparation
+#### Data Preparation and Alignment
 
-- `__init__(...)`: Loads raw data from TDMS files and sensor log.
-- `prepare_data(key, apply_default_filter=False, intervall_low_sec=5, intervall_high_sec=-5, plot_alignment=False, alignment_cutoff_sec=2, input_sampling_rate=1000)`:
-  - Selects data for the given `key` (run name).
-  - Aligns data from `self.data` and `self.add_data` if both exist.
-  - Optionally applies `default_filter_combination`.
-  - Selects a time interval.
-  - Applies sensor coordinate system adjustments.
-  - Resamples data to `self.INTERNAL_SAMPLING_RATE` (250 Hz).
-  - Returns `(x_data, y_data, z_data)`, `time_vector`, `combined_run_data_250Hz`.
-  - `x_data`, `y_data`, `z_data` are 3D grids (rows, cols, samples) based on `quspin_position_list`.
-  - `combined_run_data_250Hz` is a (channels, samples) array at 250 Hz.
+`prepare_data`
+Prepares time-aligned, spatially-oriented data from multiple sensor recordings, handling alignment, filtering, resampling, and coordinate transformations in one streamlined step.
+
+Workflow:
+
+Load raw sensor data from internal sources.
+Align datasets using cross-correlation (using `align_multi_channel_signal`)
+Concatenate and crop to the specified time interval.
+Optionally apply default filters. (using `default_filter_combination`)
+Convert to a consistent coordinate system.
+Resample to internal rate (default 250 Hz).
+Extract x, y, z field components in a grid layout. (using 
+Usage:
+
+(x_data, y_data, z_data), time, combined = processor.prepare_data("run_01", apply_default_filter=True)
+Parameters:
+
+Name	Type	Default	Description
+key	str	—	Identifier for the dataset (must match loaded data keys).
+apply_default_filter	bool	False	Whether to apply filtering after alignment.
+intervall_low_sec	float	5	Start of the time interval in seconds (from aligned start).
+intervall_high_sec	float	-5	End of the time interval in seconds (from aligned end).
+plot_alignment	bool	False	Plot cross-correlation alignment results.
+alignment_cutoff_sec	float	2	Max duration used for alignment in seconds.
+input_sampling_rate	int	1000	Original data sampling rate in Hz.
+Returns:
+
+(x_data, y_data, z_data) (np.ndarray): 3D spatial signals (rows × cols × time) at 250 Hz.
+time (np.ndarray): 1D time vector in seconds.
+combined_run_data (np.ndarray): Combined and preprocessed raw signal (channels × time).
+
+`align_multi_channel_signal`
+Aligns two multichannel signals using cross-correlation of the averaged signal over channels, typically used for synchronizing measurements from multiple acquisition systems.
+
+Usage:
+
+aligned, lag = processor.align_multi_channel_signal(signal1, signal2, lag_cutoff=2000)
+Parameters:
+
+Name	Type	Default	Description
+signal1	np.ndarray	—	First signal array (channels × samples).
+signal2	np.ndarray	—	Second signal array to align.
+lag_cutoff	int	2000	Max samples to consider for lag estimation.
+plot	bool	True	Show plots of pre-/post-alignment.
+Returns:
+
+aligned_signal2 (np.ndarray): Shifted version of signal2, aligned to signal1.
+lag (int): Estimated lag in samples.
+Raises:
+
+ValueError — If lag_cutoff exceeds signal length.
+`get_field_directions`
+Converts multichannel flat data into spatial 3D field representations in x, y, z directions, using known sensor layout metadata, based on the log file specified in `log_file_path`.
+
+Usage:
+
+x_data, y_data, z_data = processor.get_field_directions(data, key="run_01")
+Parameters:
+
+Name	Type	Description
+data	np.ndarray	2D signal array (channels × samples).
+key	str	Dataset key for excluding faulty or missing sensors.
+Returns:
+
+x_data, y_data, z_data (np.ndarray): Arrays of shape (rows, cols, samples) for each field direction.
+
+
+`invert_field_directions`
+Performs the inverse of get_field_directions, reconstructing the original channel-wise signal from 3D x/y/z field representations, based on the log file specified in `log_file_path`.
+
+Usage:
+
+reconstructed = processor.invert_field_directions(x_data, y_data, z_data, key="run_01")
+Parameters:
+
+Name	Type	Default	Description
+x_data	np.ndarray	—	Field data along x-axis.
+y_data	np.ndarray	—	Field data along y-axis.
+z_data	np.ndarray	—	Field data along z-axis.
+key	str	—	Dataset key for handling exclusions.
+num_channels	int	None	Total number of original signal channels. Inferred if not provided.
+Returns:
+
+data (np.ndarray) — Reconstructed signal array (channels × samples).
+
+
+
+
+
 
 #### Signal Filtering
-
-This module provides robust filtering tools for cleaning multichannel biomedical signals, such as magnetoencephalography (MEG) or electrophysiological recordings. Two primary methods are included: a **default filter pipeline** and an **ICA-based artifact removal** specifically designed for heartbeat-related noise.
 
 `default_filter_combination`
 
