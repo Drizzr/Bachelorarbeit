@@ -363,25 +363,212 @@ Segment Distribution:
 * `ValueError` — If the input data is not 2D or 3D.
 
 
+### Segmentation and QRS Detection (Requires MCG_segmentation package and model)
 
+#### `segment_entire_run`
 
-#### Segmentation and QRS Detection (Requires MCG_segmentation package and model)
+Segments the entire signal data using a sliding window approach, suitable for long recordings (T > 2000) to process data in manageable chunks.
 
-- `find_cleanest_channel(data_250Hz, ...)`: Segments all channels in `data_250Hz` (must be at 250 Hz) and scores them based on segmentation confidence and physiological plausibility of P/QRS/T wave percentages. Returns the best channel index, segmentation labels, and confidence scores.
-- `detect_qrs_complex_peaks_cleanest_channel(data_250Hz, ...)`: Runs `find_cleanest_channel` and detects QRS peaks on the cleanest channel. Returns peak indices, cleanest channel index, all labels, HR, and HRV.
-- `detect_qrs_complex_peaks_all_channels(data_250Hz, ...)`: Detects QRS peaks independently for all channels. Returns a dictionary of peak indices per channel, cleanest channel index, all labels, average HR, and average HRV.
-- `avg_window(data_250Hz, peak_positions, ...)`: Averages waveforms around provided `peak_positions`. Can filter windows based on a heartbeat score threshold.
+The method performs the following steps:
 
-#### Independent Component Analysis (ICA)
+1. **Input Validation**: Ensures the input data is a 2D array and overlap is valid.
+2. **Sliding Window**: Divides the input data into windows of specified size with overlap.
+3. **Filtering**: Applies a Savitzky-Golay filter to smooth the data.
+4. **Normalization**: Normalizes each window by subtracting the mean and scaling by the maximum absolute value.
+5. **Model Inference**: Processes each window to predict segment labels and confidence scores.
+6. **Result Aggregation**: Combines results from overlapping windows, prioritizing higher-confidence predictions.
 
-- `ICA_filter(data_250Hz, heart_beat_score_threshold=0.85, ...)`:
-  - Applies FastICA to `data_250Hz` (must be at 250 Hz).
-  - Scores each independent component using a "heart beat score" derived from segmentation.
-  - Reconstructs the signal, nullifying components below `heart_beat_score_threshold`.
-  - Optionally plots results with an interactive threshold slider for 3D grid data.
-  - Returns `filtered_result`, `ica_components`, `best_component_idx`, `score_mask`.
+**Usage**:
 
-#### Visualization
+```python
+labels, confidences = processor.segment_entire_run(data, window_size=2000, overlap=0.5)
+```
+
+**Parameters**:
+
+| Name          | Type         | Default | Description                                                   |
+|---------------|--------------|---------|---------------------------------------------------------------|
+| `data`        | `np.ndarray` | —       | Input array of shape `(b, T)`. Pre-filtered data to segment.  |
+| `window_size` | `int`        | `2000`  | Size of the sliding window for segmentation.                  |
+| `overlap`     | `float`      | `0.5`   | Fraction of overlap between consecutive windows (0 to <1).    |
+
+**Returns**:
+Tuple of:
+
+* `np.ndarray` — Segmentation labels array of shape `(b, T_resampled)`.
+* `np.ndarray` — Confidence scores for each segment, array of shape `(b, T_resampled)`.
+
+**Raises**:
+* `ValueError`: If `data` is not 2D, `overlap` is not in [0, 1), or `window_size` is non-positive.
+* `Warning`: If `window_size` exceeds the maximum model length (2000), it is clamped.
+
+---
+
+#### `find_cleanest_channel`
+
+Identifies the channel with the clearest signal based on segmentation confidence and physiological plausibility, assuming input data at 250 Hz.
+
+The method performs the following steps:
+
+1. **Segmentation**: Segments all channels using `segment_entire_run`.
+2. **Scoring**: Computes a score for each channel combining mean confidence and plausibility.
+3. **Channel Selection**: Selects the channel with the highest score.
+4. **Optional Output**: Prints detailed scores and segment distributions if requested.
+
+**Usage**:
+
+```python
+best_channel, labels, confidence, scores = processor.find_cleanest_channel(data, print_results=True)
+```
+
+**Parameters**:
+
+| Name                  | Type         | Default | Description                                                   |
+|-----------------------|--------------|---------|---------------------------------------------------------------|
+| `data`                | `np.ndarray` | —       | Input array of shape `(num_channels, num_samples)` at 250 Hz. |
+| `window_size`         | `int`        | `2000`  | Window size for segmentation.                                |
+| `overlap`             | `float`      | `0.5`   | Fraction of overlap between windows.                         |
+| `print_results`       | `bool`       | `True`  | If True, prints detailed scores and segment distributions.    |
+| `confidence_weight`   | `float`      | `0.8`   | Weight for mean confidence in scoring.                       |
+| `plausibility_weight` | `float`      | `0.2`   | Weight for plausibility in scoring.                          |
+
+**Returns**:
+Tuple of:
+
+* `int` — Index of the best channel (0-based).
+* `np.ndarray` — Segmentation labels array of shape `(num_channels, T)`.
+* `np.ndarray` — Confidence scores array of shape `(num_channels, T)`.
+* `np.ndarray` — Final scores for all channels.
+
+**Raises**:
+* `ValueError`: If `data` is not 2D.
+* `Warning`: If input data is empty or segmentation fails, returns default values.
+
+---
+
+#### `detect_qrs_complex_peaks_cleanest_channel`
+
+Detects QRS complex peaks in the cleanest channel, assuming input data at 250 Hz.
+
+The method performs the following steps:
+
+1. **Channel Selection**: Identifies the cleanest channel using `find_cleanest_channel`.
+2. **QRS Segmentation**: Detects QRS segments based on labels and confidence.
+3. **Peak Detection**: Identifies peaks within QRS segments meeting length and confidence criteria.
+4. **Peak Filtering**: Ensures minimum distance between peaks.
+5. **Optional Metrics**: Computes and prints heart rate (HR) and heart rate variability (HRV) if requested.
+
+**Usage**:
+
+```python
+peaks, best_channel, labels, heart_rate, hrv = processor.detect_qrs_complex_peaks_cleanest_channel(data, print_heart_rate=True)
+```
+
+**Parameters**:
+
+| Name                  | Type         | Default | Description                                                   |
+|-----------------------|--------------|---------|---------------------------------------------------------------|
+| `data`                | `np.ndarray` | —       | Input array of shape `(num_channels, num_samples)` at 250 Hz. |
+| `confidence_threshold`| `float`      | `0.7`   | Minimum average confidence for a QRS segment.                 |
+| `min_qrs_length_sec`  | `float`      | `0.08`  | Minimum QRS segment duration in seconds.                     |
+| `min_distance_sec`    | `float`      | `0.3`   | Minimum distance between peaks in seconds.                   |
+| `print_heart_rate`    | `bool`       | `False` | If True, prints HR and HRV for the cleanest channel.          |
+
+**Returns**:
+Tuple of:
+
+* `List[int]` — Peak indices in the 250 Hz signal for the cleanest channel.
+* `int` — Index of the cleanest channel (0-based).
+* `np.ndarray` — Segmentation labels for all channels, shape `(num_channels, T)`.
+* `Optional[float]` — Average heart rate (bpm), or None if not computed.
+* `Optional[float]` — HRV (SDNN in ms), or None if not computed.
+
+**Raises**:
+* `Warning`: If segmentation data is empty, returns empty results.
+
+---
+
+#### `detect_qrs_complex_peaks_all_channels`
+
+Detects QRS complex peaks independently for all channels, assuming input data at 250 Hz.
+
+The method performs the following steps:
+
+1. **Channel Selection**: Identifies the cleanest channel using `find_cleanest_channel`.
+2. **QRS Segmentation**: Detects QRS segments for each channel based on labels and confidence.
+3. **Peak Detection**: Identifies peaks within QRS segments meeting length and confidence criteria.
+4. **Peak Filtering**: Ensures minimum distance between peaks per channel.
+5. **Optional Metrics**: Computes and prints average HR and HRV across valid channels if requested.
+
+**Usage**:
+
+```python
+peaks_dict, cleanest_channel, labels, avg_hr, avg_hrv = processor.detect_qrs_complex_peaks_all_channels(data, print_heart_rate=True)
+```
+
+**Parameters**:
+
+| Name                  | Type         | Default | Description                                                   |
+|-----------------------|--------------|---------|---------------------------------------------------------------|
+| `data`                | `np.ndarray` | —       | Input array of shape `(num_channels, num_samples)` at 250 Hz. |
+| `confidence_threshold`| `float`      | `0.7`   | Minimum average confidence for a QRS segment.                 |
+| `min_qrs_length_sec`  | `float`      | `0.08`  | Minimum QRS segment duration in seconds.                     |
+| `min_distance_sec`    | `float`      | `0.3`   | Minimum distance between peaks in seconds.                   |
+| `print_heart_rate`    | `bool`       | `False` | If True, prints average HR and HRV across channels.           |
+
+**Returns**:
+Tuple of:
+
+* `Dict[int, List[int]]` — Dictionary mapping channel indices to lists of peak indices.
+* `int` — Index of the cleanest channel (0-based).
+* `np.ndarray` — Segmentation labels for all channels, shape `(num_channels, T)`.
+* `Optional[float]` — Average heart rate across valid channels (bpm), or None.
+* `Optional[float]` — Average HRV (SDNN in ms) across valid channels, or None.
+
+**Raises**:
+* `Warning`: If segmentation data is empty, returns empty results.
+
+---
+
+#### `avg_window`
+
+Computes the average QRS waveform around detected peaks for specified channels, assuming data at 250 Hz.
+
+The method performs the following steps:
+
+1. **Window Extraction**: Extracts windows around each peak, defined by left and right time intervals.
+2. **Drift Removal**: Removes drift and offset from each window.
+3. **Segmentation**: Segments windows to evaluate quality.
+4. **Scoring**: Filters windows based on a heart beat score threshold.
+5. **Averaging**: Computes the average waveform per channel.
+6. **Smoothing**: Applies Gaussian smoothing to the averaged waveforms.
+
+**Usage**:
+
+```python
+avg_waveforms, time_window = processor.avg_window(data, peak_positions, window_left=0.3, window_right=0.4)
+```
+
+**Parameters**:
+
+| Name                      | Type               | Default | Description                                                   |
+|---------------------------|--------------------|---------|---------------------------------------------------------------|
+| `data`                    | `np.ndarray`       | —       | Input array of shape `(num_channels, num_samples)`.           |
+| `peak_positions`          | `list` or `dict`   | —       | Peak indices or dictionary of peak indices per channel.       |
+| `window_left`             | `float`            | `0.3`   | Seconds to include left of the peak.                         |
+| `window_right`            | `float`            | `0.4`   | Seconds to include right of the peak.                        |
+| `heart_beat_score_threshold` | `float`         | `0.7`   | Minimum score for windows to be included in the average.      |
+
+**Returns**:
+Tuple of:
+
+* `np.ndarray` — Average waveforms for each channel, shape `(num_channels, window_length)`.
+* `np.ndarray` — Time array for the window, shape `(window_length,)`.
+
+**Raises**:
+* `ValueError`: If no peak positions are provided or if peaks are empty.
+
+### Visualization
 
 - `plot_sensor_matrix(data, time, name, ...)`: Plots sensor data in a grid layout.
 - `butterfly_plot(data, time, num_ch, name, ...)`: Overlays all channel signals.
