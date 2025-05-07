@@ -1,3 +1,5 @@
+# model/model.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -217,9 +219,12 @@ if __name__ == "__main__":
     model = ECGSegmenter(
         num_classes=num_classes,
         input_channels=input_channels,
+        hidden_channels=32,
+        lstm_hidden=64,
+
     )
 
-    #model = DENS_ECG_segmenter()
+    model = DENS_ECG_segmenter()
     
     # Test-Input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)

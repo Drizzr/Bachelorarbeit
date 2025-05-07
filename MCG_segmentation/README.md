@@ -1,227 +1,790 @@
-# ECG Wave Segmentation Project
 
-This project focuses on the segmentation of electrocardiogram (ECG) signals into distinct physiological waveforms: P wave, QRS complex, T wave, and periods of no significant wave activity (labeled as 'No Wave'). It utilizes deep learning models trained on the QT Database (QTDB) from PhysioNet.
+### Corrected Formatting Mistakes
 
-The primary goal is to accurately classify each time point in an ECG signal into one of these categories. The project includes scripts for data preprocessing, model training, and evaluation. Two different neural network architectures are implemented and compared for this task.
+#### General Issues Addressed
+1. **Code Block Markers**: Replaced incorrect "Use code with caution." phrases and ensured proper triple backticks (```) for code blocks with appropriate language specifiers (e.g., `bash`, `python`, `markdown`, `csv`).
+2. **Table Formatting**: Fixed misaligned table columns and ensured consistent Markdown table syntax.
+3. **Section References**: Corrected anchor links in the Table of Contents to match section titles (e.g., fixed `data_loaderpy` to `data_loader.py`).
+4. **Inline Code and Paths**: Used backticks for inline code and file paths for consistency.
+5. **List and Indentation**: Standardized indentation for lists and nested items.
+6. **Spurious Text Removal**: Removed redundant "Use code with caution." text that appeared in non-code contexts.
+7. **Consistent Headings**: Ensured proper spacing and formatting for headings and subheadings.
 
-**Label Mapping:**
-*   0: No Wave (Baseline or Isoelectric Line)
-*   1: P Wave
-*   2: QRS Complex
-*   3: T Wave
+#### Corrected Documentation
 
-## Features
 
-*   **Data Preprocessing:** Downloads and processes the QTDB dataset, extracts waveforms and labels, handles annotations, and splits data into training and validation sets (`preprocess_data.py`).
-*   **Data Augmentation:** Includes various augmentation techniques during training (applied in `model/data_loader.py`):
-    *   Sinusoidal Noise
-    *   Gaussian Noise
-    *   Baseline Wander
-    *   Amplitude Scaling
-    *   Time Shifting
-*   **Model Architectures:** Implements two distinct deep learning models for segmentation (`model/model.py`):
-    *   `ECGSegmenter`: A custom architecture involving multi-scale convolutions, residual blocks, BiLSTM, and self-attention.
-    *   `DENS_ECG_segmenter`: A simpler architecture based on CNN layers followed by BiLSTM layers.
-*   **Training:** Flexible training script (`train.py`) with features like:
-    *   Checkpointing (saving model, optimizer, and scheduler states).
-    *   Resuming training from checkpoints.
-    *   Learning rate scheduling (Cosine Annealing).
-    *   Gradient Clipping.
-    *   Logging metrics (Loss, Accuracy, F1-score) to a CSV file (`logs/training_metrics.csv`).
-    *   Saving the best model based on validation F1-score.
-*   **Evaluation:** Script (`evaluate.py`) to evaluate a trained model on a dataset, providing:
-    *   Overall Loss and Accuracy.
-    *   Detailed Classification Report (Precision, Recall, F1-score per class).
-    *   Confusion Matrix visualization.
-    *   Optional plotting of individual sample predictions against ground truth.
+# ECG Segmentation Project Documentation
 
-## Dataset
+## Table of Contents
 
-This project uses the **QT Database (QTDB)** from PhysioNet. The `preprocess_data.py` script handles downloading the raw data using the `wfdb` library and processing it into a suitable format.
+- [1. Overview](#1-overview)
+  - [1.1. Key Features](#1.1-key-features)
+- [2. Project Structure](#2-project-structure)
+- [3. Installation and Setup](#3-installation-and-setup)
+  - [3.1. Dependencies](#3.1-dependencies)
+  - [3.2. Dataset: QTDB](#3.2-dataset-qtdb)
+  - [3.3. Data Preprocessing (`preprocess_data.py`)](#3.3-data-preprocessing-preprocess_data.py)
+    - [3.3.1. Running Preprocessing](#3.3.1-running-preprocessing)
+  - [3.4. Prepared Data Format](#3.4-prepared-data-format)
+- [4. Data Loading (`data_loader.py`)](#4-data-loading-data_loader.py)
+  - [4.1. `ECGFullDataset` Class](#4.1-ecgfulldataset-class)
+- [5. Model Architecture (`model.py`)](#5-model-architecture-model.py)
+  - [5.1. `ECGSegmenter` Model](#5.1-ecgsegmenter-model)
+  - [5.2. `DENS_ECG_segmenter` Model](#5.2-dens_ecg_segmenter-model)
+  - [5.3. `FocalLoss`](#5.3-focalloss)
+- [6. Training (`trainer.py` and `train.py`)](#6-training-trainer.py-and-train.py)
+  - [6.1. `Trainer` Class](#6.1-trainer-class)
+  - [6.2. Training Script (`train.py`)](#6.2-training-script-train.py)
+- [7. Evaluation (`evaluate.py`)](#7-evaluation-evaluate.py)
+- [8. Example Workflow](#8-example-workflow)
+  - [8.1. Data Preprocessing](#8.1-data-preprocessing)
+  - [8.2. Training](#8.2-training)
+  - [8.3. Evaluation](#8.3-evaluation)
+- [9. Training Process and Results](#9-training-process-and-results)
+  - [9.1. General Training Setup](#9.1-general-training-setup)
+  - [9.2. Model Configurations and Parameters](#9.2-model-configurations-and-parameters)
+  - [9.3. DENS_ECG_segmenter Results](#9.3-dens_ecg_segmenter-results)
+  - [9.4. ECGSegmenter (Small) Results](#9.4-ecgsegmenter-small-results)
+  - [9.5. ECGSegmenter (XL) Results](#9.5-ecgsegmenter-xl-results)
+- [10. Discussion and Key Considerations](#10-discussion-and-key-considerations)
+- [11. Troubleshooting](#11-troubleshooting)
+- [12. `preprocess_data.py` Script Details](#12-preprocess_data.py-script-details)
 
-Preprocessing steps include:
-1.  Reading raw `.dat`, `.hea`, and annotation files.
-2.  Extracting signal data and annotations (P, QRS, T wave onsets, peaks, offsets).
-3.  Mapping annotations to time-point labels (0, 1, 2, 3).
-4.  Handling gaps and potential overlaps between annotated waves.
-5.  Splitting records into training and validation sets based on a specified ratio (default 80/20).
-6.  Saving processed data (signal segments and corresponding labels) as CSV files in `MCG_segmentation/qtdb/processed/train` and `MCG_segmentation/qtdb/processed/val`.
 
-## Model Architectures
+## 1. Overview
 
-Two architectures are implemented for comparison:
+This project provides a Python-based framework for training and evaluating deep learning models to segment **Electrocardiogram (ECG)** signals into cardiac cycle components: No Wave, P-Wave, QRS Complex, and T-Wave. It leverages PyTorch for model implementation and includes data augmentation, multi-scale feature extraction, and advanced visualization tools. The framework is designed for processing ECG data derived from the QTDB dataset, stored in CSV files, with support for noise augmentation and sequence-based training for 1D convolutional and recurrent neural networks.
 
-### 1. `ECGSegmenter`
+### 1.1. Key Features
+- **Data Source**: Utilizes the QT Database (QTDB) from PhysioNet.
+- **Preprocessing**: Includes a script (`preprocess_data.py`) to download, parse annotations, label segments (No Wave, P-Wave, QRS, T-Wave), and split data into training/validation sets.
+- **Data Loading**: Loads ECG data from CSV files, applies bandpass filtering (implicitly via data characteristics or to be added), and augments with noise (sinusoidal, Gaussian, baseline wander).
+- **Data Augmentation**: Includes time shifting, amplitude scaling, and noise addition to improve model robustness.
+- **Model Architectures**:
+  - `ECGSegmenter`: A sophisticated model combining positional encoding, multi-scale convolutions, residual blocks, BiLSTM, and Transformer-based self-attention.
+  - `DENS_ECG_segmenter`: A model based on the DENS-ECG paper, with convolutional layers followed by BiLSTM layers.
+- **Loss Functions**: Supports standard CrossEntropyLoss and a custom FocalLoss for handling class imbalance.
+- **Training**: Configurable training pipeline with learning rate scheduling (Cosine Annealing), gradient clipping, and CSV logging of metrics (loss, accuracy, F1-score).
+- **Evaluation**: Generates detailed metrics (accuracy, F1-score, confusion matrix, classification report) and visualizations (signal plots with true/predicted labels).
+- **Extensibility**: Modular design allows easy integration of new models or data formats.
 
-This is a more complex custom architecture designed to capture features at multiple scales and leverage temporal dependencies effectively. Its key components include:
-*   **Positional Encoding:** Adds information about the position of each time step.
-*   **Initial Convolution:** Increases the number of channels and extracts initial features.
-*   **Multi-Scale Convolutions:** Uses parallel convolutional layers with different kernel sizes (3, 7, 15) to capture patterns at various resolutions.
-*   **Residual Blocks with Dilation:** Employs stacked residual blocks with increasing dilation factors (1, 2, 4, 8) to expand the receptive field without losing resolution.
-*   **Bidirectional LSTM (BiLSTM):** Processes the sequence in both forward and backward directions to model temporal context.
-*   **Transformer Encoder Layer (Self-Attention):** Allows the model to weigh the importance of different time steps within the sequence when making predictions for a specific point.
-*   **Skip Connection:** Adds features from an earlier layer to the output of the attention block, potentially helping with gradient flow and preserving lower-level details.
-*   **Final Classifier:** A linear layer outputs the probability distribution over the classes for each time step.
+---
 
-### 2. `DENS_ECG_segmenter`
+## 2. Project Structure
 
-This architecture follows a more standard pattern often seen in sequence modeling tasks:
-*   **1D Convolutional Layers:** A stack of 1D convolutional layers (with increasing channel depth: 32 -> 64 -> 128) acts as a feature extractor, learning local patterns in the signal. ReLU activation is used.
-*   **Bidirectional LSTM (BiLSTM) Layers:** Two stacked BiLSTM layers (hidden sizes 250 -> 125, bidirectional) process the features extracted by the CNNs, capturing longer-range temporal dependencies.
-*   **Dropout:** Applied after the BiLSTMs to reduce overfitting.
-*   **TimeDistributed Dense Layer:** A final linear layer (classifier) is applied independently to the output of the BiLSTM at each time step to produce the class predictions. Softmax activation is applied.
+The project is organized as follows:
 
-### Comparison
+```
+project_root/
+├── qtdb/
+│   ├── raw/            # Raw QTDB files (downloaded by preprocess_data.py)
+│   └── processed/
+│       ├── train/      # Training CSV files (generated by preprocess_data.py)
+│       └── val/        # Validation CSV files (generated by preprocess_data.py)
+├── model/              # Core library for models, data loading, training
+│   ├── data_loader.py  # Dataset and DataLoader for ECG data
+│   ├── model.py        # Model architectures and loss functions
+│   └── trainer.py      # Training logic and logging
+├── preprocess_data.py  # Script for QTDB download and preprocessing
+├── train.py            # Main training script
+├── evaluate.py         # Evaluation script
+├── checkpoints/        # Saved model checkpoints
+├── logs/               # Training metrics CSV
+├── evaluation_results/ # Evaluation plots and metrics
+└── requirements.txt    # Python dependencies
+```
 
-*   **Complexity:** `ECGSegmenter` is significantly more complex, incorporating multi-scale processing, dilated convolutions, and self-attention, while `DENS_ECG_segmenter` uses a more straightforward CNN-RNN structure.
-*   **Feature Extraction:** `ECGSegmenter` explicitly uses multi-scale convolutions and dilated convolutions for potentially richer feature extraction across different temporal ranges. `DENS_ECG_segmenter` relies on standard stacked CNNs.
-*   **Sequence Modeling:** Both use BiLSTMs. `ECGSegmenter` adds a self-attention mechanism on top, allowing potentially more sophisticated modeling of relationships between distant time steps compared to the standard BiLSTM context.
-*   **Potential Strengths:** `ECGSegmenter` might be better at handling signals with variations in wave morphology or timing due to its multi-scale and attention features. `DENS_ECG_segmenter` might be faster to train and less prone to overfitting on smaller datasets due to its relative simplicity.
+---
 
-## Setup and Installation
+## 3. Installation and Setup
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <your-repository-url>
-    cd <repository-directory>
-    ```
+### 3.1. Dependencies
+Install the required Python libraries using:
 
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-    ```
+```bash
+pip install -r requirements.txt
+```
 
-3.  **Install dependencies:**
-    ```bash
-    pip install torch numpy pandas wfdb scikit-learn matplotlib seaborn tqdm
-    ```
-    *(Alternatively, if you create a `requirements.txt` file, use `pip install -r requirements.txt`)*
+Required libraries include:
 
-4.  **Data Preparation:** The first run of `preprocess_data.py` will attempt to download the QTDB data if it's not found in `MCG_segmentation/qtdb/raw`. Ensure you have an internet connection.
+`torch`, `numpy`, `pandas`, `matplotlib`, `scikit-learn`, `seaborn`, `tqdm`, `json`, `csv`, `logging`, `wfdb`
 
-## Usage
+Ensure PyTorch is compatible with your hardware (CUDA for GPU support). Check [PyTorch’s official site](https://pytorch.org/) for installation instructions.
 
-### 1. Preprocess Data
+### 3.2. Dataset: QTDB
+The QT Database (QTDB), hosted on PhysioNet, is a standard dataset for ECG analysis, particularly for evaluating algorithms that measure QT intervals and segment cardiac waveforms.
 
-Run the preprocessing script. This only needs to be done once.
+- Comprises 105 two-lead ECG recordings, each approximately 15 minutes long, sampled at 250 Hz.
+- Includes manual annotations for the onset, peak, and end of P, QRS, T, and U waves.
+- Recordings represent a wide variety of QRS and ST-T morphologies.
+- **Reference**: Laguna P, Mark RG, Goldberger AL, Moody GB. A Database for Evaluation of Algorithms for Measurement of QT and Other Waveform Intervals in the ECG. *Computers in Cardiology* 24:673-676 (1997). [Link to PhysioNet](https://physionet.org/content/qtdb/1.0.0/)
+
+### 3.3. Data Preprocessing (`preprocess_data.py`)
+The `preprocess_data.py` script handles the download of the QTDB, extraction of relevant signal segments, labeling, and splitting into training and validation sets.
+
+**Key Operations**:
+- Downloads the QTDB from PhysioNet into `project_root/qtdb/raw/` if not already present.
+- **Parses Annotations**: Reads waveform data (`.dat`, `.hea`) and annotation files (e.g., `.q1c`, `.pu`) for each record.
+- **Extracts Labeled Intervals**: Identifies segments corresponding to P-waves, QRS complexes, and T-waves. Gaps between these waves are labeled as "No Wave".
+- **Labels**: 0 (No Wave), 1 (P-Wave), 2 (QRS Complex), 3 (T-Wave).
+- **Handles Gaps & Overlaps**: Implements logic to manage gaps between annotated waves and resolve overlaps. A `min_gap_ms` parameter ensures minimal separation between certain wave types by relabeling initial parts of a wave as 'na' if necessary.
+- **Filters Records**: Records where only QRS segments were labeled might be manually excluded or handled by the script's logic if it leads to poor quality data for multi-class segmentation.
+- **Splits Data**: Randomly shuffles records and splits them into training (e.g., 80%) and validation (e.g., 20%) sets.
+- **Saves Processed Data**: Saves the processed data as CSV files for each record in `project_root/qtdb/processed/train/` and `project_root/qtdb/processed/val/`.
+
+#### 3.3.1. Running Preprocessing
+Navigate to the `project_root/` directory and run:
+
 ```bash
 python preprocess_data.py
-Use code with caution.
-Markdown
-This will download the QTDB data (if needed) into MCG_segmentation/qtdb/raw and create processed CSV files in MCG_segmentation/qtdb/processed/train and MCG_segmentation/qtdb/processed/val.
+```
 
-2. Train a Model
-Run the training script. Adjust arguments as needed.
+You can modify `DATA_DIR` within the script or parameters like `train_split_ratio` and `random_seed` in the `QTDB` class instantiation in the `if __name__ == '__main__':` block.
 
+### 3.4. Prepared Data Format
+After running `preprocess_data.py`, the project expects ECG data in CSV format, stored in `project_root/qtdb/processed/train/` and `project_root/qtdb/processed/val/`. Each CSV file (one per original QTDB record) should contain:
+
+- Columns for ECG channels (e.g., `ch1`, `ch2`).
+- A label column (e.g., `train_label`) with integer labels (0: No Wave, 1: P-Wave, 2: QRS, 3: T-Wave).
+- Other columns like `time`, `index`, `label` (string label), `interval`.
+
+**Example CSV structure** (`sel100.csv`):
+
+```csv
+time,index,label,train_label,interval,ch1,ch2
+0.0,0,na,0,0,-0.100,-0.050
+0.004,1,na,0,0,-0.100,-0.050
+...
+0.220,55,p,1,0,-0.125,-0.030
+...
+```
+
+Ensure the data directory paths in `train.py` and `evaluate.py` (`--data_dir_train`, `--data_dir_val`, `--data_dir_eval`) match your setup.
+
+---
+
+## 4. Data Loading (`data_loader.py`)
+
+### 4.1. `ECGFullDataset` Class
+The `ECGFullDataset` class loads processed ECG data from CSVs, applies augmentations, and prepares 1D sequences for training/evaluation.
+
+**Key Features**:
+- Loads CSV files from a specified directory.
+- Slices signals into overlapping sequences.
+- Applies augmentations: time shifting, amplitude scaling, Gaussian noise, sinusoidal noise, and baseline wander.
+- Normalizes signals to zero mean and [-1, 1] range.
+- Returns sequences with shape `(num_input_channels, sequence_length)` and corresponding labels.
+
+**Initialization**:
+
+```python
+from model.data_loader import ECGFullDataset
+
+dataset = ECGFullDataset(
+    data_dir="project_root/qtdb/processed/train",
+    channel_names=["ch1"],
+    label_column="train_label",
+    sequence_length=500,
+    overlap=400,
+    sinusoidal_noise_mag=0.04,
+    # ... other augmentation parameters
+    augmentation_prob=0.9
+)
+```
+
+**Parameters**:
+
+| Parameter                  | Type      | Default     | Description                                                                 |
+|----------------------------|-----------|-------------|-----------------------------------------------------------------------------|
+| `data_dir`                 | str       | —           | Directory containing processed CSV files.                                    |
+| `channel_names`            | List[str] | `["ch1", "ch2"]` | ECG channel names in CSV.                                              |
+| `label_column`             | str       | `"train_label"` | Column name for integer labels.                                         |
+| `file_extension`           | str       | `".csv"`    | File extension for data files.                                              |
+| `sequence_length`          | int       | 512         | Length of each input sequence to the model.                                 |
+| `overlap`                  | int       | 256         | Overlap between consecutive sequences when slicing files.                   |
+| `sinusoidal_noise_mag`     | float     | 0.05        | Magnitude of sinusoidal noise.                                              |
+| `gaussian_noise_std`       | float     | 0.02        | Standard deviation of Gaussian noise.                                       |
+| `baseline_wander_mag`      | float     | 0.05        | Magnitude of baseline wander.                                               |
+| `baseline_wander_freq_max` | float     | 0.5         | Maximum frequency for baseline wander (Hz).                                 |
+| `amplitude_scale_range`    | float     | 0.1         | Range for random amplitude scaling (e.g., 0.1 means ±10%).                  |
+| `max_time_shift`           | int       | 10          | Maximum time shift in samples.                                              |
+| `augmentation_prob`        | float     | 0.5         | Probability of applying each augmentation type.                             |
+
+**Methods**:
+- `_load_and_slice_all`: Loads all CSV files and slices signals into sequences.
+- `_slice_channel_sequences`: Creates overlapping sequences from a single channel's data.
+- `__getitem__`: Returns a processed sequence and its labels, applying augmentations.
+
+**Output per item**:
+- Signal: `(num_input_channels, sequence_length)` tensor.
+- Labels: `(sequence_length,)` tensor of integer labels.
+
+---
+
+## 5. Model Architecture (`model.py`)
+
+### 5.1. `ECGSegmenter` Model
+A sophisticated model for ECG segmentation, combining convolutional, recurrent, and attention mechanisms.
+
+**Architecture**:
+- **Positional Encoding**: Adds temporal context.
+- **Initial Convolution**: Expands input channels.
+- **Multi-Scale Convolutions**: Kernels [3, 7, 15].
+- **Residual Blocks**: Four blocks with increasing dilation (1, 2, 4, 8).
+- **BiLSTM**: Captures temporal dependencies.
+- **Transformer Encoder**: Self-attention for global context.
+- **Skip Connection**: Combines early convolutional features with LSTM output.
+- **Classifier**: Outputs per-timestep logits for `num_classes`.
+
+**Initialization**:
+
+```python
+from model.model import ECGSegmenter
+
+model = ECGSegmenter(
+    num_classes=4,
+    input_channels=1,
+    hidden_channels=16,
+    lstm_hidden=20,
+    dropout_rate=0.3,
+    max_seq_len=2000
+)
+```
+
+**Parameters**:
+
+| Parameter           | Type  | Default | Description                                              |
+|---------------------|-------|---------|----------------------------------------------------------|
+| `num_classes`       | int   | 4       | Number of output classes (0-3).                          |
+| `input_channels`    | int   | 1       | Number of input ECG channels.                            |
+| `hidden_channels`   | int   | 16      | Base number of convolutional hidden channels.            |
+| `lstm_hidden`       | int   | 20      | Hidden size of BiLSTM.                                   |
+| `dropout_rate`      | float | 0.3     | Dropout probability.                                     |
+| `max_seq_len`       | int   | 2000    | Maximum sequence length for positional encoding.         |
+
+**Input/Output**:
+- **Input**: `(batch_size, input_channels, sequence_length)`
+- **Output**: `(batch_size, sequence_length, num_classes)` (logits)
+
+### 5.2. `DENS_ECG_segmenter` Model
+A model inspired by the DENS-ECG paper, suitable for ECG segmentation.
+
+**Architecture**:
+- **Convolutional Layers**: Three Conv1d layers (32, 64, 128 channels, kernel size 3).
+- **BiLSTM Layers**: Two bidirectional LSTMs (hidden sizes 250 and 125).
+- **Dropout**: Applied after BiLSTM (p=0.2).
+- **Classifier**: Linear layer mapping to `num_classes`, followed by softmax (implicitly handled by CrossEntropyLoss during training).
+
+**Initialization**:
+
+```python
+from model.model import DENS_ECG_segmenter
+
+model = DENS_ECG_segmenter(input_channels=1, num_classes=4)
+```
+
+**Parameters**:
+
+| Parameter           | Type | Default | Description                                  |
+|---------------------|------|---------|----------------------------------------------|
+| `input_channels`    | int  | 1       | Number of input ECG channels.                |
+| `num_classes`       | int  | 4       | Number of output classes (0-3).              |
+
+**Input/Output**:
+- **Input**: `(batch_size, input_channels, sequence_length)`
+- **Output**: `(batch_size, sequence_length, num_classes)` (logits)
+
+### 5.3. `FocalLoss`
+A custom loss function to address class imbalance by focusing on hard-to-classify samples.
+
+**Initialization**:
+
+```python
+from model.model import FocalLoss
+
+criterion = FocalLoss(alpha=1, gamma=2, reduction='mean')
+```
+
+**Parameters**:
+
+| Parameter   | Type  | Default | Description                                          |
+|-------------|-------|---------|------------------------------------------------------|
+| `alpha`     | float | 1       | Weighting factor for focal loss.                     |
+| `gamma`     | float | 2       | Focusing parameter for hard examples.                |
+| `reduction` | str   | 'mean'  | Reduction method ('mean', 'sum', 'none').            |
+
+---
+
+## 6. Training (`trainer.py` and `train.py`)
+
+### 6.1. `Trainer` Class
+The `Trainer` class manages the training and validation loops, logging metrics to a CSV file.
+
+**Initialization**:
+
+```python
+from model.trainer import Trainer
+
+trainer = Trainer(
+    model=model,
+    train_loader=train_loader,
+    val_loader=val_loader,
+    args=args,
+    optimizer=optimizer,
+    device=device,
+    log_filepath="project_root/logs/training_metrics.csv",
+    lr_scheduler=scheduler,
+    init_epoch=1
+)
+```
+
+**Key Methods**:
+- `train()`: Runs the main training loop over epochs.
+- `validate()`: Evaluates the model on the validation set.
+- `save_model()`: Saves model checkpoints.
+- `_log_epoch_metrics()`: Logs metrics to CSV.
+
+**Logged Metrics** (in `logs/training_metrics.csv`):
+
+| Metric            | Description                                  |
+|-------------------|----------------------------------------------|
+| `epoch`           | Current epoch number.                        |
+| `train_loss`      | Average training loss for the epoch.         |
+| `train_acc`       | Average training accuracy for the epoch.     |
+| `val_loss`        | Average validation loss for the epoch.       |
+| `val_acc`         | Average validation accuracy for the epoch.   |
+| `val_f1_macro`    | Macro-averaged F1-score on validation.      |
+| `learning_rate`   | Current learning rate.                       |
+
+### 6.2. Training Script (`train.py`)
+The `train.py` script parses command-line arguments, sets up datasets, model, optimizer, scheduler, and trainer, then initiates training.
+
+**Usage Example**:
+
+```bash
 python train.py \
-    --num_epochs 60 \
+    --data_dir_train project_root/qtdb/processed/train \
+    --data_dir_val project_root/qtdb/processed/val \
+    --save_dir project_root/checkpoints/my_model_run \
+    --metrics_file project_root/logs/my_model_run_metrics.csv \
+    --model_name ECGSegmenter \
+    --ecg_segmenter_hidden_channels 16 \
+    --ecg_segmenter_lstm_hidden 20 \
+    --num_epochs 100 \
     --batch_size 64 \
     --max_lr 1e-4 \
-    --base_lr 1e-5 \
     --sequence_length 500 \
-    --save_dir MCG_segmentation/checkpoints/my_experiment \
-    --metrics_file MCG_segmentation/logs/my_experiment_metrics.csv \
-    --data_dir_train MCG_segmentation/qtdb/processed/train \
-    --data_dir_val MCG_segmentation/qtdb/processed/val
-Use code with caution.
-Bash
-To resume training from a checkpoint:
+    --overlap 400 \
+    --sinusoidal_noise_mag 0.04 \
+    --augmentation_prob 0.9
+```
 
-python train.py \
-    --from_check_point \
-    --load_dir MCG_segmentation/checkpoints/my_experiment/checkpoint_epoch_X \
-    --save_dir MCG_segmentation/checkpoints/my_experiment \
-    --metrics_file MCG_segmentation/logs/my_experiment_metrics.csv
-    # Add other arguments if they changed, otherwise they might be loaded from params.json
-Use code with caution.
-Bash
-(Replace checkpoint_epoch_X with the specific checkpoint directory)
+**Key Arguments**:
 
-3. Evaluate a Model
-Evaluate a trained model (e.g., the best saved model).
+| Argument                     | Type  | Default (example)                      | Description                                              |
+|------------------------------|-------|----------------------------------------|----------------------------------------------------------|
+| `--model_name`               | str   | `ECGSegmenter`                         | Name of the model to train.                              |
+| `--num_epochs`               | int   | 100                                    | Number of training epochs.                               |
+| `--batch_size`               | int   | 64                                     | Training batch size.                                     |
+| `--max_lr`                   | float | 1e-4                                   | Maximum learning rate for scheduler.                     |
+| `--clip`                     | float | 1.0                                    | Gradient clipping value.                                 |
+| `--from_check_point`         | bool  | False                                  | Resume training from a checkpoint.                       |
+| `--load_dir`                 | str   | `project_root/checkpoints/my_model_run`| Directory to load checkpoint from.                       |
+| `--save_dir`                 | str   | `project_root/checkpoints/new_run`     | Directory for saving new checkpoints.                    |
+| `--data_dir_train`           | str   | `project_root/qtdb/processed/train`    | Training data directory.                                 |
+| `--data_dir_val`             | str   | `project_root/qtdb/processed/val`      | Validation data directory.                               |
+| `--sequence_length`          | int   | 500                                    | Input sequence length for the model.                     |
+| `--overlap`                  | int   | 400                                    | Overlap when creating sequences from files.              |
+| `--num_workers`              | int   | 4                                      | Number of DataLoader workers.                            |
+| `--metrics_file`             | str   | `project_root/logs/training_metrics.csv`| Path for CSV logging of metrics.                        |
 
+**Checkpoints**:
+- Saved periodically (e.g., every 5 epochs) and when validation F1-score improves.
+- Stored in `save_dir/checkpoint_epoch_X/` and `save_dir/best/`.
+- Each checkpoint includes `model.pth`, `optimizer.pth`, `lr_scheduler.pth`, and `params.json` (training arguments).
+
+---
+
+## 7. Evaluation (`evaluate.py`)
+
+The `evaluate.py` script evaluates a trained model on a dataset, computing metrics and generating visualizations.
+
+**Usage Example**:
+
+```bash
 python evaluate.py \
-    --load_dir MCG_segmentation/checkpoints/my_experiment/best \
-    --data_dir_eval MCG_segmentation/qtdb/processed/val \
-    --output_dir MCG_segmentation/evaluation_results/my_experiment_best \
-    --sequence_length 500 \
-    --eval_batch_size 128
-Use code with caution.
-Bash
-To plot a specific sample from the evaluation set:
+    --load_dir project_root/checkpoints/my_model_run/best \
+    --data_dir_eval project_root/qtdb/processed/val \
+    --output_dir project_root/evaluation_results/my_model_run_eval \
+    --sequence_length 2000 \
+    --model_name ECGSegmenter \
+    --ecg_segmenter_hidden_channels 16 \
+    --ecg_segmenter_lstm_hidden 20 \
+    --plot_sample_index 0
+```
 
-python evaluate.py \
-    --load_dir MCG_segmentation/checkpoints/my_experiment/best \
-    --data_dir_eval MCG_segmentation/qtdb/processed/val \
-    --output_dir MCG_segmentation/evaluation_results/my_experiment_best \
-    --sequence_length 500 \
-    --plot_sample_index 42  # Index of the sample in the dataset
-Use code with caution.
-Bash
-Results and Evaluation
-This section presents the performance comparison between the ECGSegmenter and DENS_ECG_segmenter models.
+**Key Arguments**:
 
-(Note: Add your actual results, tables, and plots here)
+| Argument                     | Type  | Default (example)                          | Description                                              |
+|------------------------------|-------|--------------------------------------------|----------------------------------------------------------|
+| `--load_dir`                 | str   | Required                                   | Directory containing the model checkpoint.               |
+| `--data_dir_eval`            | str   | `project_root/qtdb/processed/val`          | Evaluation data directory.                               |
+| `--output_dir`               | str   | `project_root/evaluation_results/eval_output`| Directory for saving evaluation outputs.                |
+| `--eval_batch_size`          | int   | 1                                          | Batch size for evaluation.                              |
+| `--sequence_length`          | int   | 2000                                       | Sequence length for evaluation.                         |
+| `--plot_sample_index`        | int   | None                                       | Index of a sample from the dataset to plot (optional).   |
 
-Performance Metrics
-Model	Overall Accuracy	Macro F1-Score	F1 - No Wave	F1 - P Wave	F1 - QRS	F1 - T Wave
-ECGSegmenter	[Your Value]	[Your Value]	[Your Value]	[Your Value]	[Value]	[Your Value]
-DENS_ECG_segmenter	[Your Value]	[YourValue]	[Your Value]	[Your Value]	[Value]	[Your Value]
-Confusion Matrices
-ECGSegmenter:
+**Outputs** (saved in `output_dir`):
+- **Metrics File** (`evaluation_metrics.txt`): Contains overall evaluation loss, accuracy, and a detailed classification report.
+- **Confusion Matrix** (`confusion_matrix.png`): A heatmap visualizing the confusion matrix.
+- **Sample Plot** (`sample_X_plot.png`): If `--plot_sample_index` is provided, a plot showing:
+  - Top panel: Original signal with true labels (dots) and predicted labels (colored background).
+  - Bottom panel: True vs. predicted label sequences, highlighting mismatches.
 
-[Placeholder for Confusion Matrix Plot - ECGSegmenter]
-Use code with caution.
-(Example:
-![alt text](MCG_segmentation/evaluation_results/ECGSegmenter/confusion_matrix.png)
+---
+
+## 8. Example Workflow
+
+### 8.1. Data Preprocessing
+Ensure `preprocess_data.py` is configured (e.g., `DATA_DIR`, split ratio).
+
+Run the script:
+
+```bash
+python preprocess_data.py
+```
+
+This will populate `project_root/qtdb/raw/` and `project_root/qtdb/processed/`.
+
+### 8.2. Training
+(Simplified example; use `train.py` for full functionality)
+
+```python
+from model.data_loader import ECGFullDataset
+from model.model import ECGSegmenter
+from model.trainer import Trainer
+from torch.utils.data import DataLoader
+import torch
+import argparse
+
+args = argparse.Namespace(
+    data_dir_train="project_root/qtdb/processed/train",
+    data_dir_val="project_root/qtdb/processed/val",
+    channel_names=["ch1"],
+    label_column="train_label",
+    sequence_length=500,
+    overlap=400,
+    sinusoidal_noise_mag=0.04,
+    gaussian_noise_std=0.02,
+    baseline_wander_mag=0.02,
+    amplitude_scale_range=0.1,
+    max_time_shift=5,
+    augmentation_prob=0.9,
+    model_name="ECGSegmenter",
+    input_channels=1,
+    ecg_segmenter_hidden_channels=16,
+    ecg_segmenter_lstm_hidden=20,
+    num_classes=4,
+    num_epochs=100,
+    batch_size=64,
+    val_batch_size=64,
+    max_lr=1e-4,
+    base_lr=1e-5,
+    clip=1.0,
+    save_dir="project_root/checkpoints/example_run",
+    metrics_file="project_root/logs/example_run_metrics.csv",
+    print_freq=50,
+    num_workers=4,
+    from_check_point=False,
+    load_dir=None
 )
 
-DENS_ECG_segmenter:
+train_dataset = ECGFullDataset(
+    data_dir=args.data_dir_train,
+    channel_names=args.channel_names,
+    label_column=args.label_column,
+    sequence_length=args.sequence_length,
+    overlap=args.overlap,
+    sinusoidal_noise_mag=args.sinusoidal_noise_mag,
+    gaussian_noise_std=args.gaussian_noise_std,
+    baseline_wander_mag=args.baseline_wander_mag,
+    amplitude_scale_range=args.amplitude_scale_range,
+    max_time_shift=args.max_time_shift,
+    augmentation_prob=args.augmentation_prob
+)
+val_dataset = ECGFullDataset(
+    data_dir=args.data_dir_val,
+    channel_names=args.channel_names,
+    label_column=args.label_column,
+    sequence_length=args.sequence_length,
+    overlap=args.overlap,
+    augmentation_prob=0.0
+)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
-[Placeholder for Confusion Matrix Plot - DENS_ECG_segmenter]
-Use code with caution.
-(Example:
-![alt text](MCG_segmentation/evaluation_results/DENS_ECG/confusion_matrix.png)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if args.model_name == "ECGSegmenter":
+    model = ECGSegmenter(
+        num_classes=args.num_classes,
+        input_channels=args.input_channels,
+        hidden_channels=args.ecg_segmenter_hidden_channels,
+        lstm_hidden=args.ecg_segmenter_lstm_hidden
+    ).to(device)
+elif args.model_name == "DENS_ECG_segmenter":
+    model = DENS_ECG_segmenter(
+        num_classes=args.num_classes,
+        input_channels=args.input_channels
+    ).to(device)
+else:
+    raise ValueError(f"Unknown model: {args.model_name}")
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs * len(train_loader), eta_min=args.base_lr)
+
+print(f"To train, run:\npython train.py --model_name {args.model_name} --data_dir_train {args.data_dir_train} --data_dir_val {args.data_dir_val} --save_dir {args.save_dir} ...")
+```
+
+**Actual Training Command**:
+See section [6.2. Training Script (`train.py`)](#6.2-training-script-train.py).
+
+### 8.3. Evaluation
+(Simplified example; use `evaluate.py` for full functionality)
+
+```python
+from model.data_loader import ECGFullDataset
+from model.model import DENS_ECG_segmenter
+from torch.utils.data import DataLoader
+import torch
+import argparse
+
+args = argparse.Namespace(
+    load_dir="project_root/checkpoints/example_run/best",
+    data_dir_eval="project_root/qtdb/processed/val",
+    output_dir="project_root/evaluation_results/example_run_eval",
+    channel_names=["ch1"],
+    label_column="train_label",
+    model_name="DENS_ECG_segmenter",
+    input_channels=1,
+    num_classes=4,
+    sequence_length=2000,
+    eval_batch_size=1,
+    num_workers=4,
+    plot_sample_index=0
 )
 
-Sample Prediction Plots
-ECGSegmenter:
+print(f"To evaluate, run:\npython evaluate.py --load_dir {args.load_dir} --data_dir_eval {args.data_dir_eval} --output_dir {args.output_dir} ...")
+```
 
-[Placeholder for Sample Prediction Plot - ECGSegmenter]
-Use code with caution.
-(Example:
-![alt text](MCG_segmentation/evaluation_results/ECGSegmenter/sample_X.png)
-)
+**Actual Evaluation Command**:
+See section [7. Evaluation (`evaluate.py`)](#7-evaluation-evaluate.py).
 
-DENS_ECG_segmenter:
+---
 
-[Placeholder for Sample Prediction Plot - DENS_ECG_segmenter]
-Use code with caution.
-(Example:
-![alt text](MCG_segmentation/evaluation_results/DENS_ECG/sample_Y.png)
-)
+## 9. Training Process and Results
 
-Learning Curves
-[Placeholder for Learning Curve Plot (Loss vs Epoch)]
-Use code with caution.
-(Example:
-![alt text](MCG_segmentation/logs/loss_curves.png)
-)
+This section outlines the training methodology and summarizes the performance of different models. The primary goal was to train models capable of handling noisy ECG data.
 
-[Placeholder for Learning Curve Plot (F1-Score vs Epoch)]
-Use code with caution.
-(Example:
-![alt text](MCG_segmentation/logs/f1_curves.png)
-)
+### 9.1. General Training Setup
+- **Dataset Augmentation**:
+  - `ECGFullDataset` was used with aggressive augmentation:
+    - `overlap`: As per `args.overlap` (e.g., 400 for `sequence_length` 500).
+    - `sinusoidal_noise_mag`: 0.04
+    - `gaussian_noise_std`: 0.02
+    - `baseline_wander_mag`: 0.02
+    - `augmentation_prob`: 0.90
+- **Learning Rate Scheduler**: Cosine Annealing (`torch.optim.lr_scheduler.CosineAnnealingLR`).
+- **Optimizer**: AdamW.
+- **Signal Preprocessing**: No explicit high-pass or low-pass filtering was applied.
+- **Metrics**: Focused on overall accuracy and macro F1-score.
 
-License
-[Specify Your License Here, e.g., MIT License]
+### 9.2. Model Configurations and Parameters
+Three main model configurations were trained and evaluated:
 
-**Remember to:**
+- **DENS_ECG_segmenter**:
+  - Input Channels: 1
+  - Number of Parameters: ~1,419,044
+- **ECGSegmenter (Small - 's')**:
+  - Input Channels: 1
+  - `hidden_channels`: 16
+  - `lstm_hidden`: 20
+  - Number of Parameters: ~375,692
+- **ECGSegmenter (XL - 'xl')**:
+  - Input Channels: 1
+  - `hidden_channels`: 32
+  - `lstm_hidden`: 64
+  - Number of Parameters: ~1,339,620
 
-1.  Replace `<your-repository-url>` with the actual URL if you host it online.
-2.  Fill in the `[Your Value]` placeholders in the Results section with your actual metrics once you run the evaluations.
-3.  Replace the `[Placeholder for ... Plot]` text with markdown image links (`![alt text](path/to/image.png)`) pointing to your generated plots once you have them. Make sure the paths are correct relative to the README file or provide full URLs if hosted elsewhere.
-4.  Choose and specify a license in the License section.
-Use code with caution.
+### 9.3. DENS_ECG_segmenter Results
+**Reference**: Peimankar, A., & Puthusserypady, S. (2020). DENS-ECG: A deep learning approach for ECG signal delineation. arXiv. [https://arxiv.org/abs/2005.08689](https://arxiv.org/abs/2005.08689)
+
+**Evaluation on Data without Additional DataLoader Noise** (validation set):
+
+- **Eval Loss**: 0.8990 | **Accuracy**: 0.8423
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8669    | 0.8312 | 0.8487   | 129300  |
+| P Wave      | 0.7875    | 0.8151 | 0.8011   | 29456   |
+| QRS         | 0.8664    | 0.8661 | 0.8663   | 29428   |
+| T Wave      | 0.8075    | 0.8695 | 0.8374   | 55816   |
+| **Macro Avg** | 0.8321  | 0.8455 | 0.8384   | 244000  |
+| **Weighted Avg** | 0.8436 | 0.8423 | 0.8425   | 244000  |
+
+**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
+
+- **Eval Loss**: 0.9147 | **Accuracy**: 0.8268
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8484    | 0.8214 | 0.8347   | 142230  |
+| P Wave      | 0.7529    | 0.7675 | 0.7601   | 32705   |
+| QRS         | 0.8611    | 0.8626 | 0.8619   | 32773   |
+| T Wave      | 0.8021    | 0.8515 | 0.8261   | 62292   |
+| **Macro Avg** | 0.8161  | 0.8258 | 0.8207   | 270000  |
+| **Weighted Avg** | 0.8277 | 0.8268 | 0.8270   | 270000  |
+
+### 9.4. ECGSegmenter (Small) Results
+**Evaluation on Data without Additional DataLoader Noise** (validation set):
+
+- **Eval Loss**: 0.3635 | **Accuracy**: 0.8477
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8669    | 0.8452 | 0.8559   | 129300  |
+| P Wave      | 0.8106    | 0.8071 | 0.8089   | 29456   |
+| QRS         | 0.8734    | 0.8678 | 0.8706   | 29428   |
+| T Wave      | 0.8125    | 0.8640 | 0.8375   | 55816   |
+| **Macro Avg** | 0.8408  | 0.8460 | 0.8432   | 244000  |
+| **Weighted Avg** | 0.8484 | 0.8477 | 0.8478   | 244000  |
+
+**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
+
+- **Eval Loss**: 0.3913 | **Accuracy**: 0.8355
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8592    | 0.8283 | 0.8434   | 129301  |
+| P Wave      | 0.7848    | 0.7918 | 0.7883   | 29473   |
+| QRS         | 0.8750    | 0.8677 | 0.8713   | 29435   |
+| T Wave      | 0.7926    | 0.8583 | 0.8241   | 55791   |
+| **Macro Avg** | 0.8279  | 0.8365 | 0.8318   | 244000  |
+| **Weighted Avg** | 0.8369 | 0.8355 | 0.8357   | 244000  |
+
+### 9.5. ECGSegmenter (XL) Results
+**Evaluation on Data without Additional DataLoader Noise** (validation set):
+
+- **Eval Loss**: 0.3778 | **Accuracy**: 0.8474
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8653    | 0.8433 | 0.8542   | 142196  |
+| P Wave      | 0.8333    | 0.7930 | 0.8127   | 32724   |
+| QRS         | 0.8768    | 0.8656 | 0.8712   | 32804   |
+| T Wave      | 0.8032    | 0.8756 | 0.8379   | 62276   |
+| **Macro Avg** | 0.8447  | 0.8444 | 0.8440   | 270000  |
+| **Weighted Avg** | 0.8485 | 0.8474 | 0.8474   | 270000  |
+
+**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
+
+- **Eval Loss**: 0.4109 | **Accuracy**: 0.8329
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8602    | 0.8192 | 0.8392   | 142180  |
+| P Wave      | 0.7896    | 0.7830 | 0.7863   | 32701   |
+| QRS         | 0.8642    | 0.8718ηση
+
+System: You are Grok 3 built by xAI.
+
+The response was cut off due to reaching the maximum token limit. Below is the continuation and completion of the corrected ECG Segmentation Project Documentation, focusing on the remaining sections and ensuring all formatting issues are addressed. The response picks up from the last incomplete table in section 9.5 and continues through the end of the document.
+
+---
+
+### 9.5. ECGSegmenter (XL) Results (Continued)
+
+**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
+
+- **Eval Loss**: 0.4109 | **Accuracy**: 0.8329
+
+| Class       | Precision | Recall | F1-Score | Support |
+|-------------|-----------|--------|----------|---------|
+| No Wave     | 0.8602    | 0.8192 | 0.8392   | 142180  |
+| P Wave      | 0.7896    | 0.7830 | 0.7863   | 32701   |
+| QRS         | 0.8642    | 0.8718 | 0.8680   | 32796   |
+| T Wave      | 0.7847    | 0.8700 | 0.8252   | 62323   |
+| **Macro Avg** | 0.8247  | 0.8360 | 0.8297   | 270000  |
+| **Weighted Avg** | 0.8347 | 0.8329 | 0.8331   | 270000  |
+
+*(Note: A full report would include confusion matrices and training loss/accuracy plots here.)*
+
+---
+
+## 10. Discussion and Key Considerations
+
+- **Model Performance**:
+  - The `ECGSegmenter (Small)` model achieved the best F1-score on clean data and competitive performance on noisy data, despite having significantly fewer parameters than `ECGSegmenter (XL)` and `DENS_ECG_segmenter`. This suggests it generalizes well for this dataset size and task, potentially due to its architectural design (multi-scale convolutions, residual blocks, attention) without overfitting as much as larger models.
+  - The `DENS_ECG_segmenter` model's performance was lower than reported in its original paper. This is likely due to:
+    - **No explicit signal filtering**: The original paper might have used pre-filtered data. This project intentionally trained on less processed signals.
+    - **Aggressive noise augmentation**: The extensive noise added during training makes the task significantly harder but aims for greater robustness. The paper reports an F1 of 87% on unfiltered data, but their "unfiltered" might still be cleaner than the augmented data used here.
+- **Impact of Noise Augmentation**: All models showed a slight degradation in performance when evaluated on data with additional synthetic noise, which is expected. However, training with noise augmentation is crucial for real-world applicability where signals are rarely pristine.
+- **Computational Cost**: `ECGSegmenter (XL)` and `DENS_ECG_segmenter` are more computationally intensive due to their larger parameter counts. `ECGSegmenter (Small)` offers a good balance of performance and efficiency.
+- **Data Quality & Preprocessing**: The `preprocess_data.py` script is vital for generating the training data. The quality of annotations and the logic for handling gaps/overlaps in QTDB directly impact model performance. Manual exclusion of certain problematic files (e.g., those with only QRS labels if not handled carefully by preprocessing) was mentioned as a step, highlighting the importance of data curation.
+- **Extensibility**: The modular structure allows for easy addition of new models in `model.py` or new data augmentation techniques in `ECGFullDataset`.
+- **Logging & Reproducibility**: Training metrics are logged to CSV, aiding analysis. Checkpoints include `params.json`, which stores training arguments, facilitating reproducibility.
+- **Future Work**:
+  - Explore the impact of different types and levels of signal pre-filtering.
+  - Experiment with more advanced data augmentation techniques.
+  - Fine-tune hyperparameters for each model architecture.
+  - Test on other ECG datasets to evaluate generalization.
+
+---
+
+## 11. Troubleshooting
+
+- **Empty Dataset**:
+  - Ensure `preprocess_data.py` ran successfully and generated CSV files in `project_root/qtdb/processed/train` and `val` directories. Check CSVs for content and correct column names (`channel_names`, `label_column`).
+- **preprocess_data.py Errors**:
+  - **Download Issues**: Check internet connectivity. PhysioNet server might be temporarily unavailable.
+  - **Annotation File Missing**: The script tries preferred annotators (`q1c`, `pu`, etc.). If a record lacks any usable annotation file, it might be skipped or cause errors. Ensure `wfdb` library is installed correctly.
+  - **Memory Issues during Preprocessing**: Very long records or dense annotations could consume memory. The script processes record by record, which should be manageable.
+- **Checkpoint Loading Errors**:
+  - Verify `load_dir` path is correct and contains `model.pth` and `params.json`. Ensure model architecture arguments in `train.py` or `evaluate.py` match those in `params.json`.
+- **Memory Issues (Training/Evaluation)**:
+  - Reduce `batch_size` or `sequence_length`. Use fewer `num_workers` if RAM is limited.
+- **NaN/Inf in Signals/Loss**:
+  - Check for invalid data in source CSVs (though `preprocess_data.py` should create valid numeric data). `ECGFullDataset` attempts to skip non-numeric signals. If loss becomes NaN, gradient clipping (`--clip`) might help, or the learning rate could be too high.
+- **Slow Training**:
+  - Ensure CUDA is available and PyTorch is using the GPU (`device="cuda"`). Reduce `sequence_length` or model complexity (e.g., use `ECGSegmenter (Small)`).
+- **Low F1-Score**:
+  - Verify data quality and labeling from `preprocess_data.py`.
+  - Adjust augmentation parameters (e.g., `augmentation_prob`, noise magnitudes).
+  - Try `FocalLoss(gamma=2.0)` if class imbalance is severe.
+  - Train for more epochs or adjust learning rate schedule.
+- **Plotting Issues**:
+  - Ensure `matplotlib` and `seaborn` are installed. Check `output_dir` in `evaluate.py` has write permissions.
+
+---
+
+## 12. `preprocess_data.py` Script Details
+
+The `preprocess_data.py` script is provided alongside this documentation. Key components:
+
+- **QTDB Class**:
+  - Manages downloading raw QTDB data (`wfdb.dl_database`).
+  - Splits record names into training and validation sets (`train_split_ratio`, `random_seed`).
+  - Iterates through records, creating `Record` objects and saving processed CSVs.
+- **Record Class**:
+  - Loads individual record waveforms (`wfdb.rdrecord`) and annotations (`wfdb.rdann`).
+  - `_get_labels()`: Extracts P, N (QRS), A (QRS), T wave segments based on annotation symbols and their start/end markers.
+  - `_add_gap_labels()`: Inserts 'na' (No Wave) labels in gaps between detected waves. Handles 'break' points for very long gaps.
+  - `_get_intervals_df()`: Converts labeled segments into a Pandas DataFrame.
+  - Enforces `min_gap_ms` between certain successive waves (e.g., QRS-T, T-P) by relabeling the beginning of the subsequent wave as 'na' if the gap is too small.
+  - `save_csv()`: Saves the DataFrame to the appropriate `train/` or `val/` subfolder.
+- **Helper Functions**:
+  - `_create_directory()`: Utility to create directories.
+- **Execution**:
+  - The `if __name__ == '__main__':` block instantiates `QTDB` and calls `generate_db()` to run the full preprocessing pipeline.
+
+This script is fundamental for preparing the data in the format expected by the rest of the framework.
+
