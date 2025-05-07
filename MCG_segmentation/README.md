@@ -1,17 +1,4 @@
 
-### Corrected Formatting Mistakes
-
-#### General Issues Addressed
-1. **Code Block Markers**: Replaced incorrect "Use code with caution." phrases and ensured proper triple backticks (```) for code blocks with appropriate language specifiers (e.g., `bash`, `python`, `markdown`, `csv`).
-2. **Table Formatting**: Fixed misaligned table columns and ensured consistent Markdown table syntax.
-3. **Section References**: Corrected anchor links in the Table of Contents to match section titles (e.g., fixed `data_loaderpy` to `data_loader.py`).
-4. **Inline Code and Paths**: Used backticks for inline code and file paths for consistency.
-5. **List and Indentation**: Standardized indentation for lists and nested items.
-6. **Spurious Text Removal**: Removed redundant "Use code with caution." text that appeared in non-code contexts.
-7. **Consistent Headings**: Ensured proper spacing and formatting for headings and subheadings.
-
-#### Corrected Documentation
-
 
 # ECG Segmentation Project Documentation
 
