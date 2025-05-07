@@ -119,6 +119,24 @@ The `preprocess_data.py` script handles the download of the QTDB, extraction of 
 - **Splits Data**: Randomly shuffles records and splits them into training (e.g., 80%) and validation (e.g., 20%) sets.
 - **Saves Processed Data**: Saves the processed data as CSV files for each record in `project_root/qtdb/processed/train/` and `project_root/qtdb/processed/val/`.
 
+**Key components:**
+
+- **QTDB Class**:
+  - Manages downloading raw QTDB data (`wfdb.dl_database`).
+  - Splits record names into training and validation sets (`train_split_ratio`, `random_seed`).
+  - Iterates through records, creating `Record` objects and saving processed CSVs.
+- **Record Class**:
+  - Loads individual record waveforms (`wfdb.rdrecord`) and annotations (`wfdb.rdann`).
+  - `_get_labels()`: Extracts P, N (QRS), A (QRS), T wave segments based on annotation symbols and their start/end markers.
+  - `_add_gap_labels()`: Inserts 'na' (No Wave) labels in gaps between detected waves. Handles 'break' points for very long gaps.
+  - `_get_intervals_df()`: Converts labeled segments into a Pandas DataFrame.
+  - Enforces `min_gap_ms` between certain successive waves (e.g., QRS-T, T-P) by relabeling the beginning of the subsequent wave as 'na' if the gap is too small.
+  - `save_csv()`: Saves the DataFrame to the appropriate `train/` or `val/` subfolder.
+- **Helper Functions**:
+  - `_create_directory()`: Utility to create directories.
+- **Execution**:
+  - The `if __name__ == '__main__':` block instantiates `QTDB` and calls `generate_db()` to run the full preprocessing pipeline.
+
 #### 3.3.1. Running Preprocessing
 Navigate to the `project_root/` directory and run:
 
@@ -585,6 +603,9 @@ This section outlines the training methodology and summarizes the performance of
 - **Signal Preprocessing**: No explicit high-pass or low-pass filtering was applied.
 - **Metrics**: Focused on overall accuracy and macro F1-score.
 
+![image](https://github.com/user-attachments/assets/7d877b72-1cba-4545-8dcd-06f1ebd44e8a)
+
+
 ### 9.2. Model Configurations and Parameters
 Three main model configurations were trained and evaluated:
 
@@ -604,6 +625,9 @@ Three main model configurations were trained and evaluated:
 
 ### 9.3. DENS_ECG_segmenter Results
 **Reference**: Peimankar, A., & Puthusserypady, S. (2020). DENS-ECG: A deep learning approach for ECG signal delineation. arXiv. [https://arxiv.org/abs/2005.08689](https://arxiv.org/abs/2005.08689)
+
+![image](https://github.com/user-attachments/assets/c5903618-57c9-4852-8b3b-85d7bf6071ed)
+![image](https://github.com/user-attachments/assets/cf78d687-0ca5-4542-b9a6-5efa79c8368e)
 
 **Evaluation on Data without Additional DataLoader Noise** (validation set):
 
@@ -631,8 +655,18 @@ Three main model configurations were trained and evaluated:
 | **Macro Avg** | 0.8161  | 0.8258 | 0.8207   | 270000  |
 | **Weighted Avg** | 0.8277 | 0.8268 | 0.8270   | 270000  |
 
+![image](https://github.com/user-attachments/assets/504db34c-0ef0-4566-abbb-db9a2fa7e288)
+![image](https://github.com/user-attachments/assets/10d1aed0-9415-4713-8b72-8f0936a74319)
+
+![image](https://github.com/user-attachments/assets/b266f523-d25f-4722-9235-4cce306bba11)
+
+
 ### 9.4. ECGSegmenter (Small) Results
 **Evaluation on Data without Additional DataLoader Noise** (validation set):
+
+![image](https://github.com/user-attachments/assets/e8a7e14f-9470-4e15-8326-99dc66dbb4c6)
+![image](https://github.com/user-attachments/assets/3b78e756-3594-4089-b019-fcf98d1da11a)
+
 
 - **Eval Loss**: 0.3635 | **Accuracy**: 0.8477
 
@@ -658,7 +692,19 @@ Three main model configurations were trained and evaluated:
 | **Macro Avg** | 0.8279  | 0.8365 | 0.8318   | 244000  |
 | **Weighted Avg** | 0.8369 | 0.8355 | 0.8357   | 244000  |
 
+
+![image](https://github.com/user-attachments/assets/d4772d72-28a3-45db-9757-56aec2a460cd)
+![image](https://github.com/user-attachments/assets/3c0b60c0-4049-4d66-9788-c2ca67a182cc)
+![image](https://github.com/user-attachments/assets/28eaf65a-300a-4629-956c-ae8f59b99d4e)
+
+
 ### 9.5. ECGSegmenter (XL) Results
+
+
+![image](https://github.com/user-attachments/assets/664a9405-d3e2-43dd-8066-12fa1758e069)
+![image](https://github.com/user-attachments/assets/9e906eaa-6594-4920-b7e4-15f88b8a17fa)
+
+
 **Evaluation on Data without Additional DataLoader Noise** (validation set):
 
 - **Eval Loss**: 0.3778 | **Accuracy**: 0.8474
@@ -682,11 +728,11 @@ Three main model configurations were trained and evaluated:
 | P Wave      | 0.7896    | 0.7830 | 0.7863   | 32701   |
 | QRS         | 0.8642    | 0.8718ηση
 
-System: You are Grok 3 built by xAI.
+![image](https://github.com/user-attachments/assets/55b66bc5-b82b-449b-bbd9-c297f481e33a)
+![image](https://github.com/user-attachments/assets/415ea4eb-0f49-467b-bb04-167c2b2b1ad2)
 
-The response was cut off due to reaching the maximum token limit. Below is the continuation and completion of the corrected ECG Segmentation Project Documentation, focusing on the remaining sections and ensuring all formatting issues are addressed. The response picks up from the last incomplete table in section 9.5 and continues through the end of the document.
+![image](https://github.com/user-attachments/assets/43be637f-2dd9-404d-8b33-fd3563e5fcd5)
 
----
 
 ### 9.5. ECGSegmenter (XL) Results (Continued)
 
@@ -712,8 +758,8 @@ The response was cut off due to reaching the maximum token limit. Below is the c
 - **Model Performance**:
   - The `ECGSegmenter (Small)` model achieved the best F1-score on clean data and competitive performance on noisy data, despite having significantly fewer parameters than `ECGSegmenter (XL)` and `DENS_ECG_segmenter`. This suggests it generalizes well for this dataset size and task, potentially due to its architectural design (multi-scale convolutions, residual blocks, attention) without overfitting as much as larger models.
   - The `DENS_ECG_segmenter` model's performance was lower than reported in its original paper. This is likely due to:
-    - **No explicit signal filtering**: The original paper might have used pre-filtered data. This project intentionally trained on less processed signals.
-    - **Aggressive noise augmentation**: The extensive noise added during training makes the task significantly harder but aims for greater robustness. The paper reports an F1 of 87% on unfiltered data, but their "unfiltered" might still be cleaner than the augmented data used here.
+    - **No explicit signal filtering**: The original paper used pre-filtered data. This project intentionally trained on less processed signals.
+    - **Aggressive noise augmentation**: The extensive noise added during training makes the task significantly harder but aims for greater robustness. The paper reports an F1 of 87% on unfiltered data, but their "unfiltered" might still be cleaner than the augmented data used here, since they didn't add any additional augmentation.
 - **Impact of Noise Augmentation**: All models showed a slight degradation in performance when evaluated on data with additional synthetic noise, which is expected. However, training with noise augmentation is crucial for real-world applicability where signals are rarely pristine.
 - **Computational Cost**: `ECGSegmenter (XL)` and `DENS_ECG_segmenter` are more computationally intensive due to their larger parameter counts. `ECGSegmenter (Small)` offers a good balance of performance and efficiency.
 - **Data Quality & Preprocessing**: The `preprocess_data.py` script is vital for generating the training data. The quality of annotations and the logic for handling gaps/overlaps in QTDB directly impact model performance. Manual exclusion of certain problematic files (e.g., those with only QRS labels if not handled carefully by preprocessing) was mentioned as a step, highlighting the importance of data curation.
@@ -725,53 +771,5 @@ The response was cut off due to reaching the maximum token limit. Below is the c
   - Fine-tune hyperparameters for each model architecture.
   - Test on other ECG datasets to evaluate generalization.
 
----
 
-## 11. Troubleshooting
-
-- **Empty Dataset**:
-  - Ensure `preprocess_data.py` ran successfully and generated CSV files in `project_root/qtdb/processed/train` and `val` directories. Check CSVs for content and correct column names (`channel_names`, `label_column`).
-- **preprocess_data.py Errors**:
-  - **Download Issues**: Check internet connectivity. PhysioNet server might be temporarily unavailable.
-  - **Annotation File Missing**: The script tries preferred annotators (`q1c`, `pu`, etc.). If a record lacks any usable annotation file, it might be skipped or cause errors. Ensure `wfdb` library is installed correctly.
-  - **Memory Issues during Preprocessing**: Very long records or dense annotations could consume memory. The script processes record by record, which should be manageable.
-- **Checkpoint Loading Errors**:
-  - Verify `load_dir` path is correct and contains `model.pth` and `params.json`. Ensure model architecture arguments in `train.py` or `evaluate.py` match those in `params.json`.
-- **Memory Issues (Training/Evaluation)**:
-  - Reduce `batch_size` or `sequence_length`. Use fewer `num_workers` if RAM is limited.
-- **NaN/Inf in Signals/Loss**:
-  - Check for invalid data in source CSVs (though `preprocess_data.py` should create valid numeric data). `ECGFullDataset` attempts to skip non-numeric signals. If loss becomes NaN, gradient clipping (`--clip`) might help, or the learning rate could be too high.
-- **Slow Training**:
-  - Ensure CUDA is available and PyTorch is using the GPU (`device="cuda"`). Reduce `sequence_length` or model complexity (e.g., use `ECGSegmenter (Small)`).
-- **Low F1-Score**:
-  - Verify data quality and labeling from `preprocess_data.py`.
-  - Adjust augmentation parameters (e.g., `augmentation_prob`, noise magnitudes).
-  - Try `FocalLoss(gamma=2.0)` if class imbalance is severe.
-  - Train for more epochs or adjust learning rate schedule.
-- **Plotting Issues**:
-  - Ensure `matplotlib` and `seaborn` are installed. Check `output_dir` in `evaluate.py` has write permissions.
-
----
-
-## 12. `preprocess_data.py` Script Details
-
-The `preprocess_data.py` script is provided alongside this documentation. Key components:
-
-- **QTDB Class**:
-  - Manages downloading raw QTDB data (`wfdb.dl_database`).
-  - Splits record names into training and validation sets (`train_split_ratio`, `random_seed`).
-  - Iterates through records, creating `Record` objects and saving processed CSVs.
-- **Record Class**:
-  - Loads individual record waveforms (`wfdb.rdrecord`) and annotations (`wfdb.rdann`).
-  - `_get_labels()`: Extracts P, N (QRS), A (QRS), T wave segments based on annotation symbols and their start/end markers.
-  - `_add_gap_labels()`: Inserts 'na' (No Wave) labels in gaps between detected waves. Handles 'break' points for very long gaps.
-  - `_get_intervals_df()`: Converts labeled segments into a Pandas DataFrame.
-  - Enforces `min_gap_ms` between certain successive waves (e.g., QRS-T, T-P) by relabeling the beginning of the subsequent wave as 'na' if the gap is too small.
-  - `save_csv()`: Saves the DataFrame to the appropriate `train/` or `val/` subfolder.
-- **Helper Functions**:
-  - `_create_directory()`: Utility to create directories.
-- **Execution**:
-  - The `if __name__ == '__main__':` block instantiates `QTDB` and calls `generate_db()` to run the full preprocessing pipeline.
-
-This script is fundamental for preparing the data in the format expected by the rest of the framework.
 
