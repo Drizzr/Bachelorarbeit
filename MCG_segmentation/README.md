@@ -694,10 +694,10 @@ Three main model configurations were trained and evaluated:
 <table>
 <tr>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/504db34c-0ef0-4566-abbb-db9a2fa7e288" alt="DENS_ECG_segmenter Sample Plot (No Noise)" width="400">
+<img src="https://github.com/user-attachments/assets/dc4b0d8e-3326-4cbe-940c-69fcf5eba399" alt="DENS_ECG_segmenter Sample Plot (No Noise)" width="400">
 </td>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/10d1aed0-9415-4713-8b72-8f0936a74319" alt="DENS_ECG_segmenter Confusion Matrix (With Noise)" width="400">
+<img src="https://github.com/user-attachments/assets/7c898f91-e31b-4613-b116-35dc6d9ce723" alt="DENS_ECG_segmenter Confusion Matrix (With Noise)" width="400">
 </td>
 </tr>
 </table>
