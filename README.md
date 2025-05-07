@@ -149,7 +149,7 @@ A typical workflow involves:
 `prepare_data`
 Prepares time-aligned, spatially-oriented data from multiple sensor recordings, handling alignment, filtering, resampling, and coordinate transformations in one streamlined step.
 
-Workflow:
+**Workflow**:
 
 Load raw sensor data from internal sources.
 Align datasets using cross-correlation (using `align_multi_channel_signal`)
@@ -158,39 +158,52 @@ Optionally apply default filters. (using `default_filter_combination`)
 Convert to a consistent coordinate system.
 Resample to internal rate (default 250 Hz).
 Extract x, y, z field components in a grid layout. (using 
-Usage:
-
+**Usage**:
+```python
 (x_data, y_data, z_data), time, combined = processor.prepare_data("run_01", apply_default_filter=True)
-Parameters:
+```
+**Parameters**:
 
-Name	Type	Default	Description
-key	str	—	Identifier for the dataset (must match loaded data keys).
-apply_default_filter	bool	False	Whether to apply filtering after alignment.
-intervall_low_sec	float	5	Start of the time interval in seconds (from aligned start).
-intervall_high_sec	float	-5	End of the time interval in seconds (from aligned end).
-plot_alignment	bool	False	Plot cross-correlation alignment results.
-alignment_cutoff_sec	float	2	Max duration used for alignment in seconds.
-input_sampling_rate	int	1000	Original data sampling rate in Hz.
-Returns:
+| **Parameter**          | **Type** | **Default** | **Description**                            |
+| ---------------------- | -------- | ----------- | ------------------------------------------ |
+| `key`                  | `str`    | —           | Dataset key (must exist in internal data). |
+| `apply_default_filter` | `bool`   | `False`     | Apply filtering after alignment.           |
+| `intervall_low_sec`    | `float`  | `5`         | Start time (sec) from aligned start.       |
+| `intervall_high_sec`   | `float`  | `-5`        | End time (sec) from aligned end.           |
+| `plot_alignment`       | `bool`   | `False`     | Plot alignment visualization.              |
+| `alignment_cutoff_sec` | `float`  | `2`         | Max duration for alignment (in seconds).   |
+| `input_sampling_rate`  | `int`    | `1000`      | Sampling rate of original data.            |
+
+
+**Returns**:
 
 (x_data, y_data, z_data) (np.ndarray): 3D spatial signals (rows × cols × time) at 250 Hz.
 time (np.ndarray): 1D time vector in seconds.
 combined_run_data (np.ndarray): Combined and preprocessed raw signal (channels × time).
 
+**Example alignment plot**:
+![image](https://github.com/user-attachments/assets/80065fda-0be1-4fd9-807e-5163a04950e8)
+
+
 `align_multi_channel_signal`
 Aligns two multichannel signals using cross-correlation of the averaged signal over channels, typically used for synchronizing measurements from multiple acquisition systems.
 
-Usage:
-
+**Usage**:
+```python
 aligned, lag = processor.align_multi_channel_signal(signal1, signal2, lag_cutoff=2000)
-Parameters:
+```
 
-Name	Type	Default	Description
-signal1	np.ndarray	—	First signal array (channels × samples).
-signal2	np.ndarray	—	Second signal array to align.
-lag_cutoff	int	2000	Max samples to consider for lag estimation.
-plot	bool	True	Show plots of pre-/post-alignment.
-Returns:
+**Parameters:**
+
+| **Parameter** | **Type**     | **Default** | **Description**                      |
+| ------------- | ------------ | ----------- | ------------------------------------ |
+| `signal1`     | `np.ndarray` | —           | First signal `(channels × samples)`. |
+| `signal2`     | `np.ndarray` | —           | Second signal to align.              |
+| `lag_cutoff`  | `int`        | `2000`      | Max samples to consider for lag.     |
+| `plot`        | `bool`       | `True`      | Plot before/after alignment.         |
+
+
+**Returns:**
 
 aligned_signal2 (np.ndarray): Shifted version of signal2, aligned to signal1.
 lag (int): Estimated lag in samples.
@@ -200,15 +213,20 @@ ValueError — If lag_cutoff exceeds signal length.
 `get_field_directions`
 Converts multichannel flat data into spatial 3D field representations in x, y, z directions, using known sensor layout metadata, based on the log file specified in `log_file_path`.
 
-Usage:
+**Usage**:
 
+```python
 x_data, y_data, z_data = processor.get_field_directions(data, key="run_01")
-Parameters:
+```
 
-Name	Type	Description
-data	np.ndarray	2D signal array (channels × samples).
-key	str	Dataset key for excluding faulty or missing sensors.
-Returns:
+**Parameters**:
+
+| **Parameter** | **Type**     | **Description**                   |
+| ------------- | ------------ | --------------------------------- |
+| `data`        | `np.ndarray` | 2D array `(channels × samples)`.  |
+| `key`         | `str`        | Dataset key for sensor exclusion. |
+
+**Returns**:
 
 x_data, y_data, z_data (np.ndarray): Arrays of shape (rows, cols, samples) for each field direction.
 
@@ -216,24 +234,22 @@ x_data, y_data, z_data (np.ndarray): Arrays of shape (rows, cols, samples) for e
 `invert_field_directions`
 Performs the inverse of get_field_directions, reconstructing the original channel-wise signal from 3D x/y/z field representations, based on the log file specified in `log_file_path`.
 
-Usage:
-
+**Usage**:
+```python
 reconstructed = processor.invert_field_directions(x_data, y_data, z_data, key="run_01")
-Parameters:
+```
 
-Name	Type	Default	Description
-x_data	np.ndarray	—	Field data along x-axis.
-y_data	np.ndarray	—	Field data along y-axis.
-z_data	np.ndarray	—	Field data along z-axis.
-key	str	—	Dataset key for handling exclusions.
-num_channels	int	None	Total number of original signal channels. Inferred if not provided.
-Returns:
+**Parameters**:
+
+| **Parameter**                | **Type**     | **Default** | **Description**                                       |
+| ---------------------------- | ------------ | ----------- | ----------------------------------------------------- |
+| `x_data`, `y_data`, `z_data` | `np.ndarray` | —           | Grid arrays for field directions.                     |
+| `key`                        | `str`        | —           | Dataset key for sensor exclusion.                     |
+| `num_channels`               | `int`        | `None`      | Total number of output channels (inferred if `None`). |
+
+**Returns:**
 
 data (np.ndarray) — Reconstructed signal array (channels × samples).
-
-
-
-
 
 
 #### Signal Filtering
