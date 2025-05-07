@@ -112,7 +112,7 @@ The QT Database (QTDB), hosted on PhysioNet, is a standard dataset for ECG analy
 
 ### 3.3. Data Preprocessing (`preprocess_data.py`)
 
-The `preprocess_data.py` script handles the download of the QTDB, extraction of relevant signal segments, labeling, and splitting into training and validation sets.
+The `preprocess_data.py` script handles the download of the QTDB, extraction of relevant signal segments, labeling, and splitting into training and validation sets. (The code is a modified version of: [kardionet](https://github.com/Seb-Good/kardionet/tree/master))
 
 **Key Operations**:
 
@@ -623,7 +623,7 @@ This section outlines the training methodology and summarizes the performance of
 - **Metrics**: Focused on overall accuracy and macro F1-score.
 
 <p align="center">
-<b>Fig 9.1.1: Example Training Metrics Plot (Loss and Accuracy vs. Epochs)</b><br>
+<b>Plot of the Cosine Annealing scheduler</b><br>
 <img src="https://github.com/user-attachments/assets/7d877b72-1cba-4545-8dcd-06f1ebd44e8a" alt="Example Training Metrics Plot" width="600">
 </p>
 
@@ -840,7 +840,7 @@ Three main model configurations were trained and evaluated:
   - **No explicit signal filtering**: The original paper used pre-filtered data. This project intentionally trained on less processed signals.
   - **Aggressive noise augmentation**: The extensive noise added during training makes the task significantly harder but aims for greater robustness. The paper reports an F1 of 87% on unfiltered data, but their "unfiltered" might still be cleaner than the augmented data used here, since they didn't add any additional augmentation.
 - **Impact of Noise Augmentation**: All models showed a slight degradation in performance when evaluated on data with additional synthetic noise, which is expected. However, training with noise augmentation is crucial for real-world applicability where signals are rarely pristine.
-- **Computational Cost**: `ECGSegmenter (XL)` and `DENS_ECG_segmenter` are more computationally intensive due to their larger parameter counts. `ECGSegmenter (Small)` offers a good balance of performance and efficiency.
+- **Computational Cost**: `ECGSegmenter (XL)` and `DENS_ECG_segmenter` are more computationally intensive due to their larger parameter counts. `ECGSegmenter (Small)` offers the best performance and efficiency.
 - **Data Quality & Preprocessing**: The `preprocess_data.py` script is vital for generating the training data. The quality of annotations and the logic for handling gaps/overlaps in QTDB directly impact model performance. Manual exclusion of certain problematic files (e.g., those with only QRS labels if not handled carefully by preprocessing) was mentioned as a step, highlighting the importance of data curation.
 - **Extensibility**: The modular structure allows for easy addition of new models in `model.py` or new data augmentation techniques in `ECGFullDataset`.
 - **Logging & Reproducibility**: Training metrics are logged to CSV, aiding analysis. Checkpoints include `params.json`, which stores training arguments, facilitating reproducibility.
