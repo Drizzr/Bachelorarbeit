@@ -369,6 +369,9 @@ Segment Distribution:
 
 Segments the entire signal data using a sliding window approach, suitable for long recordings (T > 2000) to process data in manageable chunks.
 
+![image](https://github.com/user-attachments/assets/9e5616e0-f852-4573-b0b9-dbcb8bd8fd66)
+
+
 The method performs the following steps:
 
 1. **Input Validation**: Ensures the input data is a 2D array and overlap is valid.
@@ -449,6 +452,8 @@ Tuple of:
 #### `detect_qrs_complex_peaks_cleanest_channel`
 
 Detects QRS complex peaks in the cleanest channel, assuming input data at 250 Hz.
+
+![image](https://github.com/user-attachments/assets/724c40f4-38d5-4458-822f-3a02c9da62e4)
 
 The method performs the following steps:
 
