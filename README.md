@@ -49,33 +49,26 @@ A key feature of this class is its standardized internal processing at **250 Hz*
 
 ## Dependencies
 
-The class relies on several Python libraries:
+The class relies on several Python libraries to install them run:
 
-- `os`
-- `ast`
-- `warnings`
-- `logging`
-- `numpy`
-- `torch` (for segmentation model)
-- `nptdms` (for reading TDMS files)
-- `matplotlib` (for plotting�子
-- `scipy` (for signal processing: filters, interpolation, correlation)
-- `sklearn` (for FastICA)
+```bash
+pip install -r reuqirements.txt
+```
 
-Optional but recommended for full functionality:
-- `MCG_segmentation` package (local package for `ECGSegmenter`). If not found, segmentation features will be unavailable.
+in the root directory
+
 
 ## Setup
 
-### 1. Python Environment
+### 1. Dependencies
 
-It's recommended to use a virtual environment. Install the required packages:
+The class relies on several Python libraries to install them run:
 
 ```bash
-pip install numpy torch nptdms matplotlib scipy scikit-learn
+pip install -r reuqirements.txt
 ```
 
-Ensure you have a PyTorch version compatible with your system (CPU or CUDA). Visit [pytorch.org](https://pytorch.org) for installation instructions.
+in the root directory
 
 ### 2. MCG_segmentation Package
 
@@ -125,12 +118,12 @@ analyzer = Analyzer(
 - `filename` (str): Path to the primary TDMS data file.
 - `add_filename` (str, optional): Path to an additional TDMS data file. Data from this file will be aligned and concatenated with the primary file.
 - `log_file_path` (str): Path to the QZFM log file containing sensor mappings (e.g., `quspin_channel_dict`, `quspin_position_list`).
-- `sensor_channels_to_exclude` (dict, optional): Dictionary where keys are run names (from TDMS group names) and values are lists of channel names (e.g., `Q01_x`) to exclude. Wildcards like `*_x` are supported.
+- `sensor_channels_to_exclude` (dict, optional): Dictionary where keys are run names (from TDMS group names) and values are lists of channel names (e.g., `Q01_x`) to exclude. Wildcards like `*_x`, which excludes the entire x-Channels are supported.
 - `scaling` (float): Scaling factor applied to TDMS data during loading. Default: `2.7 / 1000`.
 - `num_ch` (int): Total number of channels expected after combining data. Default: 48.
 - `model_checkpoint_dir` (str): Directory containing `model.pth` and `params.json` for the `ECGSegmenter` model. Default: `MCG_segmentation/MCGSegmentator_s/checkpoints/best`.
 
-Upon initialization, the `Analyzer` loads TDMS data, sensor log information, and the segmentation model (if available). It sets up the computation device (CUDA or CPU) for PyTorch.
+Upon initialization, the `Analyzer` loads TDMS data, sensor log information, and the segmentation model (if available). It sets up the computation device (CUDA/CPU/mps) for PyTorch.
 
 ### Key Attributes
 
@@ -167,8 +160,117 @@ A typical workflow involves:
 
 #### Signal Filtering
 
-- `default_filter_combination(data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2, sampling_rate=1000)`: Applies a sequence of bandstop, lowpass, highpass, and Savitzky-Golay filters. Note: `sampling_rate` refers to the input data's rate.
-- Static filter methods: `bandstop_filter`, `bandpass_filter`, `apply_lowpass_filter`, `apply_highpass_filter`, `remove_drift_and_offset`.
+This module provides robust filtering tools for cleaning multichannel biomedical signals, such as magnetoencephalography (MEG) or electrophysiological recordings. Two primary methods are included: a **default filter pipeline** and an **ICA-based artifact removal** specifically designed for heartbeat-related noise.
+
+`default_filter_combination`
+
+Applies a predefined sequence of filters to multichannel signal data to remove noise and prepare it for further analysis. The pipeline includes:
+
+* **Bandstop filter**: Attenuates narrow frequency bands (e.g., powerline interference).
+* **Lowpass filter**: Removes high-frequency noise.
+* **Highpass filter**: Eliminates baseline drift or slow signal trends.
+* **Savitzky-Golay filter**: Smooths the signal while preserving features.
+
+**Usage**:
+
+```python
+filtered = processor.default_filter_combination(data)
+```
+
+**Parameters**:
+
+| Name               | Type         | Default | Description                                 |
+| ------------------ | ------------ | ------- | ------------------------------------------- |
+| `data`             | `np.ndarray` | —       | Input array of shape `(channels, samples)`. |
+| `bandstop_freq`    | `float`      | `50`    | Center frequency for bandstop filter (Hz).  |
+| `lowpass_freq`     | `float`      | `95`    | Lowpass cutoff frequency (Hz).              |
+| `highpass_freq`    | `float`      | `1`     | Highpass cutoff frequency (Hz).             |
+| `savgol_window`    | `int`        | `61`    | Window size for Savitzky-Golay smoothing.   |
+| `savgol_polyorder` | `int`        | `2`     | Polynomial order for Savitzky-Golay filter. |
+| `sampling_rate`    | `int`        | `1000`  | Data sampling rate (Hz).                    |
+
+**Returns**:
+`np.ndarray` — Filtered data array with the same shape as the input.
+
+---
+
+#### `ICA_filter`
+
+Uses **Independent Component Analysis (ICA)** to isolate and remove heartbeat-related artifacts from multichannel data. Supports both 2D and 3D input (e.g., 4×4 sensor grids).
+
+**Features**:
+
+* Scores ICA components based on physiological plausibility.
+* Retains only components with a high likelihood of containing real neural signals.
+* Optional plotting tool for interactive threshold adjustment in 3D datasets.
+
+**Usage**:
+
+```python
+result, components, best_idx, mask = processor.ICA_filter(data, plot_result=True)
+```
+
+If `print_result, plot_result = True, True` this returns:
+
+
+
+
+```
+Channel Selection Results:
+Channel   Conf        P-Wave %    QRS %       T-Wave %    Plausibility   Final Score 
+-------------------------------------------------------------------------------------
+1         0.8761      10.60       11.08       21.08       1.0000         0.9008      
+2         0.8017      1.28        43.56       23.92       0.2208         0.6855      
+3         0.8290      7.84        9.32        19.36       0.9843         0.8600      
+4         0.8182      2.08        37.60       25.44       0.2596         0.7064      
+5         0.8030      0.84        54.60       11.84       0.1669         0.6758      
+6         0.8421      12.80       13.24       20.04       1.0000         0.8737      
+7         0.8117      6.24        37.12       20.24       0.2952         0.7084      
+8         0.8811      13.60       10.96       24.92       1.0000         0.9049      
+9         0.8165      8.40        28.20       28.92       0.4310         0.7394      
+10        0.7869      9.64        20.40       35.92       0.4690         0.7233      
+11        0.7874      6.72        14.68       34.16       0.6477         0.7594      
+12        0.8606      12.44       12.80       21.04       1.0000         0.8885      
+13        0.8529      11.84       9.40        22.36       1.0000         0.8823      
+14        0.8069      11.28       12.48       34.52       0.6887         0.7832      
+15        0.8120      6.84        23.72       24.32       0.5030         0.7502      
+
+Best Channel Summary:
+Channel   : 8
+Conf      : 0.8811
+Plausibility: 1.0000
+Final Score: 0.9049
+Segment Distribution:
+  P-Wave % : 13.60%
+  QRS %    : 10.96%
+  T-Wave % : 24.92%
+```
+
+**Parameters**:
+
+| Name                         | Type         | Default | Description                                                          |
+| ---------------------------- | ------------ | ------- | -------------------------------------------------------------------- |
+| `data`                       | `np.ndarray` | —       | Input data, shape `(channels × time)` or `(grid_x × grid_y × time)`. |
+| `heart_beat_score_threshold` | `float`      | `0.85`  | Score threshold for keeping ICA components.                          |
+| `max_iter`                   | `int`        | `5000`  | Max iterations for ICA convergence.                                  |
+| `confidence_weight`          | `float`      | `0.8`   | Weight for confidence score in scoring.                              |
+| `plausibility_weight`        | `float`      | `0.2`   | Weight for plausibility score.                                       |
+| `print_result`               | `bool`       | `False` | If `True`, prints evaluation mectrics for the channels.              |
+| `plot_result`                | `bool`       | `False` | If `True` and data is 4×4 grid, displays interactive plot.           |
+
+**Returns**:
+
+* `result` (`np.ndarray`) — Reconstructed signal with heartbeat components removed.
+* `ica_components` (`np.ndarray`) — Extracted ICA components.
+* `best_channel_idx` (`int`) — Index of component most strongly related to heartbeat.
+* `score_mask` (`np.ndarray`) — Boolean mask of retained components.
+
+**Raises**:
+
+* `ValueError` — If the input data is not 2D or 3D.
+
+
+
 
 #### Segmentation and QRS Detection (Requires MCG_segmentation package and model)
 
