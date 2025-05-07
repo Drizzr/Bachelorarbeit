@@ -212,8 +212,8 @@ result, components, best_idx, mask = processor.ICA_filter(data, plot_result=True
 
 If `print_result, plot_result = True, True` this returns:
 
-
-
+![Figure_1](https://github.com/user-attachments/assets/85a9f730-a2a9-4f71-9c9f-c671ef00f704)
+(where the red dotted line indicates the original signal)
 
 ```
 Channel Selection Results:
