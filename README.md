@@ -560,7 +560,6 @@ analyzer.plot_lsd_multichannel(data, noise_theos, freqs, name="LSD Plot", labels
 |--------------|------------------|---------|---------------------------------------------|
 | `data`       | `np.ndarray`     | —       | Input `(channels, samples)` at 250 Hz.      |
 | `noise_theos`| `list` or `np.ndarray` | — | Theoretical noise floors.                    |
-| `freqs`      | `list` or `np.ndarray` | — | Sampling frequencies per channel.            |
 | `name`       | `str`            | —       | Title and filename base.                    |
 | `labels`     | `list of str`    | —       | Channel labels for legend.                   |
 | `channels`   | `list of int`    | —       | Channel indices to plot.                    |

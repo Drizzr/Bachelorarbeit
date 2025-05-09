@@ -238,9 +238,12 @@ class Analyzer:
         save : bool, optional
             Whether to save the plot as a PNG image (default is False).
         """
+        if len(data.shape) != 3:
+            raise ValueError("Data must be a 3D array of shape (nrows, ncols, samples)")
+        
         nrows, ncols = data.shape[:2]
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, sharex=True,
-                                figsize=(33/2.54, 22/2.54), dpi=100)
+                                figsize=(35/2.54, 25/2.54), dpi=100)
         fig.suptitle(name, fontsize=14, fontweight='bold', y=0.98)
 
         for row in range(nrows):
@@ -258,7 +261,7 @@ class Analyzer:
         fig.text(0.5, 0.06, 'Time [s]', ha='center', fontsize=12)
         fig.text(0.06, 0.5, 'Magnetic Field [pT]', va='center', rotation='vertical', fontsize=12)
 
-        plt.subplots_adjust(wspace=0.1, hspace=0.2, left=0.08, bottom=0.1, right=0.98, top=0.93)
+        plt.subplots_adjust(wspace=0.1, hspace=0.2, left=0.12, bottom=0.1, right=0.98, top=0.93)
 
         if save and path:
             os.makedirs(path, exist_ok=True)
@@ -611,7 +614,7 @@ class Analyzer:
             logging.error(f"ICA failed: {e}")
             return None, None, None, None, None
 
-    def plot_lsd_multichannel(self, data, noise_theos, freqs, name, labels, channels,  path, save = False):
+    def plot_lsd_multichannel(self, data, noise_theos, channels, labels=None, path="", name = "", save = False):
 
         """
         Plots the Linear Spectral Density (LSD) of multichannel time-series data using Welch's method.
@@ -625,8 +628,6 @@ class Analyzer:
             2D array where each row corresponds to a signal from one channel (shape: channels x time).
         noise_theos : list or np.ndarray
             Theoretical noise floor values for each channel, used for reference lines.
-        freqs : list or np.ndarray
-            Sampling frequency for each channel.
         name : str
             A string used in the plot title and filename (if saved).
         labels : list of str
@@ -654,11 +655,15 @@ class Analyzer:
         fig, elem= plt.subplots(nrows=1,ncols=1, sharex=True, figsize=(10,5),dpi=100)  
 
         for ind,ch in enumerate(channels):
-            f_bins,Pxx=signal.welch(data[ch], fs=freqs[ind],nperseg=int(freqs[ind])*100, window='nuttall', return_onesided=True, scaling='density')
+            f_bins,Pxx=signal.welch(data[ch], fs=self.INTERNAL_SAMPLING_RATE, nperseg=int(self.INTERNAL_SAMPLING_RATE)*100, window='nuttall', return_onesided=True, scaling='density')
             
             Lxx=np.sqrt(Pxx)
             enbw=f_bins[1]*nenbw #calculated from acutal f_res
-            elem.loglog(f_bins,Lxx,label=f'{labels[ind]}',color=self.cmaplist[ind*int(len(self.cmaplist)/len(channels))], alpha = 0.5)
+            if labels is None:
+                elem.loglog(f_bins,Lxx,color=self.cmaplist[ind*int(len(self.cmaplist)/len(channels))], alpha = 0.5)
+            else:
+                elem.loglog(f_bins,Lxx,label=labels[ind],color=self.cmaplist[ind*int(len(self.cmaplist)/len(channels))], alpha = 0.5)
+                
             if noise_theos[0] !=np.mean(noise_theos) and (ind<len(channels)):
                 
                 elem.plot(f_bins,np.full(len(f_bins),noise_theos[ind]),
@@ -670,14 +675,14 @@ class Analyzer:
             return x/(np.sqrt(enbw)*np.sqrt(2))
 
         elem.plot(f_bins,np.full(len(f_bins),noise_theos[ind]),
-                label='Sensor theo.',color=self.cmaplist[ind+1],linestyle='-.')
+                label='Sensor theo.',color=self.cmaplist[ind],linestyle='-.')
         secax = elem.secondary_yaxis('right', functions=(forward, inverse))
         secax.set_ylabel("LS (linear amplitude) [$ pT$]")
         elem.set_xlabel('Frequency [Hz]')
         elem.set_ylabel('LSD [$ pT$/$\sqrt{Hz}$]')
         fig.suptitle('Magnetic flux linear spectral density '
                     '[$ pT$/$\sqrt{Hz}$], NENBW=1.9761 bins\n '
-                    '$f_s$=%d Hz, $f_{res}$=%.3f Hz \n' %(freqs[ind],f_bins[1])+name,size='small',
+                    '$f_s$=%d Hz, $f_{res}$=%.3f Hz \n' %(self.INTERNAL_SAMPLING_RATE,f_bins[1])+name,size='small',
                     y=1.0)
         elem.set_xlim(0.1)
         elem.legend(loc='lower center',bbox_to_anchor=(0.5,-0.25),ncol=4)
@@ -1787,7 +1792,7 @@ class Analyzer:
         animation_T = range(0, T, stride)
         ani = FuncAnimation(fig, update, frames=animation_T, interval=interval, blit=True)
         ani.save(output_file, writer='ffmpeg', dpi=200)
-        plt.tight_layout()
+        plt.tight_layout(rect=[0.15, 0.08, 0.98, 0.93])
         plt.show()
         return ani, fig
     
