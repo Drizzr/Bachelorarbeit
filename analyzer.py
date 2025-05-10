@@ -13,7 +13,8 @@ from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
 from scipy.ndimage import gaussian_filter1d
 from sklearn.decomposition import FastICA
-from matplotlib.widgets import Slider
+from matplotlib.widgets import Slider, Button
+import copy
 
 # Attempt to import local MCG_segmentation package
 try:
@@ -1796,6 +1797,339 @@ class Analyzer:
         plt.show()
         return ani, fig
     
+
+    def plot_interactive_segmentation(self, signal, pred, title="Interactive Segmentation"):
+        """
+        Creates an interactive plot for modifying wave segment boundaries.
+        
+        Args:
+            signal: The ECG signal (1D array)
+            pred: Initial model predictions (1D array of class labels)
+            title: Title for the plot
+        """
+        
+        signal = signal.squeeze()
+        pred = pred.squeeze()
+        t = np.arange(len(signal))
+        
+        # Create a deep copy of predictions that we can modify
+        editable_pred = copy.deepcopy(pred)
+        
+        # Find segment boundaries
+        boundaries = [0]  # Start of signal
+        for i in range(1, len(pred)):
+            if pred[i] != pred[i-1]:
+                boundaries.append(i)
+        boundaries.append(len(pred))  # End of signal
+        
+        # Create the figure and axis
+        fig, ax = plt.subplots(figsize=(15, 8))
+        plt.subplots_adjust(bottom=0.2)  # Make room for buttons
+        
+        # For storing the currently active boundary
+        active_boundary = [None]
+        dragging = [False]
+        selected_boundary_idx = [None]
+        
+        # Status text for user feedback
+        status_text = ["Click on a red boundary line to select, then drag to move"]
+        
+        def update_plot():
+            """Redraw the plot with current segment boundaries"""
+            ax.clear()
+            ax.plot(t, signal, color='black', linewidth=0.8)
+            ax.grid(True, linestyle=':', alpha=0.7)
+            
+            # Plot segments
+            current_start_idx = 0
+            for k in range(1, len(boundaries)):
+                end_idx = boundaries[k]
+                label_idx = editable_pred[current_start_idx]
+                label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
+                color = self.SEGMENT_COLORS.get(label_idx, 'gray')
+                ax.axvspan(t[current_start_idx], t[end_idx-1], 
+                        color=color, alpha=0.3, ec=None)
+                
+                # Add label in the middle of segment
+                mid_point = (current_start_idx + end_idx) // 2
+                ax.text(t[mid_point], ax.get_ylim()[1] * 0.9, label_name, 
+                        ha='center', fontsize=10, bbox=dict(facecolor='white', alpha=0.7))
+                
+                current_start_idx = end_idx
+            
+            # Plot boundaries for adjustment
+            for i, b in enumerate(boundaries[1:-1], 1):  # Skip first and last boundaries
+                if active_boundary[0] == b:
+                    # Active boundary with different style
+                    ax.axvline(x=t[b], color='blue', linestyle='-', linewidth=2)
+                else:
+                    ax.axvline(x=t[b], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
+            
+            # Add status text
+            ax.set_title(title)
+            ax.text(0.5, 0.01, status_text[0], transform=ax.transAxes, 
+                    ha='center', va='bottom', bbox=dict(facecolor='white', alpha=0.7))
+            fig.canvas.draw_idle()
+        
+        # Set up the boundary selection
+        def on_click(event):
+            if event.inaxes != ax:
+                return
+            
+            if dragging[0]:  # Don't select a new boundary if we're dragging
+                return
+                
+            # Find nearest boundary
+            selected_idx = None
+            min_distance = float('inf')
+            
+            for i, b in enumerate(boundaries[1:-1], 1):  # Skip first and last boundaries
+                distance = abs(t[b] - event.xdata)
+                if distance < min_distance and distance < len(t) * 0.02:  # Within 2% of signal length
+                    min_distance = distance
+                    selected_idx = i
+            
+            if selected_idx is not None:
+                active_boundary[0] = boundaries[selected_idx]
+                selected_boundary_idx[0] = selected_idx
+                status_text[0] = "Boundary selected - drag to move or click buttons below to change segment class"
+                update_plot()
+            else:
+                # If clicked away from boundaries, deselect
+                if active_boundary[0] is not None:
+                    active_boundary[0] = None
+                    selected_boundary_idx[0] = None
+                    status_text[0] = "Click on a red boundary line to select, then drag to move"
+                    update_plot()
+        
+        # Set up the boundary dragging
+        def on_mouse_move(event):
+            if event.inaxes != ax or active_boundary[0] is None or not dragging[0]:
+                return
+                
+            # Get the nearest time point
+            idx = min(max(0, int(round(event.xdata))), len(t)-1)
+            
+            # Store the original segments' classes before moving boundary
+            left_segment_class = editable_pred[boundaries[selected_boundary_idx[0]-1]]
+            right_segment_class = editable_pred[min(boundaries[selected_boundary_idx[0]]+1, len(editable_pred)-1)]
+            
+            # Don't allow overlapping with adjacent boundaries
+            idx = max(boundaries[selected_boundary_idx[0]-1] + 1, idx)
+            idx = min(boundaries[selected_boundary_idx[0]+1] - 1, idx)
+            
+            # Update boundary position
+            old_boundary = boundaries[selected_boundary_idx[0]]
+            boundaries[selected_boundary_idx[0]] = idx
+            active_boundary[0] = idx
+            
+            # Update predictions - preserve the classes on both sides
+            for i in range(boundaries[selected_boundary_idx[0]-1], idx):
+                editable_pred[i] = left_segment_class
+            for i in range(idx, boundaries[selected_boundary_idx[0]+1]):
+                editable_pred[i] = right_segment_class
+            
+            update_plot()
+        
+        def on_mouse_down(event):
+            if event.inaxes != ax or active_boundary[0] is None:
+                return
+            dragging[0] = True
+            status_text[0] = "Dragging boundary - release mouse to finish"
+        
+        def on_mouse_up(event):
+            dragging[0] = False
+            if active_boundary[0] is not None:
+                status_text[0] = "Boundary selected - drag to move or click buttons below to change segment class"
+            else:
+                status_text[0] = "Click on a red boundary line to select, then drag to move"
+            update_plot()
+        
+        # Create button axes
+        class_buttons_ax = plt.axes([0.15, 0.05, 0.7, 0.1])
+        class_buttons_ax.axis('off')
+        
+        # Add label selection buttons
+        class_buttons = []
+        button_width = 0.15
+        spacing = 0.05
+        start_pos = 0.1
+        
+        for i, class_name in self.CLASS_NAMES_MAP.items():
+            color = self.SEGMENT_COLORS.get(i, 'gray')
+            button_ax = plt.axes([start_pos + i * (button_width + spacing), 0.05, button_width, 0.05])
+            button = Button(button_ax, class_name, color=color, hovercolor='0.9')
+            
+            # Create closure with current class index
+            def make_click_handler(class_idx):
+                def click_handler(event):
+                    if active_boundary[0] is not None and selected_boundary_idx[0] is not None:
+                        # Determine which segment to change (left or right of the boundary)
+                        # Add a button to choose left/right segment options
+                        from matplotlib.widgets import RadioButtons
+                        
+                        # Create a dialog to choose which segment to modify
+                        segment_dialog_fig = plt.figure(figsize=(5, 3))
+                        plt.subplots_adjust(left=0.3)
+                        ax_radio = plt.subplot(111)
+                        radio = RadioButtons(ax_radio, ('Right segment', 'Left segment'))
+                        
+                        def apply_change(selection):
+                            if selection == 'Right segment':
+                                # Change right segment class
+                                start_idx = boundaries[selected_boundary_idx[0]]
+                                end_idx = boundaries[selected_boundary_idx[0]+1]
+                            else:  # Left segment
+                                # Change left segment class
+                                start_idx = boundaries[selected_boundary_idx[0]-1]
+                                end_idx = boundaries[selected_boundary_idx[0]]
+                            
+                            # Apply the class change
+                            editable_pred[start_idx:end_idx] = class_idx
+                            status_text[0] = f"Changed {selection.lower()} to {self.CLASS_NAMES_MAP.get(class_idx, f'Class {class_idx}')}"
+                            plt.close(segment_dialog_fig)
+                            update_plot()
+                        
+                        # Add an apply button
+                        btn_ax = plt.axes([0.5, 0.05, 0.3, 0.1])
+                        apply_btn = Button(btn_ax, 'Apply', color='lightgreen')
+                        apply_btn.on_clicked(lambda event: apply_change(radio.value_selected))
+                        
+                        plt.tight_layout()
+                        plt.show()
+                    else:
+                        status_text[0] = "Select a boundary first before changing segment class"
+                        update_plot()
+                return click_handler
+            
+            button.on_clicked(make_click_handler(i))
+            class_buttons.append(button)
+        
+        # Add a save button
+        save_ax = plt.axes([0.85, 0.05, 0.1, 0.05])
+        save_button = Button(save_ax, 'Save', color='green', hovercolor='lightgreen')
+        
+        def on_save(event):
+            plt.close(fig)
+            # Return the modified predictions
+            return editable_pred
+        
+        save_button.on_clicked(on_save)
+        
+        # Connect events
+        fig.canvas.mpl_connect('button_press_event', on_click)
+        
+        fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
+        fig.canvas.mpl_connect('button_press_event', on_mouse_down)
+        fig.canvas.mpl_connect('button_release_event', on_mouse_up)
+        
+        update_plot()
+        plt.show()
+        
+        return editable_pred
+
+
+    def plot_segmented_signal_with_edit_button(self, signal, pred, axs=None):
+        """
+        Plot segmented signal with a button to edit the segmentation
+        """
+        signal = signal.squeeze()
+        pred = pred.squeeze()
+        t = np.arange(len(signal))
+        
+        if axs is None:
+            fig, axs = plt.subplots(figsize=(15, 8))
+            standalone = True
+        else:
+            standalone = False
+            
+        # Plot the original signal and segmentation
+        axs.plot(t, signal, color='black', linewidth=0.8, label='Signal (Processed)')
+        axs.grid(True, linestyle=':', alpha=0.7)
+        
+        current_start_idx = 0
+        legend_handles_map = {}
+        line_signal, = axs.plot([], [], color='black', linewidth=0.8, label='Signal')
+        legend_handles_map['Signal'] = line_signal
+        
+        for k in range(1, len(pred)):
+            if pred[k] != pred[current_start_idx]:
+                label_idx = pred[current_start_idx]
+                label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
+                color = self.SEGMENT_COLORS.get(label_idx, 'gray')
+                h = axs.axvspan(t[current_start_idx] - 0.5, t[k] - 0.5, color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
+                if f'Pred: {label_name}' not in legend_handles_map:
+                    legend_handles_map[f'Pred: {label_name}'] = h
+                current_start_idx = k
+        
+        label_idx = pred[current_start_idx]
+        label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
+        color = self.SEGMENT_COLORS.get(label_idx, 'gray')
+        h = axs.axvspan(t[current_start_idx] - 0.5, t[-1] + 0.5, color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
+        if f'Pred: {label_name}' not in legend_handles_map:
+            legend_handles_map[f'Pred: {label_name}'] = h
+        
+        combined_handles = [legend_handles_map['Signal']]
+        combined_labels = ['Signal']
+        
+        for i in sorted(self.CLASS_NAMES_MAP.keys()):
+            label_name_pred = f'Pred: {self.CLASS_NAMES_MAP[i]}'
+            if label_name_pred in legend_handles_map:
+                patch = plt.Rectangle((0, 0), 1, 1, fc=self.SEGMENT_COLORS.get(i, 'gray'), alpha=0.3)
+                combined_handles.append(patch)
+                combined_labels.append(label_name_pred)
+        
+        axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
+        
+        # Add edit button
+        if standalone:
+            plt.subplots_adjust(bottom=0.15)
+            edit_button_ax = plt.axes([0.4, 0.05, 0.2, 0.05])
+            from matplotlib.widgets import Button
+            
+            def on_edit_button_click(event):
+                plt.close(fig)
+                edited_pred = self.plot_interactive_segmentation(signal, pred)
+                # After editing, replot with the new predictions
+                self.plot_segmented_signal(signal, edited_pred)
+                return edited_pred
+            
+            edit_button = Button(edit_button_ax, 'Edit Segments', color='lightblue', hovercolor='0.9')
+            edit_button.on_clicked(on_edit_button_click)
+        
+        if standalone:
+            plt.show()
+            
+        return pred  # Return original predictions by default
+
+    # Add this to your analysis class
+    def plot_segments_with_editing(self, signal, pred):
+        """
+        Main function to display signal with segmentation and editing capabilities
+
+        Args:
+            signal: The ECG signal (1D array)
+            pred: Initial model predictions (1D array of class labels)
+
+        Returns:
+            The (possibly edited) predictions
+        """
+        # Ensure inputs are numpy arrays
+        signal = np.asarray(signal).squeeze()
+        pred = np.asarray(pred).squeeze()
+
+        # Make a copy of the predictions that will be modified
+        edited_pred = copy.deepcopy(pred)
+
+        # Call the interactive segmentation function
+        try:
+            edited_pred = self.plot_interactive_segmentation(signal, edited_pred)
+        except Exception as e:
+            print(f"Warning: Interactive editing failed with error: {e}")
+            print("Returning original predictions")
+
+        # Make sure to return a numpy array with the correct shape
+        return np.asarray(edited_pred)
 
 
 if __name__ == "__main__":
