@@ -13,7 +13,7 @@ from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
 from scipy.ndimage import gaussian_filter1d
 from sklearn.decomposition import FastICA
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, RadioButtons
 import copy
 
 # Attempt to import local MCG_segmentation package
@@ -696,11 +696,9 @@ class Analyzer:
             plt.savefig(path+f'{name}_LSD.png')
         plt.show()
 
-    def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None):
+    def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None, show=True):
         """Plot a 2D projection of the heart vector with metrics and filled area."""
 
-        import matplotlib.pyplot as plt
-        import numpy as np
 
         standalone_plot = ax is None
         if standalone_plot:
@@ -758,7 +756,7 @@ class Analyzer:
                 avg_angle_deg = np.degrees(avg_angle_rad)
 
 
-                metrics_text = (f'Area: {area:.3f}\n'
+                metrics_text = (f'\n Area: {area:.3f}\n'
                                 f'T-Dist: {t_distance:.2f}\n'
                                 f'Compact: {compactness:.4f}\n'
                                 f'Angle: {avg_angle_deg:.1f}°')
@@ -800,12 +798,12 @@ class Analyzer:
             plt.suptitle(f"Heart Vector Projection: {proj_name}{' - ' + title_suffix if title_suffix else ''}",
                         fontsize=16, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-            plt.show()
+            if show: plt.show()
 
         # print out the metrics
         logging.info(f"Metrics for {proj_name}: {metrics_text}")
 
-        return ax
+        return ax, {"Area": area, "T-Dist": t_distance, "Compact": compactness, "Angle": avg_angle_deg} 
 
     def plot_all_heart_vector_projections(self, heart_vector_components, title_suffix="", save_path=None):
         """Plot XY, XZ, and YZ projections of the heart vector.
@@ -1194,18 +1192,18 @@ class Analyzer:
                     heart_rate = 60 / mean_rr_sec
                     hrv_sdnn_ms = np.std(plausible_rr_ms)  # SDNN in ms
 
-                    print(f"Heart Rate: {heart_rate:.2f} bpm")
-                    print(f"Heart Rate Variability (SDNN): {hrv_sdnn_ms:.2f} ms")
-                    print(f"Number of detected peaks: {len(peak_positions)}")
-                    print(f"Number of plausible RR intervals used: {len(plausible_rr_ms)}")
+                    logging.info(f"Heart Rate: {heart_rate:.2f} bpm")
+                    logging.info(f"Heart Rate Variability (SDNN): {hrv_sdnn_ms:.2f} ms")
+                    logging.info(f"Number of detected peaks: {len(peak_positions)}")
+                    logging.info(f"Number of plausible RR intervals used: {len(plausible_rr_ms)}")
                 else:
-                    print("Not enough plausible RR intervals detected to calculate stable HR/HRV.")
-                    print(f"Number of detected peaks: {len(peak_positions)}")
+                    logging.warning("Not enough plausible RR intervals detected to calculate stable HR/HRV.")
+                    logging.warning(f"Number of detected peaks: {len(peak_positions)}")
 
             elif len(peak_positions) == 1:
-                print("Only one peak detected. Cannot calculate HR/HRV.")
+                logging.warning("Only one peak detected. Cannot calculate HR/HRV.")
             else:
-                print("No peaks detected.")
+                logging.warning("No peaks detected.")
 
         return peak_positions, best_channel_idx, labels, heart_rate, hrv_sdnn_ms
 
@@ -1295,10 +1293,10 @@ class Analyzer:
 
         if print_heart_rate:
             if len(all_heart_rates) > 0:
-                print(f"Average Heart Rate: {avg_heart_rate:.2f} +/- {std_deviation_hr:.2f} bpm")
-                print(f"Average Heart Rate Variability (SDNN): {avg_hrv_sdnn:.2f} +/- {std_deviation_hrv:.2f} ms")
+                logging.info(f"Average Heart Rate: {avg_heart_rate:.2f} +/- {std_deviation_hr:.2f} bpm")
+                logging.info(f"Average Heart Rate Variability (SDNN): {avg_hrv_sdnn:.2f} +/- {std_deviation_hrv:.2f} ms")
             else:
-                print("No valid heart rates detected across channels.")
+                logging.warning("No valid heart rates detected across channels.")
 
         return peak_positions_all_channels, cleanest_channel, labels, avg_heart_rate, avg_hrv_sdnn
     
@@ -1798,6 +1796,39 @@ class Analyzer:
         return ani, fig
     
 
+    def plot_segments_with_editing(self, signal, pred):
+        """
+        Main function to display signal with segmentation and editing capabilities
+        
+        Args:
+            signal: The ECG signal (1D array)
+            pred: Initial model predictions (1D array of class labels)
+        
+        Returns:
+            The (possibly edited) predictions
+        """
+        # Create a deep copy of the predictions to avoid modifying the original
+        import copy
+        import numpy as np
+        
+        # Ensure inputs are numpy arrays
+        signal = np.asarray(signal).squeeze()
+        pred = np.asarray(pred).squeeze()
+        
+        # Make a copy of the predictions that will be modified
+        edited_pred = copy.deepcopy(pred)
+        
+        # Call the interactive segmentation function
+        try:
+            edited_pred = self.plot_interactive_segmentation(signal, edited_pred)
+        except Exception as e:
+            print(f"Warning: Interactive editing failed with error: {e}")
+            print("Returning original predictions")
+        
+        # Make sure to return a numpy array with the correct shape
+        return np.asarray(edited_pred)
+
+
     def plot_interactive_segmentation(self, signal, pred, title="Interactive Segmentation"):
         """
         Creates an interactive plot for modifying wave segment boundaries.
@@ -1806,11 +1837,18 @@ class Analyzer:
             signal: The ECG signal (1D array)
             pred: Initial model predictions (1D array of class labels)
             title: Title for the plot
+            
+        Returns:
+            Modified predictions array
         """
+        import matplotlib.pyplot as plt
+        from matplotlib.widgets import Button
+        import numpy as np
+        import copy
         
-        signal = signal.squeeze()
-        pred = pred.squeeze()
-        t = np.arange(len(signal))
+        # Ensure inputs are numpy arrays with correct dimensions
+        signal = np.asarray(signal).squeeze()
+        pred = np.asarray(pred).squeeze()
         
         # Create a deep copy of predictions that we can modify
         editable_pred = copy.deepcopy(pred)
@@ -1871,7 +1909,9 @@ class Analyzer:
                     ha='center', va='bottom', bbox=dict(facecolor='white', alpha=0.7))
             fig.canvas.draw_idle()
         
-        # Set up the boundary selection
+        # Create time array
+        t = np.arange(len(signal))
+        
         def on_click(event):
             if event.inaxes != ax:
                 return
@@ -1964,39 +2004,15 @@ class Analyzer:
             def make_click_handler(class_idx):
                 def click_handler(event):
                     if active_boundary[0] is not None and selected_boundary_idx[0] is not None:
-                        # Determine which segment to change (left or right of the boundary)
-                        # Add a button to choose left/right segment options
-                        from matplotlib.widgets import RadioButtons
-                        
-                        # Create a dialog to choose which segment to modify
-                        segment_dialog_fig = plt.figure(figsize=(5, 3))
-                        plt.subplots_adjust(left=0.3)
-                        ax_radio = plt.subplot(111)
-                        radio = RadioButtons(ax_radio, ('Right segment', 'Left segment'))
-                        
-                        def apply_change(selection):
-                            if selection == 'Right segment':
-                                # Change right segment class
-                                start_idx = boundaries[selected_boundary_idx[0]]
-                                end_idx = boundaries[selected_boundary_idx[0]+1]
-                            else:  # Left segment
-                                # Change left segment class
-                                start_idx = boundaries[selected_boundary_idx[0]-1]
-                                end_idx = boundaries[selected_boundary_idx[0]]
-                            
-                            # Apply the class change
+                        try:
+                            # Change right segment class (simpler approach to avoid segfault)
+                            start_idx = boundaries[selected_boundary_idx[0]]
+                            end_idx = boundaries[selected_boundary_idx[0]+1]
                             editable_pred[start_idx:end_idx] = class_idx
-                            status_text[0] = f"Changed {selection.lower()} to {self.CLASS_NAMES_MAP.get(class_idx, f'Class {class_idx}')}"
-                            plt.close(segment_dialog_fig)
+                            status_text[0] = f"Changed segment to {self.CLASS_NAMES_MAP.get(class_idx, f'Class {class_idx}')}"
                             update_plot()
-                        
-                        # Add an apply button
-                        btn_ax = plt.axes([0.5, 0.05, 0.3, 0.1])
-                        apply_btn = Button(btn_ax, 'Apply', color='lightgreen')
-                        apply_btn.on_clicked(lambda event: apply_change(radio.value_selected))
-                        
-                        plt.tight_layout()
-                        plt.show()
+                        except Exception as e:
+                            print(f"Error changing segment class: {e}")
                     else:
                         status_text[0] = "Select a boundary first before changing segment class"
                         update_plot()
@@ -2009,16 +2025,19 @@ class Analyzer:
         save_ax = plt.axes([0.85, 0.05, 0.1, 0.05])
         save_button = Button(save_ax, 'Save', color='green', hovercolor='lightgreen')
         
+        # Global variable to store result
+        result = [editable_pred]
+        
         def on_save(event):
-            plt.close(fig)
-            # Return the modified predictions
-            return editable_pred
+            try:
+                plt.close(fig)
+            except:
+                pass
         
         save_button.on_clicked(on_save)
         
         # Connect events
         fig.canvas.mpl_connect('button_press_event', on_click)
-        
         fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
         fig.canvas.mpl_connect('button_press_event', on_mouse_down)
         fig.canvas.mpl_connect('button_release_event', on_mouse_up)
@@ -2026,111 +2045,5 @@ class Analyzer:
         update_plot()
         plt.show()
         
+        # Return the modified predictions
         return editable_pred
-
-
-    def plot_segmented_signal_with_edit_button(self, signal, pred, axs=None):
-        """
-        Plot segmented signal with a button to edit the segmentation
-        """
-        signal = signal.squeeze()
-        pred = pred.squeeze()
-        t = np.arange(len(signal))
-        
-        if axs is None:
-            fig, axs = plt.subplots(figsize=(15, 8))
-            standalone = True
-        else:
-            standalone = False
-            
-        # Plot the original signal and segmentation
-        axs.plot(t, signal, color='black', linewidth=0.8, label='Signal (Processed)')
-        axs.grid(True, linestyle=':', alpha=0.7)
-        
-        current_start_idx = 0
-        legend_handles_map = {}
-        line_signal, = axs.plot([], [], color='black', linewidth=0.8, label='Signal')
-        legend_handles_map['Signal'] = line_signal
-        
-        for k in range(1, len(pred)):
-            if pred[k] != pred[current_start_idx]:
-                label_idx = pred[current_start_idx]
-                label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
-                color = self.SEGMENT_COLORS.get(label_idx, 'gray')
-                h = axs.axvspan(t[current_start_idx] - 0.5, t[k] - 0.5, color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
-                if f'Pred: {label_name}' not in legend_handles_map:
-                    legend_handles_map[f'Pred: {label_name}'] = h
-                current_start_idx = k
-        
-        label_idx = pred[current_start_idx]
-        label_name = self.CLASS_NAMES_MAP.get(label_idx, f"Class {label_idx}")
-        color = self.SEGMENT_COLORS.get(label_idx, 'gray')
-        h = axs.axvspan(t[current_start_idx] - 0.5, t[-1] + 0.5, color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
-        if f'Pred: {label_name}' not in legend_handles_map:
-            legend_handles_map[f'Pred: {label_name}'] = h
-        
-        combined_handles = [legend_handles_map['Signal']]
-        combined_labels = ['Signal']
-        
-        for i in sorted(self.CLASS_NAMES_MAP.keys()):
-            label_name_pred = f'Pred: {self.CLASS_NAMES_MAP[i]}'
-            if label_name_pred in legend_handles_map:
-                patch = plt.Rectangle((0, 0), 1, 1, fc=self.SEGMENT_COLORS.get(i, 'gray'), alpha=0.3)
-                combined_handles.append(patch)
-                combined_labels.append(label_name_pred)
-        
-        axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
-        
-        # Add edit button
-        if standalone:
-            plt.subplots_adjust(bottom=0.15)
-            edit_button_ax = plt.axes([0.4, 0.05, 0.2, 0.05])
-            from matplotlib.widgets import Button
-            
-            def on_edit_button_click(event):
-                plt.close(fig)
-                edited_pred = self.plot_interactive_segmentation(signal, pred)
-                # After editing, replot with the new predictions
-                self.plot_segmented_signal(signal, edited_pred)
-                return edited_pred
-            
-            edit_button = Button(edit_button_ax, 'Edit Segments', color='lightblue', hovercolor='0.9')
-            edit_button.on_clicked(on_edit_button_click)
-        
-        if standalone:
-            plt.show()
-            
-        return pred  # Return original predictions by default
-
-    # Add this to your analysis class
-    def plot_segments_with_editing(self, signal, pred):
-        """
-        Main function to display signal with segmentation and editing capabilities
-
-        Args:
-            signal: The ECG signal (1D array)
-            pred: Initial model predictions (1D array of class labels)
-
-        Returns:
-            The (possibly edited) predictions
-        """
-        # Ensure inputs are numpy arrays
-        signal = np.asarray(signal).squeeze()
-        pred = np.asarray(pred).squeeze()
-
-        # Make a copy of the predictions that will be modified
-        edited_pred = copy.deepcopy(pred)
-
-        # Call the interactive segmentation function
-        try:
-            edited_pred = self.plot_interactive_segmentation(signal, edited_pred)
-        except Exception as e:
-            print(f"Warning: Interactive editing failed with error: {e}")
-            print("Returning original predictions")
-
-        # Make sure to return a numpy array with the correct shape
-        return np.asarray(edited_pred)
-
-
-if __name__ == "__main__":
-    analyzer = Analyzer()

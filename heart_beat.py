@@ -9,10 +9,28 @@ import os
 import json
 import numpy as np
 
-Patient = "P005" #"P015/P015_S01_D2024-07-06"
-run = None
+def get_user_inputs():
+    print("🫀 ECG Vector Metrics Export Tool 🧪\n")
+    
+    patient = input("Enter patient ID (e.g., P004): ").strip()
+    while not patient.startswith("P"):
+        print("❌ Invalid patient ID. It should start with 'P' (e.g., P004).")
+        patient = input("Enter patient ID (e.g., P004): ").strip()
+    
+    run = input("Enter run ID (e.g., S00) if left empty this will defualt to the first run: ").strip()
+    if not run:
+        run = None
+    
+    print(f"\n✅ Patient: {patient} | Run: {run}\n")
+    return patient, run
+
+# Usage
+Patient, run = get_user_inputs()
 
 
+######
+# Load patient data
+######
 
 def load_patient_data(patient: str, run: str = None):
     """
@@ -81,6 +99,10 @@ for k in analysis.key_list:
 (x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=True)
 
 
+########
+# Apply ICA filtering
+########
+
 x_data_intervall = x_data[:, :, intervall_start:intervall_end]
 y_data_intervall = y_data[:, :, intervall_start:intervall_end]
 z_data_intervall = z_data[:, :, intervall_start:intervall_end]
@@ -88,17 +110,14 @@ time_intervall = time[intervall_start:intervall_end]
 single_run_intervall = single_run[:, intervall_start:intervall_end]
 
 
-#analysis.plot4x4(z_data[:, :, 250:1250], time[250:1250], name="z_data")
-
 x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0])
 y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True)
 z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2])
-
-#print(ica_components.shape)
-#analysis.plot_sensor_matrix(ica_components[:, :500].reshape(4, 4, -1), time_intervall[:500], name="ica_components")
-
-
 single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
+
+########
+# Visualize the filtered data and apply window averaging
+########
 
 
 analysis.butterfly_plot(single_run_filtered, time_intervall, 48, f"Original {key}")
@@ -136,7 +155,7 @@ analysis.plot_sensor_matrix(y_data_window, time_window, name="Y-Field")
 analysis.plot_sensor_matrix(z_data_window, time_window, name="Z-Field")
 
 # Use a sample vector for projection
-f1_data = np.array([x_data_window[1, 0, :], y_data_window[1, 0, :]])
+f1_data = np.array([x_data_window[0, 1, :], y_data_window[0, 1, :]])
 print(f"f1_data shape: {f1_data.shape}")
 
 # --- Find cleanest channel ---
@@ -144,65 +163,88 @@ best_channel, labels, confidence, _ = analysis.find_cleanest_channel(
     avg_channels, confidence_weight=0.7, plausibility_weight=0.3
 )
 
-# With this line
+
+# option of manual segmentation of the cleanest channel
 edited_labels = analysis.plot_segments_with_editing(avg_channels[best_channel], labels[best_channel])
-
-
-
-print("#" * 90)
-print("T-Wave Segment Extraction")
-print("#" * 90)
 
 # --- Extract T-wave segment ---
 mask_t = edited_labels == 3
 mask_t[:110] = False  # Ignore early segment
 mask_t[175:] = False  # Ignore late segment
 
-print(mask_t)
+t_indices = np.where(mask_t)[0]
+t_start, t_end = t_indices[0], t_indices[-1] 
 
-t_segment = None
-if np.any(mask_t): 
-    t_indices = np.where(mask_t)[0]
-    t_start, t_end = t_indices[0], t_indices[-1] 
-    t_segment = f1_data[:, t_start:t_end]
 
-    plt.figure()
-    plt.plot(t_segment[0], label='X')
-    plt.plot(t_segment[1], label='Y')
-    plt.legend()
-    plt.title("T Segment (after index 75)")
-    plt.show()
 
-    analysis.plot_heart_vector_projection(t_segment[0], t_segment[1], "xy-Projection", "T Segment")
-else:
-    print("No T-wave segment found!")
-
-print("#" * 90)
-print("QRS segment")
-print("#" * 90)
-
-# --- Segment from end of QRS to T-peak ---
+# --- Extract QRS-wave segment ---
 mask_qrs = edited_labels == 2
 mask_qrs[:50] = False
 mask_qrs[-50:] = False
+t_start_qrs = np.where(mask_qrs)[0][0] 
+t_end_qrs = np.where(mask_qrs)[0][-1] 
 
-if np.any(mask_qrs) and t_segment is not None:
-    t_start_qrs = np.where(mask_qrs)[0][0] 
-    t_end_qrs = np.where(mask_qrs)[0][-1] 
-    # QRS  segment
-    segment_qrs = f1_data[:, t_start_qrs:t_end_qrs]
 
-    plt.figure()
-    plt.plot(segment_qrs[0])
-    plt.plot(segment_qrs[1])
-    plt.title("QRS Segment")
-    plt.legend()
-    plt.show()
+for row_idx, row in enumerate(analysis.quspin_position_list):
+    for col_idx, quspin_id in enumerate(row):
+        sensor_data = []
+        suffixes = []
+        for suffix, target in zip(['_x', '_y', '_z'], [x_data_window, y_data_window, z_data_window]):
+            channel_name = quspin_id + suffix
+            channel_index = analysis.quspin_channel_dict.get(channel_name)
+            if channel_index is None or (analysis.sensor_channels_to_exclude.get(key) and channel_name in analysis.sensor_channels_to_exclude.get(key, [])) or \
+            (analysis.sensor_channels_to_exclude.get(key) and f"*{suffix}" in analysis.sensor_channels_to_exclude.get(key, [])):
+                continue
 
-    analysis.plot_heart_vector_projection(
-        segment_qrs[0], segment_qrs[1],
-        "xy-Projection", "QRS Segment"
-    )
-else:
-    print("QRS or T segment not found!")
+            channel_index = abs(int(channel_index))
+            sensor_data.append(target[row_idx, col_idx, :])
+            suffixes.append(suffix)
+        
+        if sensor_data:
+            if len(sensor_data) == 3:
+                sensor_data = sensor_data[:2]
+                suffixes = suffixes[:2]
+            sensor_data = np.array(sensor_data)
+
+            if "_x" in suffixes and "_y" in suffixes:
+                name = "xy-Projection"
+            elif "_x" in suffixes and "_z" in suffixes:
+                name = "xz-Projection"
+            elif "_y" in suffixes and "_z" in suffixes:
+                name = "yz-Projection"
+
+
+            print(f"processing Sensor: {quspin_id}")
+
+            t_segment = sensor_data[:, t_start:t_end]
+
+            _, t_metrics = analysis.plot_heart_vector_projection(t_segment[0], t_segment[1], name, "T Segment", show=False)
+            qrs_segment = sensor_data[:, t_start_qrs:t_end_qrs]
+            _, qrs_metrics = analysis.plot_heart_vector_projection(qrs_segment[0], qrs_segment[1], name, "QRS Segment",  show=False)
+            st_segment = sensor_data[:, t_end_qrs + 1:t_start]
+            _, st_metrics = analysis.plot_heart_vector_projection(st_segment[0], st_segment[1], name, "ST Segment",  show=False)
+
+            out_put = np.stack((t_metrics, qrs_metrics, st_metrics), axis=0)
+
+
+            row = {"patient": Patient, "run": run if run else "S01"}
+
+            for prefix, metrics in zip(["t", "qrs", "st"], [t_metrics, qrs_metrics, st_metrics]):
+                if isinstance(metrics, dict):
+                    for k, v in metrics.items():
+                        row[f"{prefix}_{k}"] = v
+
+            output_file = os.path.join(f"Results/{quspin_id}_{name[:2]}.csv")
+
+            if os.path.exists(output_file):
+                existing_data = pd.read_csv(output_file)
+                updated_data = pd.concat([existing_data, pd.DataFrame([row])], ignore_index=True)
+                updated_data.to_csv(output_file, index=False)  # <-- Missing in your original code
+            else:
+                df = pd.DataFrame([row])
+                df.to_csv(output_file, index=False)  # <-- Missing in your original code
+
+
+
+
 
