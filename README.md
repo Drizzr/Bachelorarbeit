@@ -685,7 +685,8 @@ edited_predictions = analyzer.plot_segmented_signal_with_editing(signal, pred)
 
 
 **Example Output**:
-![Segmented Signal](https://github.com/user-attachments/assets/b84801ec-2e0e-4c94-9d95-8b0da44f2fd3)
+![Segmented Signal](https://github.com/user-attachments/assets/5cb5ecdd-8fd6-42a4-a17c-af545bd4eb76)
+
 
 
 #### `butterfly_plot`
