@@ -34,6 +34,7 @@
     - [plot_heart_vector_projection](#plot_heart_vector_projection)
     - [plot_all_heart_vector_projections](#plot_all_heart_vector_projections)
     - [plot_segmented_signal](#plot_segmented_signal)
+    - [plot_segmented_signal_with_editing](#plot_segmented_signal_with_editing)
     - [butterfly_plot](#butterfly_plot)
     - [create_heat_map_animation](#create_heat_map_animation)
 - [Example Workflow](#example-workflow)
@@ -661,13 +662,26 @@ analyzer.plot_segmented_signal(signal, pred)
 
 
 #### `plot_segmented_signal_with_editing`
-Displays an ECG signal with interactive segmentation and editing capabilities, allowing users to adjust segment boundaries and change segment classifications.
+Visualizes an ECG signal with interactive segmentation, enabling users to modify segment boundaries and reclassify segments through a graphical interface. The function displays the signal with color-coded segments and provides tools for adjusting boundaries and segment labels.
 
-**Steps**:
-1. Creates a deep copy of the input predictions to avoid modifying the original.
-2. Converts input signal and predictions to NumPy arrays.
-3. Calls the interactive segmentation function to display the plot and handle user edits.
-4. Returns the modified predictions as a NumPy array.
+**Functionality**:
+1. Creates a deep copy of the input predictions to preserve the original data.
+2. Converts the input signal and predictions to NumPy arrays for processing.
+3. Launches an interactive Matplotlib plot with draggable segment boundaries and buttons for segment reclassification.
+4. Handles user interactions for editing segment boundaries and labels, updating the plot in real-time.
+5. Returns the modified predictions as a NumPy array.
+
+**User Interface**:
+- **Plot Display**: The ECG signal is plotted as a black line on a grid, with segments shaded in colors based on their class labels (defined in `self.SEGMENT_COLORS`). Segment boundaries are marked with red dashed lines (blue when selected).
+- **Segment Labels**: Each segment displays its class name (from `self.CLASS_NAMES_MAP`) at the top center of the segment for easy identification.
+- **Boundary Interaction**: 
+  - Click a red boundary line to select it (turns blue). The selection threshold is within 2% of the signal length.
+  - Drag the selected boundary to adjust its position, constrained to avoid overlapping adjacent boundaries.
+  - Click away from boundaries to deselect.
+- **Class Selection Buttons**: Located at the bottom of the plot, buttons correspond to class labels (from `self.CLASS_NAMES_MAP`) with associated colors. Clicking a button reclassifies the segment to the right of the selected boundary.
+- **Save Button**: A green "Save" button closes the plot and returns the edited predictions.
+- **Status Text**: A text box at the bottom provides feedback (e.g., "Click on a red boundary line to select, then drag to move" or "Dragging boundary - release mouse to finish").
+
 
 **Usage**:
 ```python
