@@ -150,15 +150,18 @@ def main():
         print(f"Error initializing datasets: {e}"); sys.exit(1)
     # --- End Dataset & DataLoader Setup ---
 
+    try:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
 
-    # --- Device Setup ---
-    if torch.cuda.is_available(): 
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available(): 
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
+        print(f"Using device: {device}")
+    except Exception as e:
+        print(f"Failed to determine device, defaulting to CPU. Error: {e}")
         device = torch.device("cpu")
-    else: 
-        device = torch.device("cpu")
-    print(f"Using device: {device}")
 
     # --- End Device Setup ---
 

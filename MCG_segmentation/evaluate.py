@@ -18,7 +18,20 @@ from model.data_loader import ECGFullDataset
 CLASS_NAMES = {0: "No Wave", 1: "P Wave", 2: "QRS", 3: "T Wave"}
 PLOT_COLORS = {0: "silver", 1: "blue", 2: "red", 3: "green"}
 SEGMENT_COLORS = {0: "whitesmoke", 1: "lightblue", 2: "lightcoral", 3: "lightgreen"}
-DEVICE = torch.device("cpu")
+
+
+try:
+    if torch.cuda.is_available():
+        DEVICE = torch.device("cuda")
+
+    elif torch.backends.mps.is_available():
+        DEVICE = torch.device("mps")
+    else:
+        DEVICE = torch.device("cpu")
+    print(f"Using device: {DEVICE}")
+except Exception as e:
+    print(f"Failed to determine device, defaulting to CPU. Error: {e}")
+    DEVICE = torch.device("cpu")
 
 
 def load_model(load_dir, device):

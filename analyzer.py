@@ -52,6 +52,8 @@ class Analyzer:
     try:
         if torch.cuda.is_available():
             DEVICE = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            DEVICE = torch.device("mps")
         else:
             DEVICE = torch.device("cpu")
         logging.info(f"Using device: {DEVICE}")
@@ -1807,9 +1809,6 @@ class Analyzer:
         Returns:
             The (possibly edited) predictions
         """
-        # Create a deep copy of the predictions to avoid modifying the original
-        import copy
-        import numpy as np
         
         # Ensure inputs are numpy arrays
         signal = np.asarray(signal).squeeze()

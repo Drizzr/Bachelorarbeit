@@ -65,6 +65,8 @@ The `Analyzer` class requires several Python libraries. Install them by running:
 pip install -r requirements.txt
 ```
 
+(Note that all of this code was developed and tested using python 3.11.2 64-bit. Newer versions should work as well, although you might have to use different version of the libaries listed in the requirements.txt file)
+
 Required libraries include:
 - `numpy`, `scipy`, `matplotlib`, `torch`, `sklearn`, `nptdms`, `logging`, `ffmpeg-python` (for animations).
 
