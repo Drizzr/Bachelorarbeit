@@ -1,0 +1,288 @@
+{
+  "P004": {
+    "gender": "female",
+    "height": 1.70,
+    "age": 43,
+    "runs": {
+      "S00": {
+        "sensors_to_exclude": {},
+        "interval_start": 1250,
+        "interval_end": 10000,
+        "ICA_filter": [0.78, 0.80, 0.75],
+        "ARVC": false
+      },
+      "S02": {
+        "sensors_to_exclude": {},
+        "interval_start": 12500,
+        "interval_end": 17500,
+        "ICA_filter": [0.78, 0.80, 0.75],
+        "ARVC": false
+      }
+    }
+  },
+  "P005": {
+    "gender": "female",
+    "height": 1.72,
+    "age": 41,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {},
+        "interval_start": 12500,
+        "interval_end": 17000,
+        "ICA_filter": [0.75, 0.78, 0.81],
+        "ARVC": false
+      }
+    }
+  },
+  "P007": {
+    "gender": "male",
+    "height": 1.79,
+    "age": 27,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {},
+        "interval_start": 15000,
+        "interval_end": 17500,
+        "ICA_filter": [0.75, 0.74, 0.71],
+        "ARVC": false
+      }
+    }
+  },
+  "P008": {
+    "gender": "male",
+    "height": 1.68,
+    "age": 24,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {},
+        "interval_start": 1250,
+        "interval_end": 11250,
+        "ICA_filter": [0.75, 0.74, 0.71],
+        "ARVC": false
+      }
+    }
+  },
+  "P009": {
+    "gender": "female",
+    "height": 1.65,
+    "age": 31,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {},
+        "interval_start": 1250,
+        "interval_end": 11250,
+        "ICA_filter": [0.71, 0.74, 0.73],
+        "ARVC": false
+      }
+    }
+  },
+  "P010": {
+    "gender": "female",
+    "height": 1.68,
+    "age": 42,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {},
+        "interval_start": 1250,
+        "interval_end": 11250,
+        "ICA_filter": [0.78, 0.81, 0.79],
+        "ARVC": false
+      }
+    }
+  },
+  "P011": {
+    "gender": "female",
+    "height": 1.68,
+    "age": 22,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Rueckenlage": ["F1_y", "OO_y", "OQ_y"]
+        },
+        "interval_start": 1250,
+        "interval_end": 11250,
+        "ICA_filter": [0.70, 0.78, 0.73],
+        "ARVC": false
+      }
+    }
+  },
+  "P012": {
+    "gender": "male",
+    "height": 1.74,
+    "age": 23,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {},
+        "interval_start": 1250,
+        "interval_end": 11250,
+        "ICA_filter": [0.79, 0.75, 0.75],
+        "ARVC": false
+      }
+    }
+  },
+  "P013": {
+    "gender": "female",
+    "height": "",
+    "age": 53,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x", "F0_y", "F0_z"]
+        },
+        "interval_start": 5000,
+        "interval_end": 15000,
+        "ICA_filter": [0.74, 0.73, 0.77],
+        "ARVC": true
+      }
+    }
+  },
+  "P014": {
+    "gender": "male",
+    "height": "",
+    "age": 23,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x"],
+          "Ruecken": ["NL_x"]
+        },
+        "interval_start": 5000,
+        "interval_end": 15000,
+        "ICA_filter": [0.70, 0.70, 0.75],
+        "ARVC": true
+      }
+    }
+  },
+  "P015": {
+    "gender": "male",
+    "height": "",
+    "age": 39,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x", "EY_x"],
+          "Ruecken": ["NL_x"]
+        },
+        "interval_start": 8750,
+        "interval_end": 9500,
+        "ICA_filter": [0.70, 0.72, 0.70],
+        "ARVC": true
+      }
+    }
+  },
+  "P016": {
+    "gender": "male",
+    "height": "",
+    "age": 46,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brust": ["NL_x"]
+        },
+        "interval_start": 2500,
+        "interval_end": 5500,
+        "ICA_filter": [0.72, 0.77, 0.77],
+        "ARVC": true
+      }
+    }
+  },
+  "P017": {
+    "gender": "male",
+    "height": 1.89,
+    "age": 23,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x", "F0_y"],
+          "Rueckenlage": ["NL_x", "F0_y"]
+        },
+        "interval_start": 2500,
+        "interval_end": 5500,
+        "ICA_filter": [0.76, 0.70, 0.72],
+        "ARVC": false
+      }
+    }
+  },
+  "P022": {
+    "gender": "female",
+    "height": "",
+    "age": 60,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x", "C1_x", "C1_y"]
+        },
+        "interval_start": 15000,
+        "interval_end": 17500,
+        "ICA_filter": [0.80, 0.80, 0.78],
+        "ARVC": true
+      }
+    }
+  },
+  "P024": {
+    "gender": "female",
+    "height": "",
+    "age": 21,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x"],
+          "Rueckenlage": ["NL_x"]
+        },
+        "interval_start": 2500,
+        "interval_end": 5000,
+        "ICA_filter": [0.72, 0.73, 0.71],
+        "ARVC": true
+      }
+    }
+  },
+  "P027": {
+    "gender": "female",
+    "height": "",
+    "age": 56,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Bauchlage": ["NL_x"]
+        },
+        "interval_start": 5500,
+        "interval_end": 6375,
+        "ICA_filter": [0.68, 0.74, 0.73],
+        "ARVC": true
+      }
+    }
+  },
+  "P028": {
+    "gender": "male",
+    "height": "",
+    "age": 30,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Bauchlage": ["NL_x"]
+        },
+        "interval_start": 8800,
+        "interval_end": 12500,
+        "ICA_filter": [0.69, 0.71, 0.76],
+        "ARVC": true
+      }
+    }
+  },
+  "P033": {
+    "gender": "",
+    "height": "",
+    "age": 25,
+    "runs": {
+      "S01": {
+        "sensors_to_exclude": {
+          "Brustlage": ["NL_x", "OT_y", "OR_y", "OT_z", "OR_x"],
+          "Rueckenlage": ["NL_x", "OY_x", "OR_x", "OT_y", "OR_y", "*_z"]
+        },
+        "interval_start": 1000,
+        "interval_end": 5000,
+        "ICA_filter": [0.76, 0.70, 0.76],
+        "ARVC": false
+      }
+    }
+  }
+}
