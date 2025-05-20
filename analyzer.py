@@ -1820,7 +1820,7 @@ class Analyzer:
         
         # Call the interactive segmentation function
         try:
-            edited_pred = self.plot_interactive_segmentation(signal, edited_pred)
+            edited_pred = self._plot_interactive_segmentation(signal, edited_pred)
         except Exception as e:
             print(f"Warning: Interactive editing failed with error: {e}")
             print("Returning original predictions")
@@ -1829,7 +1829,7 @@ class Analyzer:
         return np.asarray(edited_pred)
 
 
-    def plot_interactive_segmentation(self, signal, pred, title="Interactive Segmentation"):
+    def _plot_interactive_segmentation(self, signal, pred, title="Interactive Segmentation"):
         """
         Creates an interactive plot for modifying wave segment boundaries.
         

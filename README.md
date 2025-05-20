@@ -659,6 +659,35 @@ analyzer.plot_segmented_signal(signal, pred)
 **Example Output**:
 ![Segmented Signal](https://github.com/user-attachments/assets/b84801ec-2e0e-4c94-9d95-8b0da44f2fd3)
 
+
+#### `plot_segmented_signal_with_editing`
+Displays an ECG signal with interactive segmentation and editing capabilities, allowing users to adjust segment boundaries and change segment classifications.
+
+**Steps**:
+1. Creates a deep copy of the input predictions to avoid modifying the original.
+2. Converts input signal and predictions to NumPy arrays.
+3. Calls the interactive segmentation function to display the plot and handle user edits.
+4. Returns the modified predictions as a NumPy array.
+
+**Usage**:
+```python
+edited_predictions = analyzer.plot_segmented_signal_with_editing(signal, pred)
+```
+
+**Parameters**:
+| Parameter  | Type         | Default | Description                                       |
+|------------|--------------|---------|---------------------------------------------------|
+| `signal`   | `np.ndarray` | —       | 1D array of the ECG signal.                      |
+| `pred`     | `np.ndarray` | —       | 1D array of initial model predictions (class labels). |
+
+**Returns**:
+- `np.ndarray`: Edited predictions array with the same shape as the input `pred`.
+
+
+**Example Output**:
+![Segmented Signal](https://github.com/user-attachments/assets/b84801ec-2e0e-4c94-9d95-8b0da44f2fd3)
+
+
 #### `butterfly_plot`
 Plots multi-channel time-series data overlaid on a single axis.
 
