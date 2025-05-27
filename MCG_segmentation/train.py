@@ -140,8 +140,8 @@ def main():
             print(f"Warning: Validation dataset is empty. Check path: {args.data_dir_val}")
         
         print("Setting up dataloaders...")
-        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=args.num_workers, pin_memory=True)
-        val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, drop_last=False, num_workers=args.num_workers, pin_memory=True)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, num_workers=args.num_workers,  pin_memory=True if device.type == "cuda" else False)
+        val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, drop_last=False, num_workers=args.num_workers,  pin_memory=True if device.type == "cuda" else False)
         print(f"Training samples: {len(train_dataset)}, Validation samples: {len(val_dataset)}")
         print(f"Training batches: {len(train_loader)}, Validation batches: {len(val_loader)}")
     

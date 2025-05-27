@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 LOGGER = logging.getLogger(__name__)
 
-DATA_DIR = "MCG_segmentation/Datasets/base"
+DATA_DIR = "MCG_segmentation/Datasets"
 
 def create_directory(directory):
     """Creates directory and adds a .gitignore file."""
@@ -21,7 +21,7 @@ def create_directory(directory):
         except IOError as e:
             LOGGER.warning(f"Could not create .gitignore in {directory}: {e}")
 
-def split_files(processed_path, train_dir, val_dir, train_ratio=0.8, random_seed=42, include_records="all"):
+def split_files(processed_path, train_dir, val_dir, test_dir=None, train_ratio=0.8, random_seed=42, include_records="all"):
     """Split CSV files into train and val directories, optionally limiting to specified records."""
     random.seed(random_seed)
 
@@ -49,9 +49,11 @@ def split_files(processed_path, train_dir, val_dir, train_ratio=0.8, random_seed
     # Limit to specified records if provided
     if include_records != "all":
         valid_records = [record for record in record_names if record in include_records]
-        LOGGER.info(f"Filtering records: {len(record_names)} total, {len(valid_records)} included")
+        test_records = [record for record in record_names if record not in include_records]
+        LOGGER.info(f"Filtering records: {len(record_names)} total, {len(valid_records)} included, {len(test_records)} excluded")
     else:
         valid_records = record_names
+        test_records = []
 
     if not valid_records:
         LOGGER.error(f"No valid records found in {processed_path}")
@@ -68,13 +70,20 @@ def split_files(processed_path, train_dir, val_dir, train_ratio=0.8, random_seed
     # Create train and val directories
     create_directory(train_dir)
     create_directory(val_dir)
+    if test_dir:
+        create_directory(test_dir)
 
-    # Move files to train or val directories
+    # Move files
     files_moved = 0
-    for record in valid_records:
-        # Find all channel files for this record
+    for record in record_names:
         record_files = [f for f in all_files if f.startswith(record + '_') or f == record + '.csv']
-        target_dir = train_dir if record in train_records else val_dir
+        if record in valid_records:
+            target_dir = train_dir if record in train_records else val_dir
+        else:
+            if not test_dir:
+                LOGGER.warning(f"Test directory not provided but invalid record '{record}' exists.")
+                continue
+            target_dir = test_dir
 
         for file in record_files:
             src_path = os.path.join(processed_path, file)
@@ -86,18 +95,19 @@ def split_files(processed_path, train_dir, val_dir, train_ratio=0.8, random_seed
             except Exception as e:
                 LOGGER.error(f"Failed to copy {file} to {target_dir}: {e}")
 
-    LOGGER.info(f"Split complete for {processed_path}: {len(train_records)} records ({files_moved} files) - "
-                f"Train: {len(train_records)}, Val: {len(val_records)}")
+    LOGGER.info(f"Split complete for {processed_path}: {len(train_records)} train, {len(val_records)} val, "
+                f"{len(test_records)} test records ({files_moved} files total)")
 
 
 def main():
     # Define dataset directories
-    qtdb_processed = os.path.join(DATA_DIR, 'qtdb/processed')
-    ludb_processed = os.path.join(DATA_DIR, 'ludb/processed')
+    qtdb_processed = os.path.join(DATA_DIR, 'base/qtdb/processed')
+    ludb_processed = os.path.join(DATA_DIR, 'base/ludb/processed')
     
     # Define train and val directories for each dataset
     train_dir = os.path.join(DATA_DIR, "train")
     val_dir = os.path.join(DATA_DIR, "val")
+    test_dir = os.path.join(DATA_DIR, "test")  # Optional test directory
 
     # Define QTDB records to include (fixed record names)
     qtdb_include_records = [
@@ -115,6 +125,7 @@ def main():
             processed_path=qtdb_processed,
             train_dir=train_dir,
             val_dir=val_dir,
+            test_dir=test_dir,
             train_ratio=0.8,
             random_seed=123,
             include_records=qtdb_include_records

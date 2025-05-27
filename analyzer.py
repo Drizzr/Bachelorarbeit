@@ -13,12 +13,12 @@ from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
 from scipy.ndimage import gaussian_filter1d
 from sklearn.decomposition import FastICA
-from matplotlib.widgets import Slider, Button, RadioButtons
+from matplotlib.widgets import Slider
 import copy
 
 # Attempt to import local MCG_segmentation package
 try:
-    from MCG_segmentation.model.model import ECGSegmenter
+    from MCG_segmentation.model.model import ECGSegmenter, UNet1D
 except ImportError:
     logging.warning("Could not import ECGSegmenter. Segmentation features will be unavailable.")
     ECGSegmenter = None
@@ -46,7 +46,7 @@ class Analyzer:
     DEFAULT_SOURCE_SAMPLING_RATE = 1000 # Default assumed rate of raw TDMS files
     DEFAULT_SCALING = 2.7 / 1000
     DEFAULT_NUM_CHANNELS = 48
-    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/MCGSegmentator_s/checkpoints/best"
+    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/checkpoints/best"
 
     # Determine device for PyTorch computations
     try:
@@ -363,7 +363,7 @@ class Analyzer:
         if not os.path.exists(best_model_path) or not os.path.exists(best_params_path):
             raise FileNotFoundError(f"Model files not found in {checkpoint_dir}")
 
-        model = ECGSegmenter()
+        model = UNet1D()
         try:
             model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
             model.to(self.DEVICE)
@@ -472,17 +472,15 @@ class Analyzer:
 
         return final_scores, mean_confidence, segment_percentages, plausibility_scores
     
-    def _segment_heart_beat_intervall(self, data: torch.Tensor, min_duration_sec: int = 0.015):
+    def _segment_heart_beat_intervall(self, data: torch.Tensor, min_duration_sec: int = 0.040):
         """
         Segment the entire run (potentially T > 2000) using a sliding window.
         Assumes input data is already at the INTERNAL_SAMPLING_RATE (250 Hz).
-
         Args:
             data: numpy array of shape (b, T). Assumes data is pre-filtered
                 and at 250 Hz. Normalization happens per window.
             window_size: Size of the sliding window for inference.
             overlap: Fraction of overlap between consecutive windows (0.0 to < 1.0).
-
         Returns:
             Tuple of (final segmentation labels (b, T),
                     final confidence scores (b, T))
@@ -491,72 +489,72 @@ class Analyzer:
             warnings.warn("No data to segment.")
             batch_size = data.shape[0]
             return np.empty((batch_size, 0), dtype=int), np.empty((batch_size, 0), dtype=float)
-
+        
         # Constants
         max_len = 2000
-
-
+        
         # Clip long sequences
         if data.shape[-1] > max_len:
             warnings.warn(f"Data length ({data.shape[-1]}) exceeds maximum ({max_len}). Truncating.")
             data = data[..., :max_len]
-
+        
         data = data.to(self.DEVICE)
-
+        
         with torch.no_grad():
             logits = self.model(data)
-            probabilities =  torch.softmax(logits, dim=-1)
+            probabilities = torch.softmax(logits, dim=-1)
             confidence_scores_pt, predicted_indices_pt = torch.max(probabilities, dim=-1)
-
             predicted_indices = predicted_indices_pt.cpu().numpy()
             confidence_scores = confidence_scores_pt.cpu().numpy()
-
-        # --- Postprocessing to fix short artifacts ---
+        
+        # --- Postprocessing to fix short artifacts using paper's two-rule approach ---
         batch_size, time_steps = predicted_indices.shape
+        
         for b in range(batch_size):
             labels_arr = predicted_indices[b]
             i = 0
+            
             while i < time_steps:
                 current_label = labels_arr[i]
                 start = i
+                
+                # Find the end of current segment
                 while i < time_steps and labels_arr[i] == current_label:
                     i += 1
                 end = i  # exclusive
-
+                
                 segment_length = end - start
+                
+                # Check if segment is too short
                 if segment_length < min_duration_sec * self.INTERNAL_SAMPLING_RATE:
-                    # Determine neighboring segments
+                    # Get neighboring labels
                     left_label = labels_arr[start - 1] if start > 0 else None
                     right_label = labels_arr[end] if end < time_steps else None
-
-                    # Count left and right neighbor lengths
-                    left_len = 0
-                    if left_label is not None:
-                        j = start - 1
-                        while j >= 0 and labels_arr[j] == left_label:
-                            left_len += 1
-                            j -= 1
-
-                    right_len = 0
-                    if right_label is not None:
-                        j = end
-                        while j < time_steps and labels_arr[j] == right_label:
-                            right_len += 1
-                            j += 1
-
-                    # Decide which neighbor to copy
-                    if left_len >= right_len and left_label is not None:
+                    
+                    # Apply paper's two-rule approach
+                    if left_label is not None and right_label is not None:
+                        # Both neighbors exist
+                        if left_label == right_label:
+                            # Rule 1: Same labels -> merge by extending the common label
+                            new_label = left_label
+                        else:
+                            # Rule 2: Different labels -> assign as "none"
+                            new_label = 0
+                    elif left_label is not None:
+                        # Only left neighbor exists
                         new_label = left_label
                     elif right_label is not None:
+                        # Only right neighbor exists  
                         new_label = right_label
                     else:
-                        new_label = 0  # fallback if no neighbors
-
+                        # No neighbors exist (shouldn't happen in practice)
+                        new_label = 0
+                    
                     # Reassign short segment
                     labels_arr[start:end] = new_label
-
+            
             predicted_indices[b] = labels_arr
-
+        
         return predicted_indices, confidence_scores
 
     def _change_to_consistent_coordinate_system(self, data):
@@ -1707,8 +1705,8 @@ class Analyzer:
 
                 def update(val):
                     threshold = slider.val
-                    new_result, _ = apply_filter(threshold)
-                    plot_grid(new_result, data)
+                    result, _ = apply_filter(threshold)
+                    plot_grid(result, data)
 
                 slider.on_changed(update)
                 plt.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.12, hspace=0.4, wspace=0.3)
