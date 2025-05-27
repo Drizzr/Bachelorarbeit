@@ -83,7 +83,7 @@ def main():
 
     # Training Process Args
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of training epochs")
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("--val_batch_size", type=int, default=4, help="Batch size for validation")
     parser.add_argument("--print_freq", type=int, default=50, help="Frequency of printing training stats (in steps)")
     parser.add_argument("--clip", type=float, default=1.0, help="Gradient clipping value (0 to disable)")
