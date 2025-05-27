@@ -221,7 +221,7 @@ class ConvBlock1D(nn.Module):
 class MHSA1D(nn.Module):
     def __init__(self, embed_dim, num_heads):
         super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, dropout=0.5)
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
     
     def forward(self, x):
         # x: (B, C, T) → (B, T, C)
