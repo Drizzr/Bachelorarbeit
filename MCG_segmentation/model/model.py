@@ -243,7 +243,7 @@ class MHSA1D(nn.Module):
 
 
 class UNet1D(nn.Module):
-    def __init__(self, num_classes=4, input_channels=1, features=[64, 128, 256]):
+    def __init__(self, num_classes=4, input_channels=1, features=[32, 64, 128]):
         super().__init__()
         
         self.encoder_blocks = nn.ModuleList()
