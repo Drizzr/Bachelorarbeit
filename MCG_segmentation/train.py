@@ -124,13 +124,34 @@ def main():
     try:
         print("Setting up datasets...")
         # Ensure wavelet_type is passed if needed by ECGFullDataset
-        train_dataset = ECGFullDataset(
-                data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90, baseline_wander_mag=0.02, gaussian_noise_std=0.02
-            )
+        train_dataset =  ECGFullDataset(
+            data_dir=args.data_dir_train,
+            overlap=args.overlap,
+            sequence_length=args.sequence_length,
+            amplitude_scale_range=0.1,
+            max_time_shift=5,
+            augmentation_prob=1.0,
+            baseline_wander_mag=0.2,
+            powerline_mag=0.05,
+            respiratory_artifact_prob=0.5,
+            heart_rate_variability_prob=0.4,
+            morphology_warp_prob=0.3,
+            sinusoidal_noise_mag=0.05,
+            gaussian_noise_std=0.04,
+        )
+        
         val_dataset = ECGFullDataset(
-            data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.90, baseline_wander_mag=0.02, gaussian_noise_std=0.02
+            data_dir=args.data_dir_val,
+            overlap=args.overlap,
+            sequence_length=args.sequence_length,
+            augmentation_prob=0.0,  # Disable augmentation
+            sinusoidal_noise_mag=0.0,
+            gaussian_noise_std=0.0,
+            baseline_wander_mag=0.0,
+            powerline_mag=0.0,
+            respiratory_artifact_prob=0.0,
+            heart_rate_variability_prob=0.0,
+            morphology_warp_prob=0.0,
         )
 
         if len(train_dataset) == 0: 

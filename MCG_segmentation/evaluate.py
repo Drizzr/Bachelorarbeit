@@ -8,7 +8,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from torch.utils.data import DataLoader
 from torch import nn
 
-from model.model import ECGSegmenter, DENS_ECG_segmenter
+from model.model import ECGSegmenter, DENS_ECG_segmenter, UNet1D
 from model.data_loader import ECGFullDataset
 
 # Constants
@@ -38,7 +38,7 @@ def load_model(load_dir, device):
     with open(param_path) as f:
         args = json.load(f).get("args", {})
 
-    model = ECGSegmenter()
+    model = UNet1D()
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device).eval()
     return model, args.get("num_classes", 4)
@@ -183,9 +183,9 @@ def evaluate(model, dataloader, loss_fn, device, num_classes, output_dir, sequen
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/MCGSegmentator_xl/checkpoints/best")
-    parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/qtdb/processed/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/DENS_Model/evaluation_results")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/checkpoints/best")
+    parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--plot_sample_index", type=int)
@@ -197,16 +197,17 @@ def main():
     model, num_classes = load_model(args.load_dir, DEVICE)
 
     dataset = ECGFullDataset(
-        data_dir=args.data_dir_eval,
-        sequence_length=args.sequence_length,
-        overlap=0,
-        sinusoidal_noise_mag=0.05,
-        gaussian_noise_std=0.02,
-        baseline_wander_mag=0.03,
-        amplitude_scale_range=0.1,
-        max_time_shift=5,
-        augmentation_prob=0.00,
-    )
+            data_dir=args.data_dir_eval,
+            sequence_length=args.sequence_length,
+            augmentation_prob=0.0,  # Disable augmentation
+            sinusoidal_noise_mag=0.0,
+            gaussian_noise_std=0.0,
+            baseline_wander_mag=0.0,
+            powerline_mag=0.0,
+            respiratory_artifact_prob=0.0,
+            heart_rate_variability_prob=0.0,
+            morphology_warp_prob=0.0,
+        )
 
     dataloader = DataLoader(dataset, batch_size=args.eval_batch_size, shuffle=False, num_workers=args.num_workers)
 
