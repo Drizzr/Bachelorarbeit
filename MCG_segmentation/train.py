@@ -126,7 +126,7 @@ def main():
         # Ensure wavelet_type is passed if needed by ECGFullDataset
         train_dataset = ECGFullDataset(
                 data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.80, baseline_wander_mag=0.1, gaussian_noise_std=0.04
+                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.75, baseline_wander_mag=0.1, gaussian_noise_std=0.04
             )
         
         val_dataset = ECGFullDataset(

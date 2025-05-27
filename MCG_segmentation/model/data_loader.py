@@ -13,10 +13,6 @@ import torch.nn.functional as F
 from matplotlib.lines import Line2D
 
 
-# in the QTDB database only about a third of the files are of the form (p)(QRS)(T) (most of the time: (p)(QRS)T))
-# the compatible files are determined manually
-
-
 class ECGFullDataset(Dataset):
     """
     Dataset that loads ECG data, applies bandpass filtering, adds noise,

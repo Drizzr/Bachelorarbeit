@@ -5,6 +5,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
+#########################
+## ECG_segmentator architecture
+#########################
+
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -149,26 +153,10 @@ class ECGSegmenter(nn.Module):
         return logits
 
 
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=1, gamma=2, reduction='mean'):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-        self.cross_entropy = nn.CrossEntropyLoss(reduction='none')
-        
-    def forward(self, inputs, targets):
-        ce_loss = self.cross_entropy(inputs, targets)
-        pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
-        
-        if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
-        
+############################
+# DENS_ECG_segmenter architecture
+############################
+
 
 class DENS_ECG_segmenter(nn.Module):
     def __init__(self, input_channels=1, num_classes=4):
@@ -209,9 +197,9 @@ class DENS_ECG_segmenter(nn.Module):
         return x
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+#############################
+# UNet1D architecture with Multi-Head Self-Attention
+##############################
 
 
 class ConvBlock1D(nn.Module):
@@ -310,27 +298,6 @@ class UNet1D(nn.Module):
         return x.permute(0, 2, 1)  # (B, C, T) → (B, T, C)
 
 
-class FocalLoss(nn.Module):
-    """Focal Loss for addressing class imbalance"""
-    def __init__(self, alpha=1, gamma=2, reduction='mean'):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-        
-    def forward(self, inputs, targets):
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
-        
-        if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
-
-
 if __name__ == "__main__":
     # Test code
     batch_size = 2
@@ -351,15 +318,3 @@ if __name__ == "__main__":
     # Parameter count
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {parameters:,}")
-    
-    # Test with Focal Loss
-    criterion = FocalLoss(gamma=2.0)
-    target = torch.randint(0, num_classes, (batch_size, seq_len))
-    print(f"Target shape: {target.shape}")
-    
-    loss = criterion(output.contiguous().view(-1, num_classes), target.view(-1))
-    print(f"Loss: {loss.item():.4f}")
-    
-    # Test backward pass
-    loss.backward()
-    print("Backward pass successful!")
