@@ -26,8 +26,6 @@ class Trainer(object):
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
 
-        self.loss_fn = torch.nn.CrossEntropyLoss() 
-
         self.device = device
         self.log_filepath = log_filepath 
         self.losses = []
@@ -46,7 +44,7 @@ class Trainer(object):
             print(f"LR Scheduler: {type(self.lr_scheduler).__name__}")
         else: 
             print("LR Scheduler: None")
-        print(f"Loss Function: {type(self.loss_fn).__name__}")
+        print(f"Loss Function: {type(self.focal_loss).__name__}")
         print(f"Training on device: {self.device}")
         print("---------------------")
 
@@ -109,7 +107,7 @@ class Trainer(object):
                 labels = labels.to(self.device, non_blocking=True).long()
 
                 logits = self.model(signals)
-                loss = self.loss_fn(logits.view(-1, logits.size(-1)), labels.reshape(-1))
+                loss = self.focal_loss(logits.view(-1, logits.size(-1)), labels.reshape(-1))
 
                 loss.backward()
                 if hasattr(self.args, 'clip') and self.args.clip > 0:
@@ -218,7 +216,7 @@ class Trainer(object):
                 labels = labels.to(self.device, non_blocking=True).long()
 
                 logits = self.model(signals)
-                loss = self.loss_fn(logits.view(-1, logits.size(-1)), labels.reshape(-1))
+                loss = self.focal_loss(logits.view(-1, logits.size(-1)), labels.reshape(-1))
                 val_total_loss += loss.item() # Accumulate batch loss
 
                 preds = torch.argmax(logits, dim=-1)
@@ -300,3 +298,26 @@ class Trainer(object):
                 json.dump(params, f, indent=4) # Save params for best model too
 
         print(f"Checkpoint saved successfully to {save_dir}")
+
+
+    def focal_loss(self, logits, labels, alpha=0.25, gamma=2.0):
+        """
+        Focal Loss implementation.
+        Args:
+            logits: Model predictions (raw scores).
+            labels: Ground truth labels.
+            alpha: Weighting factor for the class.
+            gamma: Focusing parameter to reduce loss for well-classified examples.
+        Returns:
+            Computed focal loss value.
+        """
+        # Convert logits to probabilities
+        probs = torch.softmax(logits, dim=-1)
+        
+        # Gather probabilities for the true class
+        true_probs = probs[torch.arange(len(labels)), labels]
+
+        # Compute focal loss components
+        focal_loss = -alpha * ((1 - true_probs) ** gamma) * torch.log(true_probs + 1e-8)
+
+        return focal_loss.mean()

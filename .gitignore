@@ -1,6 +1,10 @@
 venv
-venv2
-MCG_segmentation/qtdb/raw
+
+
+MCG_segmentation/Datasets/base/ludb/raw
+MCG_segmentation/Datasets/base/qtdb/raw
+
+
 !**/__pycache__/
 __pycache__
 */__pycache__

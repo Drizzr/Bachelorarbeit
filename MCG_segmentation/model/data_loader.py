@@ -13,6 +13,10 @@ import torch.nn.functional as F
 from matplotlib.lines import Line2D
 
 
+# in the QTDB database only about a third of the files are of the form (p)(QRS)(T) (most of the time: (p)(QRS)T))
+# the compatible files are determined manually
+
+
 class ECGFullDataset(Dataset):
     """
     Dataset that loads ECG data, applies bandpass filtering, adds noise,
@@ -21,7 +25,6 @@ class ECGFullDataset(Dataset):
     def __init__(
         self,
         data_dir: str,
-        channel_names: List[str] = ["ch1", "ch2"], # Still loads specified channels
         label_column: str = "train_label",
         file_extension: str = ".csv",
         sequence_length: int = 512,
@@ -37,7 +40,6 @@ class ECGFullDataset(Dataset):
 
     ):
         self.data_dir = data_dir
-        self.channel_names = channel_names # Which channels to load from CSV
         self.label_column = label_column
         self.file_extension = file_extension
         self.sequence_length = sequence_length
@@ -79,25 +81,10 @@ class ECGFullDataset(Dataset):
                 file_path = os.path.join(self.data_dir, fname)
                 df = pd.read_csv(file_path)
                 
-                required_cols = self.channel_names + [self.label_column]
-                if not all(col in df.columns for col in required_cols):
-                    missing_cols=[col for col in required_cols if col not in df.columns]
-                    logging.warning(f"Skipping {fname}: Missing {missing_cols}")
-                    continue
-
                 labels = torch.tensor(df[self.label_column].values, dtype=torch.long)
-                for ch in self.channel_names:
-                    signal_pd = pd.to_numeric(df[ch], errors='coerce')
-                    if signal_pd.isnull().any(): 
-                        logging.warning(f"Skipping {ch} in {fname}: Non-numeric.")
-                        continue
-
-                    signal = torch.tensor(signal_pd.values, dtype=torch.float32)
-                    if signal.shape[0]!= labels.shape[0]: 
-                        logging.warning(f"Skipping {ch} in {fname}: Length mismatch")
-                        continue
-
-                    self._slice_channel_sequences(signal, labels)
+                signal_pd = pd.to_numeric(df["wave_form"], errors='coerce')
+                signal = torch.tensor(signal_pd.values, dtype=torch.float32)
+                self._slice_channel_sequences(signal, labels)
                 num_processed += 1
 
             except pd.errors.EmptyDataError: 
@@ -208,7 +195,7 @@ if __name__ == "__main__":
     try:
         print("--- Testing ECGFullDataset for 1D Output ---")
         test_dataset = ECGFullDataset(
-            data_dir="MCG_segmentation/qtdb/processed/val", # Adjust path
+            data_dir="MCG_segmentation/Datasets/train", # Adjust path
             overlap=125,
             sequence_length=500,
             sinusoidal_noise_mag=0.05,

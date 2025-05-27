@@ -40,8 +40,8 @@ class ResidualBlock(nn.Module):
 
 
 class ECGSegmenter(nn.Module):
-    def __init__(self, num_classes=4, input_channels=1, hidden_channels=16,  # 32, 64 for xl
-                lstm_hidden=20, dropout_rate=0.3, max_seq_len=2000):
+    def __init__(self, num_classes=4, input_channels=1, hidden_channels=32,  # 32, 64 for xl
+                lstm_hidden=64, dropout_rate=0.3, max_seq_len=2000):
         super().__init__()
         
         # Positional Encoding
@@ -209,36 +209,157 @@ class DENS_ECG_segmenter(nn.Module):
         return x
 
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class ConvBlock1D(nn.Module):
+    """1D Convolutional block with two conv layers, batch norm, and ReLU"""
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm1d(out_channels)
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm1d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+    
+    def forward(self, x):
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.relu(self.bn2(self.conv2(x)))
+        return x
+
+
+class MHSA1D(nn.Module):
+    def __init__(self, embed_dim, num_heads):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+    
+    def forward(self, x):
+        # x: (B, C, T) → (B, T, C)
+        x = x.permute(0, 2, 1)
+        x, _ = self.attn(x, x, x)
+        return x.permute(0, 2, 1)  # Back to (B, C, T)
+
+
+class UNet1D(nn.Module):
+    def __init__(self, num_classes=4, input_channels=1, features=[64, 128, 256]):
+        super().__init__()
+        
+        self.encoder_blocks = nn.ModuleList()
+        self.pool = nn.MaxPool1d(2)
+        
+        # Encoder
+        in_ch = input_channels
+        for feat in features:
+            self.encoder_blocks.append(ConvBlock1D(in_ch, feat))
+            in_ch = feat
+        
+        # Bottleneck + MHSA
+        self.bottleneck_conv = ConvBlock1D(features[-1], features[-1] * 2)
+        self.mhsa = MHSA1D(features[-1] * 2, num_heads=4)
+        
+        # Decoder
+        self.upconvs = nn.ModuleList()
+        self.decoder_blocks = nn.ModuleList()
+        
+        in_ch = features[-1] * 2  # Start from bottleneck output channels
+        for feat in reversed(features):
+            self.upconvs.append(nn.ConvTranspose1d(in_ch, feat, kernel_size=2, stride=2))
+            # After concatenation with skip connection: feat + feat = feat * 2
+            self.decoder_blocks.append(ConvBlock1D(feat * 2, feat))
+            in_ch = feat
+        
+        # Final output layer
+        self.final_conv = nn.Conv1d(features[0], num_classes, kernel_size=1)
+    
+    def forward(self, x):
+        skip_connections = []
+        
+        # Encoder path
+        for enc in self.encoder_blocks:
+            x = enc(x)
+            skip_connections.append(x)
+            x = self.pool(x)
+        
+        # Bottleneck with attention
+        x = self.bottleneck_conv(x)
+        x = self.mhsa(x)
+        
+        # Decoder path
+        skip_connections = skip_connections[::-1]  # Reverse for decoder
+        
+        for idx in range(len(self.upconvs)):
+            x = self.upconvs[idx](x)
+            skip = skip_connections[idx]
+            
+            # Handle size mismatch by padding the smaller tensor
+            if x.shape[-1] != skip.shape[-1]:
+                diff = abs(x.shape[-1] - skip.shape[-1])
+                if x.shape[-1] < skip.shape[-1]:
+                    x = F.pad(x, (0, diff))
+                else:
+                    skip = F.pad(skip, (0, diff))
+            
+            # Concatenate skip connection
+            x = torch.cat((skip, x), dim=1)
+            x = self.decoder_blocks[idx](x)
+        
+        # Final output
+        x = self.final_conv(x)
+        return x.permute(0, 2, 1)  # (B, C, T) → (B, T, C)
+
+
+class FocalLoss(nn.Module):
+    """Focal Loss for addressing class imbalance"""
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+
 if __name__ == "__main__":
-    # Test-Code
+    # Test code
     batch_size = 2
     seq_len = 100
     input_channels = 1
     num_classes = 4
     
-    model = ECGSegmenter(
-        num_classes=num_classes,
-        input_channels=input_channels,
-        hidden_channels=32,
-        lstm_hidden=64,
-
-    )
-
-    model = DENS_ECG_segmenter()
+    model = UNet1D(num_classes=num_classes, input_channels=input_channels)
     
-    # Test-Input
+    # Test input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)
+    print(f"Input shape: {dummy_input.shape}")
     
-    # Forward Pass
+    # Forward pass
     output = model(dummy_input)
-    print(f"Output shape: {output.shape}")  # Sollte [B, L, num_classes] sein
+    print(f"Output shape: {output.shape}")  # Should be [B, T, num_classes]
     
-    # Anzahl der Parameter
+    # Parameter count
     parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Gesamtzahl Parameter: {parameters}")
+    print(f"Total parameters: {parameters:,}")
     
-    # Test mit Focal Loss
+    # Test with Focal Loss
     criterion = FocalLoss(gamma=2.0)
     target = torch.randint(0, num_classes, (batch_size, seq_len))
-    loss = criterion(output.view(-1, num_classes), target.view(-1))
-    print(f"Loss: {loss.item()}")
+    print(f"Target shape: {target.shape}")
+    
+    loss = criterion(output.contiguous().view(-1, num_classes), target.view(-1))
+    print(f"Loss: {loss.item():.4f}")
+    
+    # Test backward pass
+    loss.backward()
+    print("Backward pass successful!")
