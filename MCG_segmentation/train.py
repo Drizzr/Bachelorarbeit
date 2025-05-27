@@ -38,9 +38,11 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
 
     # Define scheduler
     # Ensure train_loader has been initialized before calling this function if needed here
-    scheduler = lr_scheduler.CyclicLR(optimizer, base_lr=args.base_lr, max_lr=args.max_lr,
-                                    step_size_up=len(train_loader) * args.cycle_epochs_up,
-                                    mode='triangular2', cycle_momentum=False)
+    scheduler  = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=args.num_epochs * len(train_loader), # T_max is usually specified in *steps* not epochs
+                eta_min=args.base_lr # Anneal down to base_lr (or 0)
+            )
 
     # Load states
     model.load_state_dict(torch.load(model_path, map_location=device))
