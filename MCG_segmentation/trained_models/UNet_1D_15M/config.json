@@ -1,0 +1,8 @@
+
+{
+    "num_classes": 4,
+    "input_channels": 1,
+    "features": [64, 128, 256, 512],  
+    "dropout": 0.4,
+    "num_heads": 8
+}

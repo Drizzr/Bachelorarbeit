@@ -86,6 +86,7 @@ def load_patient_data(patient: str, run: str = None):
         filename=file_name,
         add_filename=add_filename,
         log_file_path=log_file_path,
+        model_checkpoint_dir="MCG_segmentation/trained_models/MCGSegmentator_s",
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter
 
@@ -115,6 +116,8 @@ y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, he
 z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=True)
 single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
+
+single_run_filtered = single_run_intervall.copy()
 ########
 # Visualize the filtered data and apply window averaging
 ########
@@ -123,7 +126,7 @@ single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_f
 analysis.butterfly_plot(single_run_filtered, time_intervall, 48, f"Original {key}")
 
 # use cleanest channel for peak detection
-peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.7)
+peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.7, confidence_weight=0.9, plausibility_weight=0.1)
 if peak_positions is not None and len(peak_positions) > 0:
     plt.figure(figsize=(12, 4))
     plt.plot(single_run_filtered[ch, :], label='Signal', linewidth=1.2)
@@ -185,6 +188,9 @@ t_start_qrs = np.where(mask_qrs)[0][0]
 t_end_qrs = np.where(mask_qrs)[0][-1] 
 
 
+# Set default run if not provided
+run_id = run if run else "S01"
+
 for row_idx, row in enumerate(analysis.quspin_position_list):
     for col_idx, quspin_id in enumerate(row):
         sensor_data = []
@@ -216,35 +222,47 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
 
             print(f"processing Sensor: {quspin_id}")
 
+            # Create the new directory structure
+            # Results/sensor_name/Patients/patient_id_run/**_heart_vector
+            sensor_base_path = f"Results/{quspin_id}_{name[:2]}"
+            patient_run_path = f"{sensor_base_path}/Patients/{Patient}_{run_id}"
+            
+            # Create directories for heart vector plots
+            t_path = f"{patient_run_path}/T_heart_vector"
+            qrs_path = f"{patient_run_path}/QRS_heart_vector"
+            st_path = f"{patient_run_path}/ST_heart_vector"
+            
+            for path in [t_path, qrs_path, st_path]:
+                if not os.path.exists(path):
+                    os.makedirs(path)
+
             t_segment = sensor_data[:, t_start:t_end]
 
-            _, t_metrics = analysis.plot_heart_vector_projection(t_segment[0], t_segment[1], name, "T Segment", show=False)
+            _, t_metrics = analysis.plot_heart_vector_projection(t_segment[0], t_segment[1], name, "T Segment", show=False, save_path=os.path.join(t_path, f"{quspin_id}_{name[:2]}.pdf"))
             qrs_segment = sensor_data[:, t_start_qrs:t_end_qrs]
-            _, qrs_metrics = analysis.plot_heart_vector_projection(qrs_segment[0], qrs_segment[1], name, "QRS Segment",  show=False)
+            _, qrs_metrics = analysis.plot_heart_vector_projection(qrs_segment[0], qrs_segment[1], name, "QRS Segment",  show=False, save_path=os.path.join(qrs_path, f"{quspin_id}_{name[:2]}.pdf"))
             st_segment = sensor_data[:, t_end_qrs + 1:t_start]
-            _, st_metrics = analysis.plot_heart_vector_projection(st_segment[0], st_segment[1], name, "ST Segment",  show=False)
+            _, st_metrics = analysis.plot_heart_vector_projection(st_segment[0], st_segment[1], name, "ST Segment",  show=False, save_path=os.path.join(st_path, f"{quspin_id}_{name[:2]}.pdf"))
 
             out_put = np.stack((t_metrics, qrs_metrics, st_metrics), axis=0)
 
-
-            row = {"patient": Patient, "run": run if run else "S01"}
+            row = {"patient": Patient, "run": run_id}
 
             for prefix, metrics in zip(["t", "qrs", "st"], [t_metrics, qrs_metrics, st_metrics]):
                 if isinstance(metrics, dict):
                     for k, v in metrics.items():
                         row[f"{prefix}_{k}"] = v
 
-            output_file = os.path.join(f"Results/{quspin_id}_{name[:2]}.csv")
+            # Store the metrics CSV file in the sensor base directory
+            output_file = os.path.join(sensor_base_path, "result.csv")
 
             if os.path.exists(output_file):
                 existing_data = pd.read_csv(output_file)
                 updated_data = pd.concat([existing_data, pd.DataFrame([row])], ignore_index=True)
-                updated_data.to_csv(output_file, index=False)  # <-- Missing in your original code
+                updated_data.to_csv(output_file, index=False) 
             else:
+                # Create sensor base directory if it doesn't exist
+                if not os.path.exists(sensor_base_path):
+                    os.makedirs(sensor_base_path)
                 df = pd.DataFrame([row])
-                df.to_csv(output_file, index=False)  # <-- Missing in your original code
-
-
-
-
-
+                df.to_csv(output_file, index=False)

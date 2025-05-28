@@ -15,6 +15,7 @@ from scipy.ndimage import gaussian_filter1d
 from sklearn.decomposition import FastICA
 from matplotlib.widgets import Slider
 import copy
+import json
 
 # Attempt to import local MCG_segmentation package
 try:
@@ -46,7 +47,7 @@ class Analyzer:
     DEFAULT_SOURCE_SAMPLING_RATE = 1000 # Default assumed rate of raw TDMS files
     DEFAULT_SCALING = 2.7 / 1000
     DEFAULT_NUM_CHANNELS = 48
-    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/checkpoints/best"
+    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/UNet_1D_15M"
 
     # Determine device for PyTorch computations
     try:
@@ -80,7 +81,7 @@ class Analyzer:
             sensor_channels_to_exclude (dict, optional): Channels to exclude per run key.
             scaling (float): Scaling factor for TDMS data during initial load.
             num_ch (int): Number of channels expected/for plotting.
-            model_checkpoint_dir (str): Directory with trained segmentation model.
+            model_checkpoint_dir (str): Directory with trained segmentation model (f.e.: MCG_segmentation/trained_models/UNet_1D_15M).
         """
         # Input validation
         if not isinstance(scaling, (int, float)) or scaling <= 0:
@@ -344,6 +345,8 @@ class Analyzer:
             return {}
         return data
 
+
+
     def _load_segmentation_model(self, checkpoint_dir):
         """Load the trained ECGSegmenter model from the checkpoint directory.
 
@@ -357,13 +360,19 @@ class Analyzer:
             logging.warning("ECGSegmenter not available. Returning None.")
             return None
 
-        best_model_path = os.path.join(checkpoint_dir, "model.pth")
-        best_params_path = os.path.join(checkpoint_dir, "params.json")
+        best_model_path = os.path.join(checkpoint_dir, "checkpoints/best/model.pth")
+        config_path = os.path.join(checkpoint_dir, "config.json")
 
-        if not os.path.exists(best_model_path) or not os.path.exists(best_params_path):
+        if not os.path.exists(best_model_path) or not os.path.exists(config_path):
             raise FileNotFoundError(f"Model files not found in {checkpoint_dir}")
 
-        model = UNet1D()
+        # Load model parameters
+        with open(config_path, "r") as f:
+            model_params = json.load(f)
+
+        # Create model with loaded parameters
+        model = ECGSegmenter(**model_params)#UNet1D(**model_params)
+
         try:
             model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
             model.to(self.DEVICE)
@@ -374,6 +383,7 @@ class Analyzer:
             raise
 
         return model
+
 
     def _load_tdms_files(self):
         """Load primary and additional TDMS files into data dictionaries."""
@@ -471,90 +481,89 @@ class Analyzer:
             final_scores[zero_input_mask] = 0.0
 
         return final_scores, mean_confidence, segment_percentages, plausibility_scores
+
+    
     
     def _segment_heart_beat_intervall(self, data: torch.Tensor, min_duration_sec: int = 0.040):
         """
         Segment the entire run (potentially T > 2000) using a sliding window.
         Assumes input data is already at the INTERNAL_SAMPLING_RATE (250 Hz).
+
         Args:
             data: numpy array of shape (b, T). Assumes data is pre-filtered
                 and at 250 Hz. Normalization happens per window.
-            window_size: Size of the sliding window for inference.
-            overlap: Fraction of overlap between consecutive windows (0.0 to < 1.0).
+            min_duration_sec: Minimum duration for a segment in seconds (default: 0.015).
+
         Returns:
-            Tuple of (final segmentation labels (b, T),
-                    final confidence scores (b, T))
+            Tuple of (final segmentation labels (b, T), final confidence scores (b, T))
         """
         if data.numel() == 0:
             warnings.warn("No data to segment.")
             batch_size = data.shape[0]
             return np.empty((batch_size, 0), dtype=int), np.empty((batch_size, 0), dtype=float)
-        
+
         # Constants
         max_len = 2000
-        
+
         # Clip long sequences
         if data.shape[-1] > max_len:
             warnings.warn(f"Data length ({data.shape[-1]}) exceeds maximum ({max_len}). Truncating.")
             data = data[..., :max_len]
-        
+
         data = data.to(self.DEVICE)
-        
+
         with torch.no_grad():
             logits = self.model(data)
             probabilities = torch.softmax(logits, dim=-1)
             confidence_scores_pt, predicted_indices_pt = torch.max(probabilities, dim=-1)
             predicted_indices = predicted_indices_pt.cpu().numpy()
             confidence_scores = confidence_scores_pt.cpu().numpy()
-        
-        # --- Postprocessing to fix short artifacts using paper's two-rule approach ---
+
+        # Postprocessing to fix short artifacts
         batch_size, time_steps = predicted_indices.shape
-        
         for b in range(batch_size):
             labels_arr = predicted_indices[b]
             i = 0
-            
             while i < time_steps:
                 current_label = labels_arr[i]
                 start = i
-                
-                # Find the end of current segment
                 while i < time_steps and labels_arr[i] == current_label:
                     i += 1
                 end = i  # exclusive
-                
                 segment_length = end - start
-                
-                # Check if segment is too short
+
                 if segment_length < min_duration_sec * self.INTERNAL_SAMPLING_RATE:
-                    # Get neighboring labels
+                    # Determine neighboring segments
                     left_label = labels_arr[start - 1] if start > 0 else None
                     right_label = labels_arr[end] if end < time_steps else None
-                    
-                    # Apply paper's two-rule approach
-                    if left_label is not None and right_label is not None:
-                        # Both neighbors exist
-                        if left_label == right_label:
-                            # Rule 1: Same labels -> merge by extending the common label
-                            new_label = left_label
-                        else:
-                            # Rule 2: Different labels -> assign as "none"
-                            new_label = 0
-                    elif left_label is not None:
-                        # Only left neighbor exists
+
+                    # Count left and right neighbor lengths
+                    left_len = 0
+                    if left_label is not None:
+                        j = start - 1
+                        while j >= 0 and labels_arr[j] == left_label:
+                            left_len += 1
+                            j -= 1
+
+                    right_len = 0
+                    if right_label is not None:
+                        j = end
+                        while j < time_steps and labels_arr[j] == right_label:
+                            right_len += 1
+                            j += 1
+
+                    # Decide which neighbor to copy
+                    if left_len >= right_len and left_label is not None:
                         new_label = left_label
                     elif right_label is not None:
-                        # Only right neighbor exists  
                         new_label = right_label
                     else:
-                        # No neighbors exist (shouldn't happen in practice)
-                        new_label = 0
-                    
+                        new_label = 0  # fallback if no neighbors
+
                     # Reassign short segment
                     labels_arr[start:end] = new_label
-            
-            predicted_indices[b] = labels_arr
-        
+                    predicted_indices[b] = labels_arr
+
         return predicted_indices, confidence_scores
 
     def _change_to_consistent_coordinate_system(self, data):
@@ -696,7 +705,7 @@ class Analyzer:
             plt.savefig(path+f'{name}_LSD.png')
         plt.show()
 
-    def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None, show=True):
+    def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None, show=True, save_path=None):
         """Plot a 2D projection of the heart vector with metrics and filled area."""
 
 
@@ -799,6 +808,12 @@ class Analyzer:
                         fontsize=16, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             if show: plt.show()
+            if save_path: 
+                try:
+                    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+                    logging.info(f"Saved projection plot to: {save_path}")
+                except Exception as e:
+                    logging.error(f"Failed to save projection plot: {e}")
 
         # print out the metrics
         logging.info(f"Metrics for {proj_name}: {metrics_text}")
@@ -1104,7 +1119,7 @@ class Analyzer:
         # Return 0-based index and the full results
         return best_channel, labels, confidence, final_scores
 
-    def detect_qrs_complex_peaks_cleanest_channel(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False):
+    def detect_qrs_complex_peaks_cleanest_channel(self, data: np.ndarray, confidence_threshold: float = 0.7, min_qrs_length_sec: float = 0.08, min_distance_sec: float = 0.3, print_heart_rate: bool = False, confidence_weight: float = 0.80, plausibility_weight: float = 0.2):
         """
         Detects QRS complex peaks on the *cleanest* channel. Assumes input data is at 250 Hz.
 
@@ -1114,6 +1129,8 @@ class Analyzer:
             min_qrs_length_sec: Minimum duration (in seconds) for a QRS segment.
             min_distance_sec: Minimum distance between detected peaks in seconds.
             print_heart_rate: If True, calculates and prints HR and HRV for the cleanest channel.
+            confidence_weight: Weight for mean confidence in scoring.
+            plausibility_weight: Weight for plausibility in scoring.
 
         Returns:
             Tuple[List[int], int, np.ndarray, Optional[float], Optional[float]]:
@@ -1124,7 +1141,7 @@ class Analyzer:
                 - HRV (SDNN in ms) for the cleanest channel, or None.
         """            
         # 1. Find cleanest channel and get segmentations
-        best_channel_idx, labels, confidence, _ = self.find_cleanest_channel(data, print_results=False) 
+        best_channel_idx, labels, confidence, _ = self.find_cleanest_channel(data, print_results=False, confidence_weight=confidence_weight, plausibility_weight=plausibility_weight) 
         
         if labels.size == 0:
             warnings.warn("Segmentation data is empty, cannot detect peaks.")
@@ -1574,8 +1591,9 @@ class Analyzer:
         x_data, y_data, z_data = self.get_field_directions(resampled_data, key)
         return (x_data, y_data, z_data), time, resampled_data
 
+
     def ICA_filter(self, data, heart_beat_score_threshold=0.85, max_iter=5000,
-            confidence_weight=0.8, plausibility_weight=0.2, print_result=False,
+            confidence_weight=0.9, plausibility_weight=0.1, print_result=False,
             plot_result=False):
         
         """
@@ -1665,6 +1683,13 @@ class Analyzer:
             if data_shape[0] * data_shape[1] != 16:
                 print("Plotting supported only for 4x4 grid.")
             else:
+                from matplotlib.widgets import Button
+                
+                # Variables to store the current state
+                current_result = [result]
+                current_score_mask = [score_mask]
+                current_threshold = [heart_beat_score_threshold]
+                
                 # Create a 4x4 grid plot
                 fig, axes = plt.subplots(
                     nrows=data_shape[0], ncols=data_shape[1],
@@ -1703,14 +1728,33 @@ class Analyzer:
                 slider = Slider(ax_slider, 'Threshold', 0.0, 1.0,
                                 valinit=heart_beat_score_threshold, valstep=0.01)
 
+                # Apply button
+                ax_button = plt.axes([0.85, 0.01, 0.1, 0.03])
+                button = Button(ax_button, 'Apply')
+
                 def update(val):
                     threshold = slider.val
-                    result, _ = apply_filter(threshold)
-                    plot_grid(result, data)
+                    current_threshold[0] = threshold
+                    new_result, new_score_mask = apply_filter(threshold)
+                    plot_grid(new_result, data)
+
+                def apply_threshold(event):
+                    # Apply the current threshold and store the result
+                    final_result, final_score_mask = apply_filter(current_threshold[0])
+                    current_result[0] = final_result
+                    current_score_mask[0] = final_score_mask
+                    print(f"Applied threshold: {current_threshold[0]:.3f}")
+                    plt.close(fig)  # Close the plot
 
                 slider.on_changed(update)
+                button.on_clicked(apply_threshold)
+                
                 plt.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.12, hspace=0.4, wspace=0.3)
                 plt.show()
+                
+                # Return the applied result
+                result = current_result[0]
+                score_mask = current_score_mask[0]
 
         return result, ica_components, best_channel_idx, score_mask
 

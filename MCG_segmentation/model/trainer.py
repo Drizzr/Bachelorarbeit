@@ -257,7 +257,7 @@ class Trainer(object):
         model_filename = os.path.join(save_dir, f"model.pth")
         optimizer_filename = os.path.join(save_dir, f"optimizer.pth")
         scheduler_filename = os.path.join(save_dir, f"lr_scheduler.pth")
-        params_filename = os.path.join(save_dir, "params.json")
+        params_filename = os.path.join(save_dir, "train_params.json")
 
         torch.save(self.model.state_dict(), model_filename)
         torch.save(self.optimizer.state_dict(), optimizer_filename)
