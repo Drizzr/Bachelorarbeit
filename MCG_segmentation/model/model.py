@@ -219,9 +219,9 @@ class ConvBlock1D(nn.Module):
 
 
 class MHSA1D(nn.Module):
-    def __init__(self, embed_dim, num_heads):
+    def __init__(self, embed_dim, num_heads, dropout=0.5):
         super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True, dropout=dropout)     # drop out nur für xl version
     
     def forward(self, x):
         # x: (B, C, T) → (B, T, C)
@@ -231,7 +231,7 @@ class MHSA1D(nn.Module):
 
 
 class UNet1D(nn.Module):
-    def __init__(self, num_classes=4, input_channels=1, features=[32, 64, 128]):
+    def __init__(self, num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=8):  # 900k dropout = 0. , num heads = 4 f
         super().__init__()
         
         self.encoder_blocks = nn.ModuleList()
@@ -245,7 +245,7 @@ class UNet1D(nn.Module):
         
         # Bottleneck + MHSA
         self.bottleneck_conv = ConvBlock1D(features[-1], features[-1] * 2)
-        self.mhsa = MHSA1D(features[-1] * 2, num_heads=4)
+        self.mhsa = MHSA1D(features[-1] * 2, num_heads=num_heads, dropout=dropout)  
         
         # Decoder
         self.upconvs = nn.ModuleList()
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     input_channels = 1
     num_classes = 4
     
-    model = UNet1D(num_classes=num_classes, input_channels=input_channels)
+    model = UNet1D(num_classes=num_classes, input_channels=input_channels, features=[64, 128, 256, 512]) #32, 64, 128
     
     # Test input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)
