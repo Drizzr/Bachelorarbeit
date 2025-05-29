@@ -117,7 +117,6 @@ z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_scor
 single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
 
-single_run_filtered = single_run_intervall.copy()
 ########
 # Visualize the filtered data and apply window averaging
 ########
@@ -203,10 +202,13 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
                 continue
 
             channel_index = abs(int(channel_index))
-            sensor_data.append(target[row_idx, col_idx, :])
-            suffixes.append(suffix)
+            if not np.all(target[row_idx, col_idx, :] == 0):
+                sensor_data.append(target[row_idx, col_idx, :])
+                suffixes.append(suffix)
+            else:
+                print(f"Skipping {channel_name}{suffix} as it contains only zeros. (To change this decrease the threshold in the window averaging step.)")
         
-        if sensor_data:
+        if len(sensor_data) >= 2:
             if len(sensor_data) == 3:
                 sensor_data = sensor_data[:2]
                 suffixes = suffixes[:2]
