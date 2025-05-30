@@ -16,6 +16,7 @@ from sklearn.decomposition import FastICA
 from matplotlib.widgets import Slider
 import copy
 import json
+from uncertainties import ufloat
 
 # Attempt to import local MCG_segmentation package
 try:
@@ -705,9 +706,117 @@ class Analyzer:
             plt.savefig(path+f'{name}_LSD.png')
         plt.show()
 
-    def plot_heart_vector_projection(self, component1, component2, proj_name, title_suffix="", ax=None, show=True, save_path=None):
-        """Plot a 2D projection of the heart vector with metrics and filled area."""
+    def calculate_metrics_with_uncertainty(self, original_data, segment_start_global, segment_end_global, uncertainty_ms=100):
+        """
+        Calculate heart vector metrics with uncertainty propagation.
+        
+        Parameters:
+        -----------
+        component1, component2 : array-like
+            The two components of the heart vector segment
+        original_data : array-like, shape (2, N)
+            The full original data [component1_full, component2_full] to allow boundary expansion
+        segment_start_global, segment_end_global : int
+            Global indices of the segment start and end in the original data
+        sampling_rate : float
+            Sampling rate in Hz (default 1000 Hz)
+        uncertainty_ms : float
+            Uncertainty in manual annotation in milliseconds (default 100ms)
+        
+        Returns:
+        --------
+        dict : Dictionary containing uncertain metrics
+        """
+        # Convert uncertainty from ms to samples
+        uncertainty_samples = int(uncertainty_ms * self.INTERNAL_SAMPLING_RATE / 1000)
+        
+        # Create multiple realizations by varying segment boundaries
+        n_realizations = 50  # Number of Monte Carlo samples
+        areas = []
+        t_distances = []
+        compactnesses = []
+        angles = []
+        
+        original_length = original_data.shape[1]
+        
+        for _ in range(n_realizations):
+            # Add random boundary variations (can extend beyond original segment)
+            start_shift = np.random.randint(-uncertainty_samples, uncertainty_samples + 1)
+            end_shift = np.random.randint(-uncertainty_samples, uncertainty_samples + 1)
+            
+            # Calculate new boundaries in global coordinates
+            new_start = segment_start_global + start_shift
+            new_end = segment_end_global + end_shift
+            
+            # Ensure we don't go out of bounds of the original data
+            new_start = max(0, new_start)
+            new_end = min(original_length, new_end)
+            
+            if new_end - new_start < 3:  # Ensure minimum segment length
+                continue
+                
+            # Extract segment with boundary uncertainty from original data
+            c1_sample = original_data[0, new_start:new_end]
+            c2_sample = original_data[1, new_start:new_end]
+            
+            try:
+                # Calculate metrics for this realization
+                # Shoelace formula for area
+                area = 0.5 * np.abs(np.dot(c1_sample, np.roll(c2_sample, 1)) - 
+                                np.dot(c2_sample, np.roll(c1_sample, 1)))
+                areas.append(area)
+                
+                # T-distance (max distance from origin)
+                magnitudes = c1_sample**2 + c2_sample**2
+                t_max_idx = np.argmax(magnitudes)
+                t_distance = np.linalg.norm([c1_sample[t_max_idx] - c1_sample[0], 
+                                        c2_sample[t_max_idx] - c2_sample[0]])
+                t_distances.append(t_distance)
+                
+                # Compactness
+                perimeter = np.sum(np.linalg.norm(
+                    np.diff(np.stack([c1_sample, c2_sample], axis=1), axis=0), axis=1))
+                compactness = (4 * np.pi * area) / (perimeter**2 + 1e-9)
+                compactnesses.append(compactness)
+                
+                # Average angle
+                mean_dx = np.mean(c1_sample)
+                mean_dy = np.mean(c2_sample)
+                avg_angle_deg = np.degrees(np.arctan2(mean_dy, mean_dx))
+                angles.append(avg_angle_deg)
+                
+            except Exception as e:
+                logging.warning(f"Error in uncertainty calculation: {e}")
+                continue
+        
+        # Convert to uncertain values
+        if len(areas) > 0:
+            area_unc = ufloat(np.mean(areas), np.std(areas))
+            t_dist_unc = ufloat(np.mean(t_distances), np.std(t_distances))
+            compact_unc = ufloat(np.mean(compactnesses), np.std(compactnesses))
+            angle_unc = ufloat(np.mean(angles), np.std(angles))
+        else:
+            area_unc = ufloat(0, 0)
+            t_dist_unc = ufloat(0, 0)
+            compact_unc = ufloat(0, 0)
+            angle_unc = ufloat(0, 0)
+        
+        return {
+            "Area": area_unc,
+            "T-Dist": t_dist_unc,
+            "Compact": compact_unc,
+            "Angle": angle_unc
+        }
 
+    def plot_heart_vector_projection(self, original_data, segment_start_global, segment_end_global, proj_name, 
+                                 title_suffix="", ax=None, show=True, 
+                                 save_path=None, 
+                                 uncertainty_ms=100):
+        """Plot a 2D projection of the heart vector with metrics and uncertainty bars."""
+
+        # Extract components from the original data using global indices
+        component1 = original_data[0, segment_start_global:segment_end_global]
+        component2 = original_data[1, segment_start_global:segment_end_global]
 
         standalone_plot = ax is None
         if standalone_plot:
@@ -744,34 +853,21 @@ class Analyzer:
                 ax.annotate('', xy=(component1[next_idx], component2[next_idx]), xytext=(component1[i], component2[i]),
                             arrowprops=dict(facecolor='red', edgecolor='red', arrowstyle='->', linewidth=1.5))
 
-        # Calculate metrics
+        # Calculate metrics with uncertainty
+        uncertain_metrics = self.calculate_metrics_with_uncertainty(
+            original_data, segment_start_global, segment_end_global, uncertainty_ms
+        )
+
+        # Format metrics text with uncertainties
         metrics_text = "Metrics N/A"
         if len(component1) > 2:
             try:
-                # Shoelace formula for area
-                area = 0.5 * np.abs(np.dot(component1, np.roll(component2, 1)) - np.dot(component2, np.roll(component1, 1)))
-                magnitudes = component1**2 + component2**2
-                t_max_idx = np.argmax(magnitudes)
-
-                t_distance = np.linalg.norm([component1[t_max_idx] - component1[0], component2[t_max_idx] - component2[0]])
-                # Extra metrics: Compactness (Area / Perimeter²)
-                perimeter = np.sum(np.linalg.norm(np.diff(np.stack([component1, component2], axis=1), axis=0), axis=1))
-                compactness = (4 * np.pi * area) / (perimeter**2 + 1e-9)
-
-                # Average direction (in radians and degrees)
-                mean_dx = np.mean(component1)
-                mean_dy = np.mean(component2)
-                avg_angle_rad = np.arctan2(mean_dy, mean_dx)
-                avg_angle_deg = np.degrees(avg_angle_rad)
-
-
-                metrics_text = (f'\n Area: {area:.3f}\n'
-                                f'T-Dist: {t_distance:.2f}\n'
-                                f'Compact: {compactness:.4f}\n'
-                                f'Angle: {avg_angle_deg:.1f}°')
-                
+                metrics_text = (f'\n Area: {uncertain_metrics["Area"]:.3u}\n'
+                                f'T-Dist: {uncertain_metrics["T-Dist"]:.2u}\n'
+                                f'Compact: {uncertain_metrics["Compact"]:.4u}\n'
+                                f'Angle: {uncertain_metrics["Angle"]:.1u}°')
             except Exception as e:
-                logging.warning(f"Error calculating metrics for {proj_name}: {e}")
+                logging.warning(f"Error formatting uncertain metrics for {proj_name}: {e}")
                 metrics_text = "Metrics Error"
 
         # Add metrics text
@@ -815,18 +911,23 @@ class Analyzer:
                 except Exception as e:
                     logging.error(f"Failed to save projection plot: {e}")
 
-        # print out the metrics
-        logging.info(f"Metrics for {proj_name}: {metrics_text}")
+        # Log metrics with uncertainties
+        logging.info(f"Uncertain metrics for {proj_name}: {metrics_text}")
 
-        return ax, {"Area": area, "T-Dist": t_distance, "Compact": compactness, "Angle": avg_angle_deg} 
+        return ax, uncertain_metrics
 
-    def plot_all_heart_vector_projections(self, heart_vector_components, title_suffix="", save_path=None):
-        """Plot XY, XZ, and YZ projections of the heart vector.
+
+    def plot_all_heart_vector_projections(self, heart_vector_components, segment_start_global, segment_end_global,
+                                      title_suffix="", save_path=None, uncertainty_ms=100):
+        """Plot XY, XZ, and YZ projections of the heart vector with uncertainty metrics.
 
         Args:
             heart_vector_components (np.ndarray): Shape (3, num_samples) with Bx, By, Bz.
+            segment_start_global (int): Start index of the segment in the time series.
+            segment_end_global (int): End index of the segment in the time series.
             title_suffix (str): Suffix for the plot title.
             save_path (str, optional): Path to save the plot.
+            uncertainty_ms (float): Uncertainty in ms for metric calculations.
         """
         if heart_vector_components.shape[0] != 3 or heart_vector_components.ndim != 2:
             logging.error("heart_vector_components must have shape (3, num_samples)")
@@ -834,10 +935,27 @@ class Analyzer:
 
         bx, by, bz = heart_vector_components
         fig, axes = plt.subplots(1, 3, figsize=(18, 6), dpi=150)
-        fig.suptitle(f"Mean Heart Vector Projections{': ' + title_suffix if title_suffix else ''}", fontsize=16, fontweight='bold', y=0.98)
+        fig.suptitle(f"Mean Heart Vector Projections{': ' + title_suffix if title_suffix else ''}",
+                    fontsize=16, fontweight='bold', y=0.98)
 
-        for ax, (comp1, comp2, name) in zip(axes, [(bx, by, 'xy-Projection'), (bx, bz, 'xz-Projection'), (by, bz, 'yz-Projection')]):
-            self.plot_heart_vector_projection(comp1, comp2, name, ax=ax)
+        projections = [
+            (np.vstack([bx, by]), 'xy-Projection'),
+            (np.vstack([bx, bz]), 'xz-Projection'),
+            (np.vstack([by, bz]), 'yz-Projection')
+        ]
+
+        for ax, (proj_data, name) in zip(axes, projections):
+            self.plot_heart_vector_projection(
+                original_data=proj_data,
+                segment_start_global=segment_start_global,
+                segment_end_global=segment_end_global,
+                proj_name=name,
+                title_suffix=title_suffix,
+                ax=ax,
+                show=False,
+                save_path=None,
+                uncertainty_ms=uncertainty_ms
+            )
             ax.set_title("")
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])

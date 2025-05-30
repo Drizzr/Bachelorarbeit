@@ -34,53 +34,55 @@ Patient, run = get_user_inputs()
 
 def load_patient_data(patient: str, run: str = None):
     """
-    Load patient data from the specified file.
+    Load patient data using Data/setup.json and return the configured Analyzer instance
+    along with interval and ICA filter data.
     """
+    setup_path = "Data/setup.json"
 
-    overview = pd.read_excel("Data/overview.xlsx")
-    dir = "Data/" + patient + "/"
-    number = re.findall(r'\d+', dir)
-    patient_number = int(number[0]) if number else None
+    with open(setup_path, "r") as f:
+        setup = json.load(f)
 
-
-    if overview.loc[overview["Probanten Nr."] == patient_number, "runs"].values[0].strip() == "-":
-        print(f"No runs found for patient {patient_number}. Skipping...")
+    if patient not in setup:
+        print(f"No data found for patient {patient} in setup.json.")
         return
-    
+
+    patient_data = setup[patient]
+    dir = f"Data/{patient}/"
+
+    if not run:
+        available_runs = patient_data.get("runs", {})
+        print(f"Available runs for patient {patient}: {list(available_runs.keys())}")
+        if not available_runs:
+            print(f"No runs found for patient {patient}. Skipping...")
+            return
+        run = next(iter(available_runs))  # default to first available run
+
+    run_data = patient_data["runs"].get(run)
+    if not run_data:
+        print(f"Run {run} not found for patient {patient}. Skipping...")
+        return
+
+    sensor_channels_to_exclude = run_data.get("sensors_to_exclude", {})
+    intervall_start = run_data.get("interval_start")
+    intervall_end = run_data.get("interval_end")
+    ica_filter = run_data.get("ICA_filter")
+
+    print(f"Intervall: {intervall_start} - {intervall_end}")
+    print(f"ICA Filter: {ica_filter}")
+
     add_filename, file_name = None, None
-    
+
     for file in os.listdir(dir):
         if file.endswith(".tdms") and file.startswith(patient):
+            print(file)
             if run and run not in file:
                 continue
             if "addCh" in file:
                 add_filename = os.path.join(dir, file)
             else:
                 file_name = os.path.join(dir, file)
-            
-    
+
     log_file_path = os.path.join(dir, "QZFM_log_file.txt")
-    sensor_channels_to_exclude = json.loads(overview.loc[overview["Probanten Nr."] == patient_number, "Sensors to exclude"].values[0])
-
-    
-    try:
-        intervall = overview.loc[overview["Probanten Nr."] == patient_number, "Intervall"].values[0]
-        intervall = intervall.split(":") if isinstance(intervall, str) else intervall
-        intervall_start = int(intervall[0]) if isinstance(intervall, list) else None
-        intervall_end = int(intervall[1]) if isinstance(intervall, list) else None
-        print(f"Intervall: {intervall_start} - {intervall_end}")
-    except Exception as e:
-        print(f"Error parsing interval: {e}")
-        intervall_start, intervall_end = None, None
-
-    try:
-        ica_filter = overview.loc[overview["Probanten Nr."] == patient_number, "ICA Filter (x, y, z)"].values[0].split(";")
-        print(f"ICA Filter: {ica_filter}")
-        ica_filter = [float(i) for i in ica_filter] if isinstance(ica_filter, list) else None
-    except Exception as e:
-        print(f"Error parsing ICA filter: {e}")
-        ica_filter = None
-
 
     return Analyzer(
         filename=file_name,
@@ -238,13 +240,43 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
                 if not os.path.exists(path):
                     os.makedirs(path)
 
-            t_segment = sensor_data[:, t_start:t_end]
+            # --- Plot and calculate uncertainty metrics using updated method ---
+            t_segment_path = os.path.join(t_path, f"{quspin_id}_{name[:2]}.pdf")
+            qrs_segment_path = os.path.join(qrs_path, f"{quspin_id}_{name[:2]}.pdf")
+            st_segment_path = os.path.join(st_path, f"{quspin_id}_{name[:2]}.pdf")
 
-            _, t_metrics = analysis.plot_heart_vector_projection(t_segment[0], t_segment[1], name, "T Segment", show=False, save_path=os.path.join(t_path, f"{quspin_id}_{name[:2]}.pdf"))
-            qrs_segment = sensor_data[:, t_start_qrs:t_end_qrs]
-            _, qrs_metrics = analysis.plot_heart_vector_projection(qrs_segment[0], qrs_segment[1], name, "QRS Segment",  show=False, save_path=os.path.join(qrs_path, f"{quspin_id}_{name[:2]}.pdf"))
-            st_segment = sensor_data[:, t_end_qrs + 1:t_start]
-            _, st_metrics = analysis.plot_heart_vector_projection(st_segment[0], st_segment[1], name, "ST Segment",  show=False, save_path=os.path.join(st_path, f"{quspin_id}_{name[:2]}.pdf"))
+            _, t_metrics = analysis.plot_heart_vector_projection(
+                original_data=sensor_data,
+                segment_start_global=t_start,
+                segment_end_global=t_end,
+                proj_name=name,
+                title_suffix="T Segment",
+                show=False,
+                save_path=t_segment_path,
+                uncertainty_ms=40
+            )
+
+            _, qrs_metrics = analysis.plot_heart_vector_projection(
+                original_data=sensor_data,
+                segment_start_global=t_start_qrs,
+                segment_end_global=t_end_qrs,
+                proj_name=name,
+                title_suffix="QRS Segment",
+                show=False,
+                save_path=qrs_segment_path,
+                uncertainty_ms=40
+            )
+
+            _, st_metrics = analysis.plot_heart_vector_projection(
+                original_data=sensor_data,
+                segment_start_global=t_end_qrs + 1,
+                segment_end_global=t_start,
+                proj_name=name,
+                title_suffix="ST Segment",
+                show=False,
+                save_path=st_segment_path,
+                uncertainty_ms=40
+            )
 
             out_put = np.stack((t_metrics, qrs_metrics, st_metrics), axis=0)
 
@@ -253,7 +285,9 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
             for prefix, metrics in zip(["t", "qrs", "st"], [t_metrics, qrs_metrics, st_metrics]):
                 if isinstance(metrics, dict):
                     for k, v in metrics.items():
-                        row[f"{prefix}_{k}"] = v
+                        row[f"{prefix}_{k}"] = float(v.n)      # Nominal value
+                        row[f"{prefix}_{k}_unc"] = float(v.s)  # Uncertainty
+
 
             # Store the metrics CSV file in the sensor base directory
             output_file = os.path.join(sensor_base_path, "result.csv")
