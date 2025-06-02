@@ -99,7 +99,7 @@ for k in analysis.key_list:
         key = k
         break
     
-(x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=True)
+(x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=False)
 
 
 ########
@@ -113,18 +113,18 @@ time_intervall = time[intervall_start:intervall_end]
 single_run_intervall = single_run[:, intervall_start:intervall_end]
 
 
-x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=True)
-y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True)
-z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=True)
-single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
+#x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=False)
+#y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=False)
+#z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=False)
+#single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
-
+single_run_filtered = single_run_intervall.copy()
 ########
 # Visualize the filtered data and apply window averaging
 ########
 
 
-analysis.butterfly_plot(single_run_filtered, time_intervall, 48, f"Original {key}")
+#analysis.butterfly_plot(single_run_filtered, time_intervall, 48, f"Original {key}")
 
 # use cleanest channel for peak detection
 peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.7, confidence_weight=0.9, plausibility_weight=0.1)
@@ -142,7 +142,7 @@ if peak_positions is not None and len(peak_positions) > 0:
     plt.show()
 else:
     print("No R peaks detected or `peak_positions` is empty.")
-analysis.plot_segmented_signal(single_run_filtered[ch, :], labels[ch, :])
+#analysis.plot_segmented_signal(single_run_filtered[ch, :], labels[ch, :])
 
 
 # window averaging
@@ -154,9 +154,9 @@ avg_channels = np.array(avg_channels)
 # --- Load averaged field data ---
 x_data_window, y_data_window, z_data_window = analysis.get_field_directions(avg_channels, key)
 
-analysis.plot_sensor_matrix(x_data_window, time_window, name="X-Field")
+#analysis.plot_sensor_matrix(x_data_window, time_window, name="X-Field")
 analysis.plot_sensor_matrix(y_data_window, time_window, name="Y-Field")
-analysis.plot_sensor_matrix(z_data_window, time_window, name="Z-Field")
+#analysis.plot_sensor_matrix(z_data_window, time_window, name="Z-Field")
 
 # Use a sample vector for projection
 f1_data = np.array([x_data_window[0, 1, :], y_data_window[0, 1, :]])
