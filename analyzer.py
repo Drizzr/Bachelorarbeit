@@ -12,11 +12,13 @@ from scipy import signal
 from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
 from scipy.ndimage import gaussian_filter1d
+from scipy.stats import truncnorm
 from sklearn.decomposition import FastICA
 from matplotlib.widgets import Slider
 import copy
 import json
 from uncertainties import ufloat
+
 
 # Attempt to import local MCG_segmentation package
 try:
@@ -708,7 +710,8 @@ class Analyzer:
 
     def calculate_metrics_with_uncertainty(self, original_data, segment_start_global, segment_end_global, uncertainty_ms=100):
         """
-        Calculate heart vector metrics with uncertainty propagation.
+        Calculate heart vector metrics with uncertainty propagation. Assumes gaussian uncertainty
+        in segment boundaries based on manual annotation.
         
         Parameters:
         -----------
@@ -727,6 +730,12 @@ class Analyzer:
         --------
         dict : Dictionary containing uncertain metrics
         """
+
+        
+
+        def sample_truncated_gaussian(mean, std, lower, upper):
+            return int(truncnorm.rvs((lower - mean)/std, (upper - mean)/std, loc=mean, scale=std))
+
         # Convert uncertainty from ms to samples
         uncertainty_samples = int(uncertainty_ms * self.INTERNAL_SAMPLING_RATE / 1000)
         
@@ -741,9 +750,10 @@ class Analyzer:
         
         for _ in range(n_realizations):
             # Add random boundary variations (can extend beyond original segment)
-            start_shift = np.random.randint(-uncertainty_samples, uncertainty_samples + 1)
-            end_shift = np.random.randint(-uncertainty_samples, uncertainty_samples + 1)
-            
+            start_shift = sample_truncated_gaussian(0, uncertainty_samples / 2, -uncertainty_samples, uncertainty_samples)
+            end_shift = sample_truncated_gaussian(0, uncertainty_samples / 2, -uncertainty_samples, uncertainty_samples)
+
+
             # Calculate new boundaries in global coordinates
             new_start = segment_start_global + start_shift
             new_end = segment_end_global + end_shift
@@ -788,8 +798,7 @@ class Analyzer:
             except Exception as e:
                 logging.warning(f"Error in uncertainty calculation: {e}")
                 continue
-        
-        # Convert to uncertain values
+
         if len(areas) > 0:
             area_unc = ufloat(np.mean(areas), np.std(areas))
             t_dist_unc = ufloat(np.mean(t_distances), np.std(t_distances))
