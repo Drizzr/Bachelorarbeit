@@ -98,8 +98,8 @@ df_demographics = pd.DataFrame(demographic_records)
 # Remove patients where ARVC status could not be determined.
 df_demographics.dropna(subset=['ARVC'], inplace=True)
 
-# Define a consistent color palette for gender across all plots.
-gender_palette_global = {"male": "#4C72B0", "female": "#DD8452", "unknown": "#A9A9A9"}
+# Define a consistent B&W palette for gender across all plots.
+gender_palette_global = {"male": "#555555", "female": "#AAAAAA", "unknown": "#E0E0E0"}
 
 
 # =============================================================================
@@ -120,9 +120,9 @@ def plot_gender_distribution(data, title, save_path=None):
 
     # Create the figure and axes for the plot.
     plt.figure(figsize=(7, 5))
-    # Generate the bar plot.
+    # Generate the bar plot using the B&W palette and add black edges for clarity.
     palette = [gender_palette_global.get(g, "#cccccc") for g in counts.index]
-    ax = sns.barplot(x=counts.index, y=counts.values, palette=palette)
+    ax = sns.barplot(x=counts.index, y=counts.values, palette=palette, edgecolor='black')
 
     # Set plot titles and labels.
     plt.title(title)
@@ -172,7 +172,7 @@ def plot_hist_and_stats(data, column, title, color, save_path=None):
         data (pd.DataFrame): DataFrame containing the data.
         column (str): The column to analyze (e.g., 'age', 'height').
         title (str): The title for the plot.
-        color (str): The color for the histogram.
+        color (str): The color for the histogram (will be converted to grayscale).
         save_path (str, optional): Path to save the plot. If None, shows the plot.
 
     Returns:
@@ -193,13 +193,13 @@ def plot_hist_and_stats(data, column, title, color, save_path=None):
 
         # Create the plot.
         plt.figure(figsize=(8, 5))
-        sns.histplot(valid_data, kde=True, color=color, bins=10)
+        sns.histplot(valid_data, kde=True, color=color, bins=10) # `color` is now a shade of gray from the call.
 
-        # Add vertical lines for mean and standard deviation.
-        plt.axvline(stats['mean'], color='red', linestyle='--', label=f'Mean = {stats["mean"]:.2f}')
+        # Add vertical lines for mean and standard deviation using black/gray and different linestyles.
+        plt.axvline(stats['mean'], color='black', linestyle='--', label=f'Mean = {stats["mean"]:.2f}')
         if not np.isnan(stats['std']):
-            plt.axvline(stats['mean'] + stats['std'], color='green', linestyle='--', label=f'+1 SD = {stats["mean"] + stats["std"]:.2f}')
-            plt.axvline(stats['mean'] - stats['std'], color='green', linestyle='--', label=f'-1 SD = {stats["mean"] - stats["std"]:.2f}')
+            plt.axvline(stats['mean'] + stats['std'], color='dimgray', linestyle=':', label=f'+1 SD = {stats["mean"] + stats["std"]:.2f}')
+            plt.axvline(stats['mean'] - stats['std'], color='dimgray', linestyle=':', label=f'-1 SD = {stats["mean"] - stats["std"]:.2f}')
 
         # Set plot titles, labels, and legend.
         plt.title(title)
@@ -222,32 +222,33 @@ def plot_hist_and_stats(data, column, title, color, save_path=None):
 # --- Plotting Age and Height Distributions ---
 demographics_summary_stats = {}
 print("\n--- AGE & HEIGHT (All Patients) ---")
+# Use shades of gray for the histogram color argument
 demographics_summary_stats["age_all"] = plot_hist_and_stats(
-    df_demographics, "age", "Age Distribution (All)", "#3E8E7E",
+    df_demographics, "age", "Age Distribution (All)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_all.png")
 )
 demographics_summary_stats["height_all"] = plot_hist_and_stats(
-    df_demographics, "height", "Height Distribution (All)", "#5DADEC",
+    df_demographics, "height", "Height Distribution (All)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_all.png")
 )
 
 print("\n--- AGE & HEIGHT (ARVC Positive) ---")
 demographics_summary_stats["age_arvc"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == True], "age", "Age Distribution (ARVC)", "#C44E52",
+    df_demographics[df_demographics["ARVC"] == True], "age", "Age Distribution (ARVC)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_arvc.png")
 )
 demographics_summary_stats["height_arvc"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == True], "height", "Height Distribution (ARVC)", "#C44E52",
+    df_demographics[df_demographics["ARVC"] == True], "height", "Height Distribution (ARVC)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_arvc.png")
 )
 
 print("\n--- AGE & HEIGHT (ARVC Negative) ---")
 demographics_summary_stats["age_healthy"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == False], "age", "Age Distribution (Healthy)", "#4C72B0",
+    df_demographics[df_demographics["ARVC"] == False], "age", "Age Distribution (Healthy)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_healthy.png")
 )
 demographics_summary_stats["height_healthy"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == False], "height", "Height Distribution (Healthy)", "#4C72B0",
+    df_demographics[df_demographics["ARVC"] == False], "height", "Height Distribution (Healthy)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_healthy.png")
 )
 
@@ -395,7 +396,7 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                 plt.figure(figsize=(10, 6))
                 x_t = np.linspace(-4, 4, 1000)
                 y_t = t.pdf(x_t, df_freedom)
-                plt.plot(x_t, y_t, label="t-distribution", color='blue')
+                plt.plot(x_t, y_t, label="t-distribution", color='black')
 
                 # Define conditions for shading the p-value area.
                 if hypothesis == "data1_greater":
@@ -408,8 +409,8 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                     fill_cond = (x_t > abs(nominal_t_stat)) | (x_t < -abs(nominal_t_stat))
                     fill_label = f'p-value Area (|t| > {abs(nominal_t_stat):.2f})'
 
-                plt.fill_between(x_t, 0, y_t, where=fill_cond, color='red', alpha=0.5, label=fill_label)
-                plt.axvline(x=nominal_t_stat, color='green', linestyle='--', label=f't-statistic: {nominal_t_stat:.2f}')
+                plt.fill_between(x_t, 0, y_t, where=fill_cond, color='lightgray', alpha=0.8, label=fill_label)
+                plt.axvline(x=nominal_t_stat, color='black', linestyle='--', label=f't-statistic: {nominal_t_stat:.2f}')
                 plt.xlabel("t-value")
                 plt.ylabel("Probability Density")
                 plt.title(f"t-Distribution with Shaded p-value Area ({hypothesis_text_for_plot.replace(labels[0],'data1').replace(labels[1],'data2')})")
@@ -430,11 +431,14 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
         data2_plot_clean if len(data2_plot_clean) > 0 else np.array([])
     ]
     plt.figure(figsize=(8, 6))
-    sns.boxplot(data=plot_data_bp, palette=["green", "red"], notch=True)
+    # Use a grayscale palette and define black lines for box elements for clarity
+    sns.boxplot(data=plot_data_bp, palette=["#DDDDDD", "#777777"], notch=True,
+                boxprops=dict(edgecolor='k'), medianprops=dict(color='k'),
+                whiskerprops=dict(color='k'), capprops=dict(color='k'))
     plt.xticks([0, 1], [f"{group1_plot_label} (N={len(data1_plot_clean)})", f"{group2_plot_label} (N={len(data2_plot_clean)})"])
     plt.title(f"Boxplot of Cleaned Data for {name}")
     if threshold is not None and not np.isnan(threshold):
-        plt.axhline(y=threshold, color='orange', linestyle='--', label=f'Optimal Threshold: {threshold:.2f}')
+        plt.axhline(y=threshold, color='black', linestyle='-.', label=f'Optimal Threshold: {threshold:.2f}')
         plt.legend()
     if save_plots_prefix:
         plt.savefig(f"{save_plots_prefix}_boxplot.png")
@@ -475,11 +479,11 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
             # --- Plot P-value Distribution ---
             if save_plots_prefix:
                 plt.figure(figsize=(8, 5))
-                sns.histplot(mc_p_values, kde=True, bins=30)
+                sns.histplot(mc_p_values, kde=True, bins=30, color='darkgray')
                 plt.title(f"MC Distribution of P-values for {name}")
                 plt.xlabel("P-value")
-                plt.axvline(nominal_p_value, color='red', linestyle='--', label=f'Nominal P ({nominal_p_value:.3f})')
-                plt.axvline(m_p, color='blue', linestyle=':', label=f'Mean P ({m_p:.3f})')
+                plt.axvline(nominal_p_value, color='black', linestyle='--', label=f'Nominal P ({nominal_p_value:.3f})')
+                plt.axvline(m_p, color='dimgray', linestyle=':', label=f'Mean P ({m_p:.3f})')
                 plt.legend()
                 plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.png")
                 plt.close()
@@ -612,9 +616,9 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
             opt_idx_p = np.argmax(tpr_p - fpr_p) if len(tpr_p) > 0 else 0
 
             plt.figure(figsize=(8, 6))
-            plt.plot(fpr_p, tpr_p, color='blue', lw=2, label=f'ROC (AUC={nom_auc:.2f})')
+            plt.plot(fpr_p, tpr_p, color='black', lw=2, label=f'ROC (AUC={nom_auc:.2f})')
             if len(fpr_p) > opt_idx_p:
-                plt.plot(fpr_p[opt_idx_p], tpr_p[opt_idx_p], 'ro', markersize=8, label='Optimal Threshold')
+                plt.plot(fpr_p[opt_idx_p], tpr_p[opt_idx_p], 'ko', markersize=8, label='Optimal Threshold')
             plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
             plt.xlabel('False Positive Rate')
             plt.ylabel('True Positive Rate')
@@ -636,7 +640,9 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
             cm_perc_p *= 100
 
             plt.figure(figsize=(6, 5))
-            sns.heatmap(cm_perc_p, annot=True, fmt=".2f", cmap="Blues", cbar=False,
+            # Use a grayscale colormap for the heatmap
+            sns.heatmap(cm_perc_p, annot=True, fmt=".2f", cmap="Greys", cbar=False,
+                        linecolor='black', linewidths=0.5,
                         xticklabels=cm_disp_labels_plot, yticklabels=cm_disp_labels_plot)
             plt.title("Confusion Matrix (%)")
             plt.xlabel("Predicted Label")
@@ -695,13 +701,13 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
             for name, data_list, nom_val in mc_metrics_to_plot:
                  if save_plots_prefix and data_list:
                     plt.figure(figsize=(8, 5))
-                    sns.histplot(data_list, kde=True, bins=30)
+                    sns.histplot(data_list, kde=True, bins=30, color='darkgray')
                     plt.title(f"MC Distribution of {name}")
                     plt.xlabel(name)
                     if not np.isnan(nom_val):
-                        plt.axvline(nom_val, color='red', linestyle='--', label=f'Nominal ({nom_val:.3f})')
+                        plt.axvline(nom_val, color='black', linestyle='--', label=f'Nominal ({nom_val:.3f})')
                     mean_plot = np.mean(data_list)
-                    plt.axvline(mean_plot, color='blue', linestyle=':', label=f'Mean ({mean_plot:.3f})')
+                    plt.axvline(mean_plot, color='dimgray', linestyle=':', label=f'Mean ({mean_plot:.3f})')
                     plt.legend()
                     save_name = f"{save_plots_prefix}_{name.lower().replace('-', '_')}_mc_dist.png"
                     plt.savefig(save_name)
