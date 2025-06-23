@@ -88,7 +88,7 @@ def load_patient_data(patient: str, run: str = None):
         filename=file_name,
         add_filename=add_filename,
         log_file_path=log_file_path,
-        model_checkpoint_dir="MCG_segmentation/trained_models/MCGSegmentator_s",
+        #model_checkpoint_dir="MCG_segmentation/trained_models/MCGSegmentator_s",
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter
 
@@ -113,12 +113,14 @@ time_intervall = time[intervall_start:intervall_end]
 single_run_intervall = single_run[:, intervall_start:intervall_end]
 
 
-#x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=False)
-#y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=False)
-#z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=False)
-#single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
+x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=True)
+y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True)
+z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=True)
+single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
-single_run_filtered = single_run_intervall.copy()
+#single_run_filtered = single_run_intervall.copy()
+
+
 ########
 # Visualize the filtered data and apply window averaging
 ########

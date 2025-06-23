@@ -22,7 +22,7 @@ from uncertainties import ufloat
 
 # Attempt to import local MCG_segmentation package
 try:
-    from MCG_segmentation.model.model import ECGSegmenter, UNet1D
+    from MCG_segmentation.model.model import ECGSegmenter, UNet1D, DENS_ECG_segmenter
 except ImportError:
     logging.warning("Could not import ECGSegmenter. Segmentation features will be unavailable.")
     ECGSegmenter = None
@@ -50,7 +50,7 @@ class Analyzer:
     DEFAULT_SOURCE_SAMPLING_RATE = 1000 # Default assumed rate of raw TDMS files
     DEFAULT_SCALING = 2.7 / 1000
     DEFAULT_NUM_CHANNELS = 48
-    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/UNet_1D_15M"
+    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/MCGSegmentator_s"
 
     # Determine device for PyTorch computations
     try:
@@ -73,7 +73,7 @@ class Analyzer:
         sensor_channels_to_exclude=None,
         scaling=DEFAULT_SCALING,
         num_ch=DEFAULT_NUM_CHANNELS,
-        model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR
+        model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR,
     ):
         """Initialize the Analyzer with data and model configurations.
 
@@ -374,7 +374,7 @@ class Analyzer:
             model_params = json.load(f)
 
         # Create model with loaded parameters
-        model = ECGSegmenter(**model_params)#UNet1D(**model_params)
+        model = ECGSegmenter(**model_params)
 
         try:
             model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
@@ -434,6 +434,8 @@ class Analyzer:
             labels: numpy array of shape (num_channels, num_samples). Segmentation labels.
             confidence_weight: Weight for the confidence score.
             plausibility_weight: Weight for the plausibility score.
+            zero_input_mask: Optional mask to zero out scores for specific inputs.
+
         Returns:
             numpy array of shape (num_channels,). Final scores for each channel.
         """

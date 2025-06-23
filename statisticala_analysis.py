@@ -327,14 +327,14 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                    remove_outliers=False, save_plots_prefix=None):
     """
     Performs a t-test on nominal data and optionally a Monte Carlo simulation if uncertainties are provided.
-    Generates plots for the t-distribution and boxplots.
+    Generates plots for the t-distribution and violin plots with MC median error bars.
 
     Args:
         data1_nominal, data2_nominal (array-like): Nominal data for group 1 and 2.
         data1_unc, data2_unc (array-like, optional): Uncertainties for group 1 and 2.
         name (str): Name of the feature being tested, for titles.
         hypothesis (str): The hypothesis type.
-        threshold (float, optional): An optimal threshold to display on the boxplot.
+        threshold (float, optional): An optimal threshold to display on the plot.
         labels (tuple): Names for the two groups.
         remove_outliers (bool): If True, remove outliers using IQR method.
         save_plots_prefix (str, optional): Prefix for saving plot files.
@@ -425,31 +425,10 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
     else:
         print("Not enough data for nominal t-test after cleaning.")
 
-    # --- Plot Boxplot ---
-    plot_data_bp = [
-        data1_plot_clean if len(data1_plot_clean) > 0 else np.array([]),
-        data2_plot_clean if len(data2_plot_clean) > 0 else np.array([])
-    ]
-    plt.figure(figsize=(8, 6))
-    # Use a grayscale palette and define black lines for box elements for clarity
-    sns.boxplot(data=plot_data_bp, palette=["#DDDDDD", "#777777"], notch=True,
-                boxprops=dict(edgecolor='k'), medianprops=dict(color='k'),
-                whiskerprops=dict(color='k'), capprops=dict(color='k'))
-    plt.xticks([0, 1], [f"{group1_plot_label} (N={len(data1_plot_clean)})", f"{group2_plot_label} (N={len(data2_plot_clean)})"])
-    plt.title(f"Boxplot of Cleaned Data for {name}")
-    if threshold is not None and not np.isnan(threshold):
-        plt.axhline(y=threshold, color='black', linestyle='-.', label=f'Optimal Threshold: {threshold:.2f}')
-        plt.legend()
-    if save_plots_prefix:
-        plt.savefig(f"{save_plots_prefix}_boxplot.png")
-        plt.close()
-    else:
-        plt.show()
-
     # --- Monte Carlo Simulation ---
+    mc_t_stats, mc_p_values, mc_medians_g1, mc_medians_g2 = [], [], [], []
     if data1_unc is not None and data2_unc is not None and N_MC_ITERATIONS > 0:
         print(f"\nPerforming MC ({N_MC_ITERATIONS} iter) for t-test of {name}...")
-        mc_t_stats, mc_p_values = [], []
         data1_unc_arr = np.asarray(data1_unc)
         data2_unc_arr = np.asarray(data2_unc)
         for i in range(N_MC_ITERATIONS):
@@ -461,41 +440,112 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
             d2_s = np.random.normal(data2_nom_arr, data2_unc_arr)
             d1_sc = remove_outliers_iqr(d1_s) if remove_outliers else d1_s
             d2_sc = remove_outliers_iqr(d2_s) if remove_outliers else d2_s
+            
+            # Store medians for visualization
+            if len(d1_sc) > 0: mc_medians_g1.append(np.median(d1_sc))
+            if len(d2_sc) > 0: mc_medians_g2.append(np.median(d2_sc))
+
             t_s_mc, p_v_mc, _ = _perform_single_t_test_run(d1_sc, d2_sc, hypothesis, labels)
 
             if not np.isnan(p_v_mc):
                 mc_t_stats.append(t_s_mc)
                 mc_p_values.append(p_v_mc)
 
-        if mc_p_values:
-            # Calculate mean, median, and confidence intervals for p-values and t-stats.
-            p_low, p_high = np.percentile(mc_p_values, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
-            t_low, t_high = np.percentile(mc_t_stats, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
-            m_p, med_p = np.mean(mc_p_values), np.median(mc_p_values)
-            m_t, med_t = np.mean(mc_t_stats), np.median(mc_t_stats)
-            print(f"\nMC T-Test: Mean P-val: {m_p:.4f} (Med:{med_p:.4f}) CI:[{p_low:.4f},{p_high:.4f}]. "
-                  f"Mean T-stat: {m_t:.4f} (Med:{med_t:.4f}) CI:[{t_low:.4f},{t_high:.4f}]")
+    
+    # --- Plot Box Plot with Nominal Data Points and MC Median Error Bars ---
+    fig, ax = plt.subplots(figsize=(8, 6))
 
-            # --- Plot P-value Distribution ---
-            if save_plots_prefix:
-                plt.figure(figsize=(8, 5))
-                sns.histplot(mc_p_values, kde=True, bins=30, color='darkgray')
-                plt.title(f"MC Distribution of P-values for {name}")
-                plt.xlabel("P-value")
-                plt.axvline(nominal_p_value, color='black', linestyle='--', label=f'Nominal P ({nominal_p_value:.3f})')
-                plt.axvline(m_p, color='dimgray', linestyle=':', label=f'Mean P ({m_p:.3f})')
-                plt.legend()
-                plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.png")
-                plt.close()
+    # Data container for plotting
+    plot_data_bp = [
+        data1_plot_clean if len(data1_plot_clean) > 0 else np.array([]),
+        data2_plot_clean if len(data2_plot_clean) > 0 else np.array([])
+    ]
 
-            return (m_t, t_low, t_high), (m_p, p_low, p_high), (m_p < 0.05)
-        else:
-            print("MC t-test no valid p-values.")
-            # Fallback to nominal results if MC fails.
-            return (nominal_t_stat, np.nan, np.nan), (nominal_p_value, np.nan, np.nan), nominal_significant
+    group_labels = [group1_plot_label, group2_plot_label]
+    x_labels = [f"{group_labels[i]} (N={len(plot_data_bp[i])})" for i in range(2)]
 
-    # Return nominal results if MC is not performed.
-    return (nominal_t_stat, np.nan, np.nan), (nominal_p_value, np.nan, np.nan), nominal_significant
+    # Box plot for nominal data distribution
+    sns.boxplot(data=plot_data_bp, ax=ax,
+                palette=["#DDDDDD", "#777777"],
+                boxprops=dict(edgecolor='k'),
+                medianprops=dict(color='k'),
+                whiskerprops=dict(color='k'),
+                capprops=dict(color='k'),)
+
+    # Overlay individual data points using stripplot
+    for i, group_data in enumerate(plot_data_bp):
+        if len(group_data) > 0:
+            sns.stripplot(y=group_data, x=[i] * len(group_data), ax=ax,
+                        color='black', size=4, alpha=0.5, jitter=0.1)
+
+    # Add dummy scatter point for legend
+    scatter_handle = ax.scatter([], [], color='black', alpha=0.5, s=30, label='Individual Data Points')
+
+    # Plot MC medians with confidence intervals
+    if mc_medians_g1 and mc_medians_g2:
+        low_p = (1 - CONFIDENCE_LEVEL) / 2 * 100
+        high_p = (1 + CONFIDENCE_LEVEL) / 2 * 100
+
+        def plot_mc_median(x, mc_data, label=None):
+            mean_med = np.mean(mc_data)
+            low_ci, high_ci = np.percentile(mc_data, [low_p, high_p])
+            y_err = [[mean_med - low_ci], [high_ci - mean_med]]
+            ax.errorbar(x=x, y=mean_med, yerr=y_err, fmt='kx', markersize=8, capsize=5,
+                        label=label)
+
+        plot_mc_median(0, mc_medians_g1, label=f'MC Median ({CONFIDENCE_LEVEL*100:.0f}% CI)')
+        plot_mc_median(1, mc_medians_g2)
+
+    # Add threshold line if applicable
+    if threshold is not None and not np.isnan(threshold):
+        ax.axhline(y=threshold, color='black', linestyle='-.', label=f'Optimal Threshold: {threshold:.2f}')
+
+    # Label and format axes
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(x_labels)
+    ax.set_ylabel("Value")
+    ax.set_title(f"Box Plot of Nominal Data with MC Medians for {name}")
+
+    # Clean and deduplicate legend
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax.legend(by_label.values(), by_label.keys(), loc='best')
+
+    # Save or display
+    plt.tight_layout()
+    if save_plots_prefix:
+        plt.savefig(f"{save_plots_prefix}_boxplot.png", dpi=300)
+        plt.close()
+    else:
+        plt.show()
+
+    # --- Process and Return MC Results ---
+    if mc_p_values:
+        p_low, p_high = np.percentile(mc_p_values, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
+        t_low, t_high = np.percentile(mc_t_stats, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
+        m_p, med_p = np.mean(mc_p_values), np.median(mc_p_values)
+        m_t, med_t = np.mean(mc_t_stats), np.median(mc_t_stats)
+        print(f"\nMC T-Test: Mean P-val: {m_p:.4f} (Med:{med_p:.4f}) CI:[{p_low:.4f},{p_high:.4f}]. "
+            f"Mean T-stat: {m_t:.4f} (Med:{med_t:.4f}) CI:[{t_low:.4f},{t_high:.4f}]")
+
+        # --- Plot P-value Distribution ---
+        if save_plots_prefix:
+            plt.figure(figsize=(8, 5))
+            sns.histplot(mc_p_values, kde=True, bins=30, color='darkgray')
+            plt.title(f"MC Distribution of P-values for {name}")
+            plt.xlabel("P-value")
+            plt.axvline(nominal_p_value, color='black', linestyle='--', label=f'Nominal P ({nominal_p_value:.3f})')
+            plt.axvline(m_p, color='dimgray', linestyle=':', label=f'Mean P ({m_p:.3f})')
+            plt.legend()
+            plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.png")
+            plt.close()
+
+        return (m_t, t_low, t_high), (m_p, p_low, p_high), (m_p < 0.05)
+    else: # MC was not run or failed
+        # Fallback to nominal results if MC fails.
+        return (nominal_t_stat, np.nan, np.nan), (nominal_p_value, np.nan, np.nan), nominal_significant
+    
+
 
 def _determine_single_optimal_threshold_run(data1_sample, data2_sample, hypothesis, labels):
     """
@@ -912,7 +962,9 @@ for proj_suf, dfs_list in proj_dfs_agg.items():
     # Concatenate all dataframes for the current projection into one.
     df_agg = pd.concat(dfs_list, ignore_index=True)
     src_name_agg = f"aggregated_{proj_suf}"
-    print(f"\n--- Analyzing {src_name_agg.upper()} Data ({len(df_agg)} records) ---")
+    # Create a clean, human-readable name for plot titles
+    clean_proj_name = f"Aggregated {proj_suf.upper()}"
+    print(f"\n--- Analyzing {clean_proj_name} Data ({len(df_agg)} records) ---")
 
     # Create a dedicated directory for aggregated plots.
     agg_plots_dir = os.path.join(OVERALL_PLOTS_DIR, "Aggregated_Plots_MC")
@@ -956,9 +1008,12 @@ for proj_suf, dfs_list in proj_dfs_agg.items():
                 remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
             )
             nom_thresh_plot_agg = roc_res_mc_agg["Threshold"][0]
+            
+            # Use the clean name for the plot title
+            plot_title_name = f"{seg_lbl} {feat_short_n} ({clean_proj_name})"
             ttest_res_mc_agg = perform_t_test(
                 pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
-                name=f"{seg_lbl} {feat_short_n} ({src_name_agg})", hypothesis=cfg["hypothesis"],
+                name=plot_title_name, hypothesis=cfg["hypothesis"],
                 threshold=nom_thresh_plot_agg, labels=("ARVC", "Healthy"),
                 remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
             )
