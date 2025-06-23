@@ -470,7 +470,8 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                 boxprops=dict(edgecolor='k'),
                 medianprops=dict(color='k'),
                 whiskerprops=dict(color='k'),
-                capprops=dict(color='k'),)
+                capprops=dict(color='k'),
+                showfliers=True)
 
     # Overlay individual data points using stripplot
     for i, group_data in enumerate(plot_data_bp):
@@ -527,6 +528,10 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
         m_t, med_t = np.mean(mc_t_stats), np.median(mc_t_stats)
         print(f"\nMC T-Test: Mean P-val: {m_p:.4f} (Med:{med_p:.4f}) CI:[{p_low:.4f},{p_high:.4f}]. "
             f"Mean T-stat: {m_t:.4f} (Med:{med_t:.4f}) CI:[{t_low:.4f},{t_high:.4f}]")
+        
+        # Format p-values: use scientific notation if < 0.001
+        def format_pval(p):
+            return f"{p:.3f}" if p >= 0.001 else f"{p:.1e}"
 
         # --- Plot P-value Distribution ---
         if save_plots_prefix:
@@ -534,8 +539,13 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
             sns.histplot(mc_p_values, kde=True, bins=30, color='darkgray')
             plt.title(f"MC Distribution of P-values for {name}")
             plt.xlabel("P-value")
-            plt.axvline(nominal_p_value, color='black', linestyle='--', label=f'Nominal P ({nominal_p_value:.3f})')
-            plt.axvline(m_p, color='dimgray', linestyle=':', label=f'Mean P ({m_p:.3f})')
+            
+
+            plt.axvline(nominal_p_value, color='black', linestyle='--',
+                        label=f'Nominal P ({format_pval(nominal_p_value)})')
+            plt.axvline(m_p, color='dimgray', linestyle=':',
+                        label=f'Mean P ({format_pval(m_p)})')
+
             plt.legend()
             plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.png")
             plt.close()
