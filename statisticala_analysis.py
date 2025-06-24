@@ -469,7 +469,7 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                 palette=["#DDDDDD", "#777777"],
                 boxprops=dict(edgecolor='k'),
                 medianprops=dict(color='k'),
-                whiskerprops=dict(color='k'),
+                whiskerprops=dict(color='dimgray'),
                 capprops=dict(color='k'),
                 showfliers=True)
 
@@ -491,8 +491,18 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
             mean_med = np.mean(mc_data)
             low_ci, high_ci = np.percentile(mc_data, [low_p, high_p])
             y_err = [[mean_med - low_ci], [high_ci - mean_med]]
-            ax.errorbar(x=x, y=mean_med, yerr=y_err, fmt='kx', markersize=8, capsize=5,
-                        label=label)
+            ax.errorbar(
+                x=x, y=mean_med, yerr=y_err,
+                fmt='X',                        # bold marker
+                color='black',
+                ecolor='black',              # distinguish error bar color
+                elinewidth=2,                  # thicker error lines
+                capsize=8,                     # larger cap on error bar
+                capthick=2,                    # make cap thicker
+                markersize=6,                 # larger marker
+                label=label
+            )
+
 
         plot_mc_median(0, mc_medians_g1, label=f'MC Median ({CONFIDENCE_LEVEL*100:.0f}% CI)')
         plot_mc_median(1, mc_medians_g2)
