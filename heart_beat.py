@@ -63,6 +63,7 @@ def load_patient_data(patient: str, run: str = None):
         return
 
     sensor_channels_to_exclude = run_data.get("sensors_to_exclude", {})
+    print(f"Excluding sensors: {sensor_channels_to_exclude}")
     intervall_start = run_data.get("interval_start")
     intervall_end = run_data.get("interval_end")
     ica_filter = run_data.get("ICA_filter")
