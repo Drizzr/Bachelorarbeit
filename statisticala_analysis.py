@@ -457,8 +457,8 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
 
     # Data container for plotting
     plot_data_bp = [
-        data1_plot_clean if len(data1_plot_clean) > 0 else np.array([]),
-        data2_plot_clean if len(data2_plot_clean) > 0 else np.array([])
+        data1_nom_arr if len(data1_nom_arr) > 0 else np.array([]),
+        data2_nom_arr if len(data2_nom_arr) > 0 else np.array([])
     ]
 
     group_labels = [group1_plot_label, group2_plot_label]
@@ -472,9 +472,11 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                 whiskerprops=dict(color='dimgray'),
                 capprops=dict(color='k'),
                 showfliers=True)
+    
+    plot_data_bp_clean = [remove_outliers_iqr(d) if remove_outliers else d for d in plot_data_bp]
 
     # Overlay individual data points using stripplot
-    for i, group_data in enumerate(plot_data_bp):
+    for i, group_data in enumerate(plot_data_bp_clean):
         if len(group_data) > 0:
             sns.stripplot(y=group_data, x=[i] * len(group_data), ax=ax,
                         color='black', size=4, alpha=0.5, jitter=0.1)

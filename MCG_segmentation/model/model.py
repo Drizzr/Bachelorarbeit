@@ -113,17 +113,18 @@ class ECGSegmenter(nn.Module):
         x_pos = x.permute(0, 2, 1)  # [B, L, C]
         x_pos = self.pos_encoder(x_pos)
         x = x_pos.permute(0, 2, 1)  # [B, C, L]
+
         
         # Initial convolution
         x = self.initial_conv(x)
-        
+
         # Save for skip connection
         skip_features = x
         
         # Multi-scale feature extraction
         multi_scale_outputs = [conv(x) for conv in self.multi_scale]
         x = torch.cat(multi_scale_outputs, dim=1)
-        
+
         # Combine scales
         x = self.combine_scales(x)
         
@@ -131,12 +132,14 @@ class ECGSegmenter(nn.Module):
         for block in self.res_blocks:
             x = block(x)
         
+        
         # BiLSTM expects [batch, seq_len, features]
         x = x.permute(0, 2, 1)  # [B, L, C]
         
         # Apply BiLSTM
         x, _ = self.bilstm(x)
         
+  
         # Self-attention
         x = self.transformer(x)
         
@@ -269,18 +272,20 @@ class UNet1D(nn.Module):
             x = enc(x)
             skip_connections.append(x)
             x = self.pool(x)
+
         
         # Bottleneck with attention
         x = self.bottleneck_conv(x)
         x = self.mhsa(x)
-        
+
         # Decoder path
         skip_connections = skip_connections[::-1]  # Reverse for decoder
         
+
         for idx in range(len(self.upconvs)):
+            
             x = self.upconvs[idx](x)
             skip = skip_connections[idx]
-            
             # Handle size mismatch by padding the smaller tensor
             if x.shape[-1] != skip.shape[-1]:
                 diff = abs(x.shape[-1] - skip.shape[-1])
@@ -305,8 +310,8 @@ if __name__ == "__main__":
     input_channels = 1
     num_classes = 4
     
-    model = UNet1D(num_classes=num_classes, input_channels=input_channels, features=[64, 128, 256, 512]) #32, 64, 128
-    
+    #model = UNet1D(num_classes=num_classes, input_channels=input_channels, features=[64, 128, 256, 512]) #32, 64, 128
+    model = ECGSegmenter(num_classes = 4, input_channels = 1, hidden_channels = 16, lstm_hidden = 20, dropout_rate = 0.3, max_seq_len = 2000)
     # Test input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)
     print(f"Input shape: {dummy_input.shape}")

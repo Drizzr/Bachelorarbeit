@@ -95,7 +95,7 @@ def load_patient_data(patient: str, run: str = None):
 analysis, intervall_start, intervall_end, ica_filter = load_patient_data(Patient, run)
 
 for k in analysis.key_list:
-    if k in ["Brustlage", "Brust", "Bauchlage", "Bauch"]:
+    if k in ["Brustlage", "Brust", "Bauchlage", "Bauch", "Rene_Brust", "Lena_Brustlage"]:
         key = k
         break
     

@@ -1,3 +1,25 @@
+dataset
+model architecture
+
+introduction
+evaluation/post processing
+
+sources
+
+training emphasis on data augmentation
+Loss-Function: focal loss/cross Entropie
+
+training validation split for both kinds of models
+
+Results evaluation metrics
+
+plots (cm + segmentation)
+
+
+
+
+
+
 # ECG Segmentation Project Documentation
 
 ## Table of Contents

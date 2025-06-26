@@ -1679,7 +1679,6 @@ class Analyzer:
                 - combined_run_data: np.ndarray shape (num_channels, samples) at 250Hz, combined, interval-selected, filtered, oriented.
                 Returns (None, None, None) if data preparation fails at any critical step.
         """
-
         intervall_low_samples = int(intervall_low_sec * input_sampling_rate)
         intervall_high_samples = int(intervall_high_sec * input_sampling_rate)
 
