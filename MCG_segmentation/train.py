@@ -84,7 +84,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train ECG Segmentation Model")
 
     # Training Process Args
-    parser.add_argument("--num_epochs", type=int, default=25, help="Number of training epochs")
+    parser.add_argument("--num_epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("--val_batch_size", type=int, default=4, help="Batch size for validation")
     parser.add_argument("--print_freq", type=int, default=50, help="Frequency of printing training stats (in steps)")
@@ -102,7 +102,9 @@ def main():
     parser.add_argument("--sequence_length", type=int, default=500, help="Length of ECG sequence segments")
     parser.add_argument("--overlap", type=int, default=400, help="Overlap between consecutive sequence segments")
     parser.add_argument("--num_workers", type=int, default=4, help="Number of dataloader workers")
-
+    parser.add_argument("--gaussian_noise_std", type=float, default=0.04, help="Standard deviation of Gaussian noise added to ECG segments")
+    parser.add_argument("--baseline_wander_mag", type=float, default=0.1, help="Magnitude of baseline wander added to ECG segments")
+    parser.add_argument("--augmentation_prob", type=float, default=0.80, help="Probability of applying data augmentation during training")
     # LR Scheduler Args
     parser.add_argument("--max_lr", type=float, default=1e-3, help="Maximum learning rate (for Adam and CyclicLR)")
     parser.add_argument("--base_lr", type=float, default=1e-5, help="Base learning rate for CyclicLR")
@@ -128,7 +130,7 @@ def main():
         # Ensure wavelet_type is passed if needed by ECGFullDataset
         train_dataset = ECGFullDataset(
                 data_dir=args.data_dir_train, overlap=args.overlap, sequence_length=args.sequence_length,
-                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.80, baseline_wander_mag=0.1, gaussian_noise_std=0.04
+                sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=args.augmentation_prob, baseline_wander_mag=args.baseline_wander_mag, gaussian_noise_std=args.gaussian_noise_std
             )
         
         val_dataset = ECGFullDataset(
