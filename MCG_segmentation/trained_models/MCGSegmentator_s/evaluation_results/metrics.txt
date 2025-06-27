@@ -1,52 +1,51 @@
-Accuracy: 0.8376
               precision    recall  f1-score   support
 
-     No Wave     0.8897    0.8085    0.8471    179558
-      P Wave     0.6776    0.8666    0.7605     32173
-         QRS     0.9218    0.8676    0.8939     41487
-      T Wave     0.7747    0.8796    0.8238     72782
+     No Wave     0.9075    0.8530    0.8794   2724614
+      P Wave     0.7285    0.8091    0.7667    478744
+         QRS     0.9154    0.8863    0.9006    519616
+      T Wave     0.8029    0.9063    0.8515    988526
 
-    accuracy                         0.8376    326000
-   macro avg     0.8160    0.8556    0.8313    326000
-weighted avg     0.8472    0.8376    0.8393    326000
+    accuracy                         0.8634   4711500
+   macro avg     0.8386    0.8637    0.8495   4711500
+weighted avg     0.8682    0.8634    0.8644   4711500
 
 
 === Significant Point Detection Metrics (±150 ms) ===
 
 P Wave Onset:
-  TP=1255, FP=268, FN=57
-  Mean Error: -2.56 samples (-10.22 ms)
-  Std Dev: 4.60 samples (18.40 ms)
-  Sensitivity (Se): 0.9566, Precision (PPV): 0.8240, F1 Score: 0.8854
+  TP=17620, FP=1995, FN=1894
+  Mean Error: -1.72 samples (-6.87 ms)
+  Std Dev: 6.79 samples (27.17 ms)
+  Sensitivity (Se): 0.9029, Precision (PPV): 0.8983, F1 Score: 0.9006
 
 P Wave Offset:
-  TP=1255, FP=268, FN=57
-  Mean Error: 0.06 samples (0.25 ms)
-  Std Dev: 5.12 samples (20.49 ms)
-  Sensitivity (Se): 0.9566, Precision (PPV): 0.8240, F1 Score: 0.8854
+  TP=17629, FP=1986, FN=1885
+  Mean Error: 0.16 samples (0.65 ms)
+  Std Dev: 5.56 samples (22.26 ms)
+  Sensitivity (Se): 0.9034, Precision (PPV): 0.8988, F1 Score: 0.9011
 
 QRS Onset:
-  TP=1710, FP=1, FN=67
-  Mean Error: 0.84 samples (3.35 ms)
-  Std Dev: 3.08 samples (12.32 ms)
-  Sensitivity (Se): 0.9623, Precision (PPV): 0.9994, F1 Score: 0.9805
+  TP=21414, FP=158, FN=855
+  Mean Error: 0.04 samples (0.16 ms)
+  Std Dev: 2.75 samples (11.02 ms)
+  Sensitivity (Se): 0.9616, Precision (PPV): 0.9927, F1 Score: 0.9769
 
 QRS Offset:
-  TP=1710, FP=1, FN=67
-  Mean Error: 0.18 samples (0.73 ms)
-  Std Dev: 2.83 samples (11.32 ms)
-  Sensitivity (Se): 0.9623, Precision (PPV): 0.9994, F1 Score: 0.9805
+  TP=21419, FP=153, FN=850
+  Mean Error: -0.55 samples (-2.21 ms)
+  Std Dev: 3.64 samples (14.54 ms)
+  Sensitivity (Se): 0.9618, Precision (PPV): 0.9929, F1 Score: 0.9771
 
 T Wave Onset:
-  TP=1687, FP=22, FN=61
-  Mean Error: -0.81 samples (-3.23 ms)
-  Std Dev: 8.81 samples (35.22 ms)
-  Sensitivity (Se): 0.9651, Precision (PPV): 0.9871, F1 Score: 0.9760
+  TP=21393, FP=623, FN=1677
+  Mean Error: -3.66 samples (-14.64 ms)
+  Std Dev: 8.70 samples (34.79 ms)
+  Sensitivity (Se): 0.9273, Precision (PPV): 0.9717, F1 Score: 0.9490
 
 T Wave Offset:
-  TP=1630, FP=79, FN=118
-  Mean Error: 4.22 samples (16.87 ms)
-  Std Dev: 8.40 samples (33.58 ms)
-  Sensitivity (Se): 0.9325, Precision (PPV): 0.9538, F1 Score: 0.9430
+  TP=21355, FP=661, FN=1715
+  Mean Error: 2.19 samples (8.74 ms)
+  Std Dev: 7.11 samples (28.45 ms)
+  Sensitivity (Se): 0.9257, Precision (PPV): 0.9700, F1 Score: 0.9473
 
-Final Accuracy: 0.8376
+Final Accuracy: 0.8634

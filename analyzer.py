@@ -363,7 +363,7 @@ class Analyzer:
             logging.warning("ECGSegmenter not available. Returning None.")
             return None
 
-        best_model_path = os.path.join(checkpoint_dir, "checkpoints/best_2/model.pth")
+        best_model_path = os.path.join(checkpoint_dir, "checkpoints/best/model.pth")
         config_path = os.path.join(checkpoint_dir, "config.json")
 
         if not os.path.exists(best_model_path) or not os.path.exists(config_path):
