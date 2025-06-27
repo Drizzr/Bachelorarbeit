@@ -21,8 +21,8 @@ def create_directory(directory):
         except IOError as e:
             LOGGER.warning(f"Could not create .gitignore in {directory}: {e}")
 
-def split_files(processed_path, train_dir, val_dir, test_dir=None, train_ratio=0.8, random_seed=42, include_records="all"):
-    """Split CSV files into train and val directories, optionally limiting to specified records."""
+def split_files(processed_path, train_dir, val_dir, test_dir=None, train_ratio=0.8, random_seed=42, exclude_records=None):
+    """Split CSV files into train and val directories, excluding specified records."""
     random.seed(random_seed)
 
     # Get all CSV files, excluding hidden files
@@ -46,17 +46,17 @@ def split_files(processed_path, train_dir, val_dir, test_dir=None, train_ratio=0
         LOGGER.warning(f"No valid record names found in {processed_path}")
         return
 
-    # Limit to specified records if provided
-    if include_records != "all":
-        valid_records = [record for record in record_names if record in include_records]
-        test_records = [record for record in record_names if record not in include_records]
-        LOGGER.info(f"Filtering records: {len(record_names)} total, {len(valid_records)} included, {len(test_records)} excluded")
-    else:
-        valid_records = record_names
-        test_records = []
+    # Filter out excluded records
+    if exclude_records is None:
+        exclude_records = []
+    
+    valid_records = [record for record in record_names if record not in exclude_records]
+    test_records = [record for record in record_names if record in exclude_records]
+    
+    LOGGER.info(f"Filtering records: {len(record_names)} total, {len(valid_records)} included, {len(test_records)} excluded")
 
     if not valid_records:
-        LOGGER.error(f"No valid records found in {processed_path}")
+        LOGGER.error(f"No valid records found in {processed_path} after excluding specified records")
         return
 
     # Shuffle records for random split
@@ -81,7 +81,7 @@ def split_files(processed_path, train_dir, val_dir, test_dir=None, train_ratio=0
             target_dir = train_dir if record in train_records else val_dir
         else:
             if not test_dir:
-                LOGGER.warning(f"Test directory not provided but invalid record '{record}' exists.")
+                LOGGER.warning(f"Test directory not provided but excluded record '{record}' exists.")
                 continue
             target_dir = test_dir
 
@@ -109,13 +109,9 @@ def main():
     val_dir = os.path.join(DATA_DIR, "val")
     test_dir = os.path.join(DATA_DIR, "test")  # Optional test directory
 
-    # Define QTDB records to include (fixed record names)
-    qtdb_include_records = [
-        'sel223', 'sel301', 'sel821', 'sel840', 'sel16539', 'sel16786', 'sel16795', 'sel17453',
-        'sele0106', 'sele0114', 'sele0116', 'sele0124', 'sele0136', 'sele0166', 'sele0210', 
-        'sele0211', 'sele0303', 'sele0409', 'sele0609', 'sele0612', 'sel30', 'sel31', 'sel32', 
-        'sel33', 'sel34', 'sel38', 'sel39', 'sel40', 'sel41', 'sel42', 'sel43', 'sel44', 'sel45', 
-        'sel46', 'sel47', 'sel48', 'sel49', 'sel51', 'sel52', 'sel1752', 'sel14172'
+    # Define QTDB records to exclude (records that should go to test set)
+    qtdb_exclude_records = [
+        "sel102", "sel104", "sel221", "sel232", "sel310", "sel35", "sel36", "sel37",
     ]
     
     # Split QTDB files
@@ -128,7 +124,7 @@ def main():
             test_dir=test_dir,
             train_ratio=0.8,
             random_seed=123,
-            include_records=qtdb_include_records
+            exclude_records=qtdb_exclude_records
         )
     else:
         LOGGER.error(f"QTDB processed directory not found: {qtdb_processed}")
@@ -142,7 +138,7 @@ def main():
             val_dir=val_dir,
             train_ratio=0.8,
             random_seed=123,
-            include_records="all"
+            exclude_records=None  # No exclusions for LUDB
         )
     else:
         LOGGER.error(f"LUDB processed directory not found: {ludb_processed}")
