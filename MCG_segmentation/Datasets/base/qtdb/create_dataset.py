@@ -1,5 +1,5 @@
-# 3rd party imports
-# https://physionet.org/physiobank/database/qtdb/doc/node4.html
+#Datasets/base/qtdb/create_dataset.py
+
 import os
 import wfdb
 import numpy as np
