@@ -234,7 +234,7 @@ class MHSA1D(nn.Module):
 
 
 class UNet1D(nn.Module):
-    def __init__(self, num_classes=4, input_channels=1, features=[64, 128, 256, 512], dropout=0.4, num_heads=8):  # 900k dropout = 0. , num heads = 4 f, [32, 64, 128]
+    def __init__(self, num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4):  # 900k dropout = 0. , num heads = 4 f, [32, 64, 128]
         super().__init__()
         
         self.encoder_blocks = nn.ModuleList()
@@ -310,8 +310,8 @@ if __name__ == "__main__":
     input_channels = 1
     num_classes = 4
     
-    #model = UNet1D(num_classes=num_classes, input_channels=input_channels, features=[64, 128, 256, 512]) #32, 64, 128
-    model = ECGSegmenter(num_classes = 4, input_channels = 1, hidden_channels = 16, lstm_hidden = 20, dropout_rate = 0.3, max_seq_len = 2000)
+    model = UNet1D(num_classes=num_classes, input_channels=input_channels) #32, 64, 128
+    #model = ECGSegmenter(num_classes = 4, input_channels = 1, hidden_channels = 16, lstm_hidden = 20, dropout_rate = 0.3, max_seq_len = 2000)
     # Test input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)
     print(f"Input shape: {dummy_input.shape}")
