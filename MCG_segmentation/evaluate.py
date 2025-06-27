@@ -35,7 +35,7 @@ except Exception as e:
     DEVICE = torch.device("cpu")
 
 def load_model(load_dir, device):
-    best_model_path = os.path.join(load_dir, "checkpoints/best/model.pth")
+    best_model_path = os.path.join(load_dir, "checkpoints/best_2/model.pth")
     config_path = os.path.join(load_dir, "config.json")
 
     if not os.path.exists(best_model_path) or not os.path.exists(config_path):
@@ -45,7 +45,7 @@ def load_model(load_dir, device):
     with open(config_path, "r") as f:
         model_params = json.load(f)
 
-    model = ECGSegmenter(**model_params)
+    model = UNet1D(**model_params)
     
     try:
         model.load_state_dict(torch.load(best_model_path, map_location=device))
@@ -314,9 +314,9 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/MCGSegmentator_xl")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M")
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/MCGSegmentator_xl/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--sequence_length", type=int, default=2000)
