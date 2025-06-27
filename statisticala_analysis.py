@@ -31,7 +31,7 @@ os.makedirs(OVERALL_TABLES_DIR, exist_ok=True)
 
 # Number of Monte Carlo iterations for uncertainty analysis.
 # A higher number (e.g., 1000) provides more robust results but takes longer.
-N_MC_ITERATIONS = 100
+N_MC_ITERATIONS = 500
 # Confidence level for calculating confidence intervals from MC simulations.
 CONFIDENCE_LEVEL = 0.95
 
@@ -99,7 +99,7 @@ df_demographics = pd.DataFrame(demographic_records)
 df_demographics.dropna(subset=['ARVC'], inplace=True)
 
 # Define a consistent B&W palette for gender across all plots.
-gender_palette_global = {"male": "#555555", "female": "#AAAAAA", "unknown": "#E0E0E0"}
+gender_palette_global = {"male": "#555555", "female": "#AAAAAA"}
 
 
 # =============================================================================
@@ -116,7 +116,7 @@ def plot_gender_distribution(data, title, save_path=None):
         save_path (str, optional): Path to save the plot image. If None, shows the plot.
     """
     # Count occurrences of each gender, ensuring all categories are present.
-    counts = data["gender"].value_counts().reindex(["male", "female", "unknown"]).fillna(0)
+    counts = data["gender"].value_counts().reindex(["male", "female"]).fillna(0)
 
     # Create the figure and axes for the plot.
     plt.figure(figsize=(7, 5))
@@ -140,7 +140,7 @@ def plot_gender_distribution(data, title, save_path=None):
 
     # Save or display the plot.
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, bbox_inches='tight')
         plt.close()
     else:
         plt.show()
@@ -150,17 +150,17 @@ print("\n--- GENDER DISTRIBUTION ---")
 plot_gender_distribution(
     df_demographics,
     "Gender Distribution (All Patients)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_all.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_all.pdf")
 )
 plot_gender_distribution(
     df_demographics[df_demographics["ARVC"] == True],
     "Gender Distribution (ARVC)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_arvc.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_arvc.pdf")
 )
 plot_gender_distribution(
     df_demographics[df_demographics["ARVC"] == False],
     "Gender Distribution (Healthy)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_healthy.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_healthy.pdf")
 )
 
 
@@ -210,7 +210,7 @@ def plot_hist_and_stats(data, column, title, color, save_path=None):
 
         # Save or display the plot.
         if save_path:
-            plt.savefig(save_path)
+            plt.savefig(save_path, bbox_inches='tight')
             plt.close()
         else:
             plt.show()
@@ -225,31 +225,31 @@ print("\n--- AGE & HEIGHT (All Patients) ---")
 # Use shades of gray for the histogram color argument
 demographics_summary_stats["age_all"] = plot_hist_and_stats(
     df_demographics, "age", "Age Distribution (All)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_all.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_all.pdf")
 )
 demographics_summary_stats["height_all"] = plot_hist_and_stats(
     df_demographics, "height", "Height Distribution (All)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_all.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_all.pdf")
 )
 
 print("\n--- AGE & HEIGHT (ARVC Positive) ---")
 demographics_summary_stats["age_arvc"] = plot_hist_and_stats(
     df_demographics[df_demographics["ARVC"] == True], "age", "Age Distribution (ARVC)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_arvc.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_arvc.pdf")
 )
 demographics_summary_stats["height_arvc"] = plot_hist_and_stats(
     df_demographics[df_demographics["ARVC"] == True], "height", "Height Distribution (ARVC)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_arvc.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_arvc.pdf")
 )
 
 print("\n--- AGE & HEIGHT (ARVC Negative) ---")
 demographics_summary_stats["age_healthy"] = plot_hist_and_stats(
     df_demographics[df_demographics["ARVC"] == False], "age", "Age Distribution (Healthy)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_healthy.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_healthy.pdf")
 )
 demographics_summary_stats["height_healthy"] = plot_hist_and_stats(
     df_demographics[df_demographics["ARVC"] == False], "height", "Height Distribution (Healthy)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_healthy.png")
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_healthy.pdf")
 )
 
 # Save the collected demographic stats to a JSON file.
@@ -416,7 +416,7 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                 plt.title(f"t-Distribution with Shaded p-value Area ({hypothesis_text_for_plot.replace(labels[0],'data1').replace(labels[1],'data2')})")
                 plt.legend()
                 if save_plots_prefix:
-                    plt.savefig(f"{save_plots_prefix}_tdist.png")
+                    plt.savefig(f"{save_plots_prefix}_tdist.pdf", bbox_inches='tight')
                     plt.close()
                 else:
                     plt.show()
@@ -527,7 +527,7 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
     # Save or display
     plt.tight_layout()
     if save_plots_prefix:
-        plt.savefig(f"{save_plots_prefix}_boxplot.png", dpi=300)
+        plt.savefig(f"{save_plots_prefix}_boxplot.pdf", dpi=300)
         plt.close()
     else:
         plt.show()
@@ -559,7 +559,7 @@ def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
                         label=f'Mean P ({format_pval(m_p)})')
 
             plt.legend()
-            plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.png")
+            plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.pdf", bbox_inches='tight')
             plt.close()
 
         return (m_t, t_low, t_high), (m_p, p_low, p_high), (m_p < 0.05)
@@ -697,7 +697,7 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
             plt.title('ROC Curve')
             plt.legend(loc='lower right')
             if save_plots_prefix:
-                plt.savefig(f"{save_plots_prefix}_roc.png")
+                plt.savefig(f"{save_plots_prefix}_roc.pdf", bbox_inches='tight')
                 plt.close()
             else:
                 plt.show()
@@ -720,7 +720,7 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
             plt.xlabel("Predicted Label")
             plt.ylabel("True Label")
             if save_plots_prefix:
-                plt.savefig(f"{save_plots_prefix}_cm.png")
+                plt.savefig(f"{save_plots_prefix}_cm.pdf", bbox_inches='tight')
                 plt.close()
             else:
                 plt.show()
@@ -781,8 +781,8 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
                     mean_plot = np.mean(data_list)
                     plt.axvline(mean_plot, color='dimgray', linestyle=':', label=f'Mean ({mean_plot:.3f})')
                     plt.legend()
-                    save_name = f"{save_plots_prefix}_{name.lower().replace('-', '_')}_mc_dist.png"
-                    plt.savefig(save_name)
+                    save_name = f"{save_plots_prefix}_{name.lower().replace('-', '_')}_mc_dist.pdf"
+                    plt.savefig(save_name, bbox_inches='tight')
                     plt.close()
             return results_mc
         else:
@@ -935,11 +935,11 @@ for sensor_name, df_sensor_iter in all_sensor_data_dfs.items():
                 "specificity_mean": roc_res_mc["Specificity"][0], "specificity_ci_lower": roc_res_mc["Specificity"][1], "specificity_ci_upper": roc_res_mc["Specificity"][2],
                 "f1_score_mean": roc_res_mc["F1-Score"][0], "f1_score_ci_lower": roc_res_mc["F1-Score"][1], "f1_score_ci_upper": roc_res_mc["F1-Score"][2],
                 "n_arvc_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
-                "plot_nominal_tdist_path": f"{plot_pref}_tdist.png", "plot_nominal_boxplot_path": f"{plot_pref}_boxplot.png",
-                "plot_nominal_roc_path": f"{plot_pref}_roc.png", "plot_nominal_cm_path": f"{plot_pref}_cm.png",
-                "plot_mc_pvalue_dist_path": f"{plot_pref}_p_value_mc_dist.png" if has_unc and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_threshold_dist_path": f"{plot_pref}_threshold_mc_dist.png" if has_unc and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_f1_dist_path": f"{plot_pref}_f1_score_mc_dist.png" if has_unc and N_MC_ITERATIONS > 0 else None
+                "plot_nominal_tdist_path": f"{plot_pref}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref}_boxplot.pdf",
+                "plot_nominal_roc_path": f"{plot_pref}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref}_cm.pdf",
+                "plot_mc_pvalue_dist_path": f"{plot_pref}_p_value_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None,
+                "plot_mc_threshold_dist_path": f"{plot_pref}_threshold_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None,
+                "plot_mc_f1_dist_path": f"{plot_pref}_f1_score_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None
             }
             current_sensor_records.append(rec)
             overall_individual_analysis_records.append(rec)
@@ -1065,11 +1065,11 @@ for proj_suf, dfs_list in proj_dfs_agg.items():
                 "specificity_mean": roc_res_mc_agg["Specificity"][0], "specificity_ci_lower": roc_res_mc_agg["Specificity"][1], "specificity_ci_upper": roc_res_mc_agg["Specificity"][2],
                 "f1_score_mean": roc_res_mc_agg["F1-Score"][0], "f1_score_ci_lower": roc_res_mc_agg["F1-Score"][1], "f1_score_ci_upper": roc_res_mc_agg["F1-Score"][2],
                 "n_arvc_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
-                "plot_nominal_tdist_path": f"{plot_pref_agg}_tdist.png", "plot_nominal_boxplot_path": f"{plot_pref_agg}_boxplot.png",
-                "plot_nominal_roc_path": f"{plot_pref_agg}_roc.png", "plot_nominal_cm_path": f"{plot_pref_agg}_cm.png",
-                "plot_mc_pvalue_dist_path": f"{plot_pref_agg}_p_value_mc_dist.png" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_threshold_dist_path": f"{plot_pref_agg}_threshold_mc_dist.png" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_f1_dist_path": f"{plot_pref_agg}_f1_score_mc_dist.png" if has_unc_agg and N_MC_ITERATIONS > 0 else None
+                "plot_nominal_tdist_path": f"{plot_pref_agg}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref_agg}_boxplot.pdf",
+                "plot_nominal_roc_path": f"{plot_pref_agg}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref_agg}_cm.pdf",
+                "plot_mc_pvalue_dist_path": f"{plot_pref_agg}_p_value_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
+                "plot_mc_threshold_dist_path": f"{plot_pref_agg}_threshold_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
+                "plot_mc_f1_dist_path": f"{plot_pref_agg}_f1_score_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None
             })
 
 # Save the summary table for the aggregated analysis.

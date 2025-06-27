@@ -710,7 +710,7 @@ class Analyzer:
             plt.savefig(path+f'{name}_LSD.png')
         plt.show()
 
-    def calculate_metrics_with_uncertainty(self, original_data, segment_start_global, segment_end_global, uncertainty_ms=100):
+    def calculate_metrics_with_uncertainty(self, original_data, segment_start_global, segment_end_global, uncertainty_ms=100, n_realizations=100):
         """
         Calculate heart vector metrics with uncertainty propagation. Assumes gaussian uncertainty
         in segment boundaries based on manual annotation.
@@ -742,7 +742,6 @@ class Analyzer:
         uncertainty_samples = int(uncertainty_ms * self.INTERNAL_SAMPLING_RATE / 1000)
         
         # Create multiple realizations by varying segment boundaries
-        n_realizations = 50  # Number of Monte Carlo samples
         areas = []
         t_distances = []
         compactnesses = []
@@ -822,7 +821,7 @@ class Analyzer:
     def plot_heart_vector_projection(self, original_data, segment_start_global, segment_end_global, proj_name, 
                                  title_suffix="", ax=None, show=True, 
                                  save_path=None, 
-                                 uncertainty_ms=100):
+                                 uncertainty_ms=100, n_realizations=100):
         """Plot a 2D projection of the heart vector with metrics and uncertainty bars."""
 
         # Extract components from the original data using global indices
@@ -866,7 +865,7 @@ class Analyzer:
 
         # Calculate metrics with uncertainty
         uncertain_metrics = self.calculate_metrics_with_uncertainty(
-            original_data, segment_start_global, segment_end_global, uncertainty_ms
+            original_data, segment_start_global, segment_end_global, uncertainty_ms, n_realizations
         )
 
         # Format metrics text with uncertainties
@@ -929,7 +928,7 @@ class Analyzer:
 
 
     def plot_all_heart_vector_projections(self, heart_vector_components, segment_start_global, segment_end_global,
-                                      title_suffix="", save_path=None, uncertainty_ms=100):
+                                      title_suffix="", save_path=None, uncertainty_ms=100, n_realizations=100):
         """Plot XY, XZ, and YZ projections of the heart vector with uncertainty metrics.
 
         Args:
@@ -965,7 +964,8 @@ class Analyzer:
                 ax=ax,
                 show=False,
                 save_path=None,
-                uncertainty_ms=uncertainty_ms
+                uncertainty_ms=uncertainty_ms,
+                n_realizations=n_realizations
             )
             ax.set_title("")
 
