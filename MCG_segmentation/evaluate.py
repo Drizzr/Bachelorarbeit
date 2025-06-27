@@ -12,8 +12,9 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from torch.utils.data import DataLoader
 
-from model.model import UNet1D
+from model.model import UNet1D, DENS_ECG_segmenter, ECGSegmenter
 from model.data_loader import ECGFullDataset
+import random
 
 # Constants
 CLASS_NAMES = {0: "No Wave", 1: "P Wave", 2: "QRS", 3: "T Wave"}
@@ -34,19 +35,27 @@ except Exception as e:
     DEVICE = torch.device("cpu")
 
 def load_model(load_dir, device):
-    model_path = os.path.join(load_dir, "model.pth")
-    param_path = os.path.join(load_dir, "params.json")
+    best_model_path = os.path.join(load_dir, "checkpoints/best/model.pth")
+    config_path = os.path.join(load_dir, "config.json")
 
-    if not os.path.exists(model_path) or not os.path.exists(param_path):
-        raise FileNotFoundError("Model or params not found.")
+    if not os.path.exists(best_model_path) or not os.path.exists(config_path):
+        raise FileNotFoundError(f"Model files not found in {load_dir}")
 
-    with open(param_path) as f:
-        args = json.load(f).get("args", {})
+    # Load model parameters
+    with open(config_path, "r") as f:
+        model_params = json.load(f)
 
-    model = UNet1D()
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device).eval()
-    return model, args.get("num_classes", 4)
+    model = ECGSegmenter(**model_params)
+    
+    try:
+        model.load_state_dict(torch.load(best_model_path, map_location=device))
+        model.to(device)
+        model.eval()
+    except RuntimeError as e:
+        raise
+    
+    return model
+
 
 def sample_from_model(model, device, data: torch.Tensor, min_duration_sec: float = 0.04):
     if data.numel() == 0:
@@ -117,6 +126,88 @@ def extract_significant_points(labels):
 
     return points
 
+def plot_segmented_signal(signal, pred, ground_truth, output_dir, sample_rate=250, filename_prefix="ecg_segment"):
+    """
+    Visualisiert ein EKG-Signal mit vorhergesagten Segmenten als Flächen und Ground-Truth-Labels als Scatter-Plot.
+    Assumes 250Hz input. Classifies each data point as: 0) No Wave, 1) P-Wave, 2) QRS, 3) T-Wave.
+
+    Args:
+        signal (np.ndarray): EKG-Signal (Shape: [time_steps]).
+        pred (np.ndarray): Vorhergesagte Labels (Shape: [time_steps]).
+        ground_truth (np.ndarray): Ground-Truth-Labels (Shape: [time_steps]).
+        output_dir (str): Verzeichnis zum Speichern des Plots.
+        sample_rate (int): Abtastrate in Hz (Standard: 250).
+        filename_prefix (str): Präfix für den Dateinamen des Plots.
+    """
+    signal = signal.squeeze()
+    pred = pred.squeeze()
+    ground_truth = ground_truth.squeeze()
+    t = np.arange(len(signal)) / sample_rate  # Zeitachse in Sekunden
+
+    fig, axs = plt.subplots(figsize=(15, 8))
+    axs.plot(t, signal, color='black', linewidth=0.8, label='Signal (Processed)')
+    axs.grid(True, linestyle=':', alpha=0.7)
+
+    # Plot vorhergesagte Segmente
+    current_start_idx = 0
+    legend_handles_map = {}
+    line_signal, = axs.plot([], [], color='black', linewidth=0.8, label='Signal')
+    legend_handles_map['Signal'] = line_signal
+
+    for k in range(1, len(pred)):
+        if pred[k] != pred[current_start_idx]:
+            label_idx = pred[current_start_idx]
+            label_name = CLASS_NAMES.get(label_idx, f"Class {label_idx}")
+            color = SEGMENT_COLORS.get(label_idx, 'gray')
+            h = axs.axvspan(t[current_start_idx] - 0.5/sample_rate, t[k] - 0.5/sample_rate, 
+                           color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
+            if f'Pred: {label_name}' not in legend_handles_map:
+                legend_handles_map[f'Pred: {label_name}'] = h
+            current_start_idx = k
+
+    label_idx = pred[current_start_idx]
+    label_name = CLASS_NAMES.get(label_idx, f"Class {label_idx}")
+    color = SEGMENT_COLORS.get(label_idx, 'gray')
+    h = axs.axvspan(t[current_start_idx] - 0.5/sample_rate, t[-1] + 0.5/sample_rate, 
+                   color=color, alpha=0.3, ec=None, label=f'Pred: {label_name}')
+    if f'Pred: {label_name}' not in legend_handles_map:
+        legend_handles_map[f'Pred: {label_name}'] = h
+
+    # Plot Ground-Truth-Labels als Scatter-Plot
+    for i in sorted(CLASS_NAMES.keys()):
+        mask = ground_truth == i
+        if np.any(mask):
+            label_name = f'True: {CLASS_NAMES[i]}'
+            axs.scatter(t[mask], signal[mask], color=PLOT_COLORS.get(i, 'gray'), 
+                       s=10, alpha=0.8, label=label_name, marker='o')
+            legend_handles_map[label_name] = axs.scatter([], [], color=PLOT_COLORS.get(i, 'gray'), 
+                                                        s=10, alpha=0.8, label=label_name)
+
+    # Legende
+    combined_handles = [legend_handles_map['Signal']]
+    combined_labels = ['Signal']
+    for i in sorted(CLASS_NAMES.keys()):
+        label_name_pred = f'Pred: {CLASS_NAMES[i]}'
+        label_name_true = f'True: {CLASS_NAMES[i]}'
+        if label_name_pred in legend_handles_map:
+            patch = plt.Rectangle((0, 0), 1, 1, fc=SEGMENT_COLORS.get(i, 'gray'), alpha=0.3)
+            combined_handles.append(patch)
+            combined_labels.append(label_name_pred)
+        if label_name_true in legend_handles_map:
+            scatter = plt.scatter([], [], color=PLOT_COLORS.get(i, 'gray'), s=10, alpha=0.8)
+            combined_handles.append(scatter)
+            combined_labels.append(label_name_true)
+
+    axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
+    axs.set_xlabel("Zeit (s)")
+    axs.set_ylabel("Amplitude")
+    axs.set_title("EKG-Signal mit vorhergesagten Segmenten und Ground-Truth-Labels")
+
+    plt.savefig(os.path.join(output_dir, f"{filename_prefix}.pdf"), bbox_inches='tight')
+    plt.close()
+
+
+
 def evaluate_detection_metrics(all_preds, all_labels, sequence_length, sample_rate=250, tolerance_ms=150):
     tolerance_samples = int((tolerance_ms / 1000) * sample_rate)
     stats = {wave: {f'{pt}_{metric}': 0 for pt in ['TP', 'FP', 'FN'] for metric in ['onset', 'offset']} |
@@ -165,15 +256,39 @@ def evaluate_detection_metrics(all_preds, all_labels, sequence_length, sample_ra
             print(f"  Std Dev: {std_err:.2f} samples ({std_err / sample_rate * 1000:.2f} ms)")
             print(f"  Sensitivity (Se): {Se:.4f}, Precision (PPV): {PPV:.4f}, F1 Score: {F1:.4f}")
 
+
 def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length):
     model.eval()
     all_preds, all_labels = [], []
+    # Liste zum Speichern eines zufälligen Samples
+    random_sample = None
+    random_batch_idx = random.randint(0, len(dataloader) - 1)
 
-    for x, y in tqdm(dataloader, desc="Evaluating", leave=False):
+    for batch_idx, (x, y) in enumerate(tqdm(dataloader, desc="Evaluating", leave=False)):
         x, y = x.to(device), y.to(device).long()
         preds = sample_from_model(model, device, x)
         all_preds.extend(preds)
         all_labels.extend(y.cpu().flatten().tolist())
+
+        # Speichere Daten für das zufällige Sample
+        if batch_idx == random_batch_idx:
+            random_sample = {
+                'signal': x.cpu().numpy()[0],
+                'true_labels': y.cpu().numpy()[0],
+                'pred_labels': np.array(preds[:sequence_length]),
+                'batch_idx': batch_idx
+            }
+
+    # Visualisiere das zufällige Sample
+    if random_sample is not None:
+        plot_segmented_signal(
+            signal=random_sample['signal'],
+            ground_truth=random_sample['true_labels'],
+            pred=random_sample['pred_labels'],
+            output_dir=output_dir,
+            sample_rate=250,
+            filename_prefix=f"ecg_segment_random_batch_{random_sample['batch_idx']}"
+        )
 
     acc = accuracy_score(all_labels, all_preds)
     print(f"\nAccuracy: {acc:.4f}")
@@ -190,17 +305,18 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
     plt.xlabel("Predicted")
     plt.ylabel("True")
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "confusion_matrix.png"))
+    plt.savefig(os.path.join(output_dir, "confusion_matrix.pdf"), bbox_inches='tight')
     plt.close()
 
     evaluate_detection_metrics(all_preds, all_labels, sequence_length)
     return acc
 
+
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M/checkpoints/best")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/MCGSegmentator_xl")
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/MCGSegmentator_xl/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--sequence_length", type=int, default=2000)
@@ -210,8 +326,8 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load model
-    model, num_classes = load_model(args.load_dir, DEVICE)
-    print(f"Model loaded with {num_classes} classes")
+    model = load_model(args.load_dir, DEVICE)
+    print(f"Model loaded from {args.load_dir}")
 
     # Load evaluation dataset
     eval_dataset = ECGFullDataset(args.data_dir_eval, augmentation_prob=0.0, sequence_length=args.sequence_length)
@@ -225,7 +341,7 @@ def main():
 
     # Evaluate
     print(f"Evaluating on {len(eval_dataset)} samples...")
-    accuracy = evaluate(model, eval_dataloader, DEVICE, num_classes, args.output_dir, args.sequence_length)
+    accuracy = evaluate(model, eval_dataloader, DEVICE, 4, args.output_dir, args.sequence_length)
     
     print(f"\nFinal Accuracy: {accuracy:.4f}")
     print(f"Results saved to: {args.output_dir}")

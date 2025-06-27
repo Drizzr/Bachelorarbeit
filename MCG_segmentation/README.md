@@ -6,12 +6,19 @@ evaluation/post processing
 
 sources
 
+overview over trained models 
+tabular params
+training process: loss function datasets used num epochs number of best epoch
+
 training emphasis on data augmentation
 Loss-Function: focal loss/cross Entropie
 
+
 training validation split for both kinds of models
 
-Results evaluation metrics
+(QT arificial created T wave beginning)
+
+Results evaluation metrics 
 
 plots (cm + segmentation)
 
