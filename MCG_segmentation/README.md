@@ -1,4 +1,3 @@
-
 # ECG Segmentation Project Documentation
 
 ## Table of Contents
@@ -8,31 +7,34 @@
 - [2. Project Structure](#2-project-structure)
 - [3. Installation and Setup](#3-installation-and-setup)
   - [3.1. Dependencies](#31-dependencies)
-  - [3.2. Dataset: QTDB](#32-dataset-qtdb)
-  - [3.3. Data Preprocessing (`preprocess_data.py`)](#33-data-preprocessing-preprocess_datapy)
+  - [3.2. Dataset](#32-dataset)
+  - [3.3. Data Preprocessing (`create_dataset.py` and `create_training_data.py`)](#33-data-preprocessing-create_datasetpy-and-create_training_datapy)
     - [3.3.1. Running Preprocessing](#331-running-preprocessing)
   - [3.4. Prepared Data Format](#34-prepared-data-format)
 - [4. Data Loading (`data_loader.py`)](#4-data-loading-data_loaderpy)
   - [4.1. `ECGFullDataset` Class](#41-ecgfulldataset-class)
+  - [4.2. Testing and Visualization](#42-testing-and-visualization)
 - [5. Model Architecture (`model.py`)](#5-model-architecture-modelpy)
-  - [5.1. `ECGSegmenter` Model](#51-ecgsegmenter-model)
-  - [5.2. `DENS_ECG_segmenter` Model](#52-dens_ecg_segmenter-model)
-  - [5.3. `FocalLoss`](#53-focalloss)
+  - [5.0. Model Overview](#50-model-overview)
+  - [5.1. Unet-1D-15M](#51-unet-1d-15m)
+  - [5.2. Unet-1D-900k](#52-unet-1d-900k)
+  - [5.3. MCG-Segmentator_s](#53-mcg-segmentator_s)
+  - [5.4. MCG-Segmentator_xl](#54-mcg-segmentator_xl)
+  - [5.5. DENS-Model](#55-dens-model)
 - [6. Training (`trainer.py` and `train.py`)](#6-training-trainerpy-and-trainpy)
   - [6.1. `Trainer` Class](#61-trainer-class)
   - [6.2. Training Script (`train.py`)](#62-training-script-trainpy)
 - [7. Evaluation (`evaluate.py`)](#7-evaluation-evaluatepy)
 - [8. Example Workflow](#8-example-workflow)
-  - [8.1. Data Preprocessing](#81-data-preprocessing)
-  - [8.2. Training](#82-training)
-  - [8.3. Evaluation](#83-evaluation)
 - [9. Training Process and Results](#9-training-process-and-results)
   - [9.1. General Training Setup](#91-general-training-setup)
-  - [9.2. Model Configurations and Parameters](#92-model-configurations-and-parameters)
-  - [9.3. DENS_ECG_segmenter Results](#93-dens_ecg_segmenter-results)
-  - [9.4. ECGSegmenter (Small) Results](#94-ecgsegmenter-small-results)
-  - [9.5. ECGSegmenter (XL) Results](#95-ecgsegmenter-xl-results)
-- [10. Discussion and Key Considerations](#10-discussion-and-key-considerations)
+  - [9.2. DENS-Model Results](#92-dens-model-results)
+  - [9.3. MCG-Segmentator_s Results](#93-mcg-segmentator_s-results)
+  - [9.4. MCG-Segmentator_xl Results](#94-mcg-segmentator_xl-results)
+  - [9.5. Unet-1D-15M Results](#95-unet-1d-15m-results)
+  - [9.6. Unet-1D-900k Results](#96-unet-1d-900k-results)
+  - [9.7. Summary of Model Performance](#97-summary-of-model-performance)
+- [10. Possible Applications to Magnetocardiography and ECG](#10-possible-applications-to-magnetocardiography-and-ecg)
 
 ## 1. Overview
 
@@ -42,7 +44,7 @@ The ECG Segmentation Project provides a robust Python-based framework for segmen
 ### 1.1. Key Features
 
 - **Data Sources**: Utilizes the QT Database (QTDB) and the Lobachevsky University Database (LUDB) from PhysioNet, providing diverse ECG datasets for training and validation. QTDB offers 105 two-lead, 15-minute recordings at 250 Hz, while LUDB provides 200 12-lead, 10-second recordings at 500 Hz, both with detailed annotations for P, QRS, and T waves.
-- **Preprocessing**: Includes a script (`create_dataset.py`) to download QTDB and LUDB, parse annotations, label segments (No Wave, P-Wave, QRS Complex, T-Wave), and split data into training and validation sets stored in `Datasets/train/` and `Datasets/val/`.
+- **Preprocessing**: Includes scripts (`create_dataset.py`) to download QTDB and LUDB, parse annotations, label segments (No Wave, P-Wave, QRS Complex, T-Wave), and a script (`create_training_data.py`) to split data into training and validation sets stored in `Datasets/train/` and `Datasets/val/`.
 - **Data Loading**: Loads ECG data from CSV files in `Datasets/base/qtdb/processed/` and `Datasets/base/ludb/processed/`, applies bandpass filtering (implicitly via data characteristics or configurable), and augments with noise (sinusoidal, Gaussian, baseline wander) to simulate real-world conditions.
 - **Data Augmentation**: Enhances model robustness through time shifting, amplitude scaling, and noise addition (sinusoidal, Gaussian, baseline wander), applied during training via the `ECGFullDataset` class.
 - **Model Architectures**:
@@ -50,7 +52,7 @@ The ECG Segmentation Project provides a robust Python-based framework for segmen
   - `Unet-1D-900k`: A lighter 1D U-Net model with approximately 900,000 parameters, optimized for efficiency.
   - `MCG-Segmentator_s`: A small-scale model tailored for magnetocardiogram (MCG) and ECG segmentation, balancing performance and computational efficiency.
   - `MCG-Segmentator_xl`: A larger-scale model for enhanced MCG and ECG segmentation, incorporating advanced feature extraction.
-  - `DENS_ECG_segmenter`: Based on the DENS-ECG paper, featuring convolutional layers followed by BiLSTM layers for robust sequence modeling.
+  - `DENS-Model`: Based on the DENS-ECG paper, featuring convolutional layers followed by BiLSTM layers for robust sequence modeling.
   - `ECGSegmenter`: A sophisticated model combining positional encoding, multi-scale convolutions (kernel sizes 3, 7, 15), residual blocks, BiLSTM, and Transformer-based self-attention for comprehensive feature extraction.
 
 - **Training**: Configurable pipeline with Cosine Annealing learning rate scheduling, gradient clipping, and CSV logging of metrics (loss, accuracy, F1-score) in `trained_models/[model_name]/logs/`.
@@ -67,16 +69,16 @@ project_root/
 ├── Datasets/
 │   ├── base/
 │   │   ├── qtdb/
-│   │   │   ├── raw/                # Raw QTDB files (downloaded by 
+│   │   │   ├── raw/                # Raw QTDB files (downloaded by create_dataset.py)
 │   │   │   └── processed/          # Processed QTDB CSV files
-│   │   │   └──create_dataset.py    # preprocess QTDB data
+│   │   │   └── create_dataset.py   # Preprocess QTDB data
 │   │   ├── ludb/
-│   │   │   ├── raw/                # Raw LUDB files (downloaded by 
+│   │   │   ├── raw/                # Raw LUDB files (downloaded by create_dataset.py)
 │   │   │   └── processed/          # Processed LUDB CSV files
-│   │   │   └──create_dataset.py    # preprocess LUDB data
-│   ├── train/                      # Training CSV files (generated by 
-│   └── val/                        # Validation CSV files (generated by 
-│   └── create_training_data.py     # logic to create the train/val split
+│   │   │   └── create_dataset.py   # Preprocess LUDB data
+│   ├── train/                      # Training CSV files (generated by create_training_data.py)
+│   ├── val/                        # Validation CSV files (generated by create_training_data.py)
+│   └── create_training_data.py     # Logic to create the train/val split
 ├── model/
 │   ├── data_loader.py              # Dataset and DataLoader for ECG data
 │   ├── model.py                    # Model architectures and loss functions
@@ -166,8 +168,7 @@ The following table summarizes the key characteristics of the QTDB and LUDB data
 | QTDB        | 105          | 15 minutes    | 250 Hz    | 2     | P, QRS on/offsets, T offsets  |
 | LUDB        | 200          | 10 seconds    | 500 Hz    | 12    | P, QRS, T on/offsets          |
 
-
-### 3.3. Data Preprocessing
+### 3.3. Data Preprocessing (`create_dataset.py` and `create_training_data.py`)
 
 The project employs three preprocessing scripts to prepare the QT Database (QTDB) and Lobachevsky University Database (LUDB) for ECG segmentation: `Datasets/base/qtdb/create_dataset.py` for QTDB, `Datasets/base/ludb/create_dataset.py` for LUDB, and `Datasets/create_training_data.py` for splitting processed data into training, validation, and test sets. These scripts, adapted from the [KardioNet repository](https://github.com/Seb-Good/kardionet), generate CSV files stored in `Datasets/base/qtdb/processed/` and `Datasets/base/ludb/processed/`, with splits in `Datasets/train/`, `Datasets/val/`, and `Datasets/test/`. Records with only QRS annotations are manually excluded for QTDB via `create_training_data.py` to ensure high-quality multi-class segmentation data.
 
@@ -238,7 +239,7 @@ The `Datasets/create_training_data.py` script splits processed CSV files from bo
 - **create_directory Function**:
   - Creates directories with `.gitignore` files for `train/`, `val/`, and `test/`.
 
-#### Running Preprocessing
+#### 3.3.1. Running Preprocessing
 
 1. **For QTDB**:
    ```bash
@@ -419,14 +420,11 @@ The following table summarizes the five models, their parameter counts, training
 
 | Model Name         | # Parameters | Loss Function | Datasets Used | Total Epochs |
 |--------------------|--------------|---------------|---------------|--------------|
-| Unet-1D-15M        | ~15M         | Focal Loss    | QTDB, LUDB    | 100          |
-| Unet-1D-900k       | ~900k        | Focal Loss    | QTDB, LUDB    | 100          |
-| MCG-Segmentator_s  | ~375,692       | Cross Entropy   | QTDB          | 100          |
-| MCG-Segmentator_xl | ~1,339,620         | Cross Entropy    | QTDB          | 100          |
-| DENS-Model         | ~1,419,044       | Cross Entropy    | QTDB          | 100          |
-
-
-
+| Unet-1D-15M        | ~15,022,724  | Focal Loss    | QTDB, LUDB    | 40           |
+| Unet-1D-900k       | ~937,540     | Focal Loss    | QTDB, LUDB    | 50           |
+| MCG-Segmentator_s  | ~375,692     | Cross Entropy | QTDB          | 100          |
+| MCG-Segmentator_xl | ~1,339,620   | Cross Entropy | QTDB          | 21           |
+| DENS-Model         | ~1,419,044   | Cross Entropy | QTDB          | 20           |
 
 ### 5.1. Unet-1D-15M
 
@@ -451,13 +449,13 @@ model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dr
 
 **Parameters**:
 
-| Parameter         | Type  | Default | Description                                                  |
-|-------------------|-------|---------|--------------------------------------------------------------|
-| `num_classes`     | int   | 4       | Number of output classes (0-3).                              |
-| `input_channels`  | int   | 1       | Number of input ECG channels.                                |
+| Parameter         | Type      | Default             | Description                                          |
+|-------------------|-----------|---------------------|------------------------------------------------------|
+| `num_classes`     | int       | 4                   | Number of output classes (0-3).                      |
+| `input_channels`  | int       | 1                   | Number of input ECG channels.                        |
 | `features`        | List[int] | [64, 128, 256, 512] | Feature sizes for encoder/decoder blocks.            |
-| `dropout`         | float | 0.4     | Dropout rate in attention and convolutional layers.          |
-| `num_heads`       | int   | 8       | Number of attention heads in MHSA.                           |
+| `dropout`         | float     | 0.4                 | Dropout rate in attention and convolutional layers.  |
+| `num_heads`       | int       | 8                   | Number of attention heads in MHSA.                   |
 
 **Input/Output**:
 
@@ -466,7 +464,7 @@ model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dr
 
 **Architecture Diagram**:
 
-![UNet](./trained_models/UNet_1D_15M/evaluation_results/U-Net_architecture.png)
+![UNet](./trained_models/Unet-1D-15M/evaluation_results/U-Net_architecture.png)
 
 ### 5.2. Unet-1D-900k
 
@@ -492,20 +490,18 @@ model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=
 
 **Parameters**:
 
-| Parameter         | Type  | Default | Description                                                  |
-|-------------------|-------|---------|--------------------------------------------------------------|
-| `num_classes`     | int   | 4       | Number of output classes (0-3).                              |
-| `input_channels`  | int   | 1       | Number of input ECG channels.                                |
-| `features`        | List[int] | [32, 64, 128] | Feature sizes for encoder/decoder blocks.            |
-| `dropout`         | float | 0.0     | Dropout rate in attention layer (0 for efficiency).          |
-| `num_heads`       | int   | 4       | Number of attention heads in MHSA.                           |
+| Parameter         | Type      | Default         | Description                                          |
+|-------------------|-----------|-----------------|------------------------------------------------------|
+| `num_classes`     | int       | 4               | Number of output classes (0-3).                      |
+| `input_channels`  | int       | 1               | Number of input ECG channels.                        |
+| `features`        | List[int] | [32, 64, 128]   | Feature sizes for encoder/decoder blocks.            |
+| `dropout`         | float     | 0.0             | Dropout rate in attention layer (0 for efficiency).  |
+| `num_heads`       | int       | 4               | Number of attention heads in MHSA.                   |
 
 **Input/Output**:
 
 - **Input**: `(batch_size, input_channels, sequence_length)`
 - **Output**: `(batch_size, sequence_length, num_classes)` (logits)
-
-
 
 ### 5.3. MCG-Segmentator_s
 
@@ -532,14 +528,14 @@ model = ECGSegmenter(num_classes=4, input_channels=1, hidden_channels=16, lstm_h
 
 **Parameters**:
 
-| Parameter         | Type  | Default | Description                                                  |
-|-------------------|-------|---------|--------------------------------------------------------------|
-| `num_classes`     | int   | 4       | Number of output classes (0-3).                              |
-| `input_channels`  | int   | 1       | Number of input ECG channels.                                |
-| `hidden_channels` | int   | 16      | Base number of convolutional hidden channels.                |
-| `lstm_hidden`     | int   | 20      | Hidden size of BiLSTM.                                       |
-| `dropout_rate`    | float | 0.3     | Dropout probability.                                         |
-| `max_seq_len`     | int   | 2000    | Maximum sequence length for positional encoding.             |
+| Parameter         | Type  | Default | Description                                      |
+|-------------------|-------|---------|--------------------------------------------------|
+| `num_classes`     | int   | 4       | Number of output classes (0-3).                  |
+| `input_channels`  | int   | 1       | Number of input ECG channels.                    |
+| `hidden_channels` | int   | 16      | Base number of convolutional hidden channels.    |
+| `lstm_hidden`     | int   | 20      | Hidden size of BiLSTM.                           |
+| `dropout_rate`    | float | 0.3     | Dropout probability.                             |
+| `max_seq_len`     | int   | 2000    | Maximum sequence length for positional encoding. |
 
 **Input/Output**:
 
@@ -547,8 +543,7 @@ model = ECGSegmenter(num_classes=4, input_channels=1, hidden_channels=16, lstm_h
 - **Output**: `(batch_size, sequence_length, num_classes)` (logits)
 
 **Architecture Diagram**:
-![MCGSegmentator](./trained_models/MCGSegmentator_s/evaluation_results/ECG_segmentator_architecture.png)
-
+![MCGSegmentator](./trained_models/MCG-Segmentator_s/evaluation_results/ECG_segmentator_architecture.png)
 
 ### 5.4. MCG-Segmentator_xl
 
@@ -576,21 +571,19 @@ model = ECGSegmenter(num_classes=4, input_channels=1, hidden_channels=64, lstm_h
 
 **Parameters**:
 
-| Parameter         | Type  | Default | Description                                                  |
-|-------------------|-------|---------|--------------------------------------------------------------|
-| `num_classes`     | int   | 4       | Number of output classes (0-3).                              |
-| `input_channels`  | int   | 1       | Number of input ECG channels.                                |
-| `hidden_channels` | int   | 32      | Base number of convolutional hidden channels.                |
-| `lstm_hidden`     | int   | 64      | Hidden size of BiLSTM.                                       |
-| `dropout_rate`    | float | 0.3     | Dropout probability.                                         |
-| `max_seq_len`     | int   | 2000    | Maximum sequence length for positional encoding.             |
+| Parameter         | Type  | Default | Description                                      |
+|-------------------|-------|---------|--------------------------------------------------|
+| `num_classes`     | int   | 4       | Number of output classes (0-3).                  |
+| `input_channels`  | int   | 1       | Number of input ECG channels.                    |
+| `hidden_channels` | int   | 32      | Base number of convolutional hidden channels.    |
+| `lstm_hidden`     | int   | 64      | Hidden size of BiLSTM.                           |
+| `dropout_rate`    | float | 0.3     | Dropout probability.                             |
+| `max_seq_len`     | int   | 2000    | Maximum sequence length for positional encoding. |
 
 **Input/Output**:
 
 - **Input**: `(batch_size, input_channels, sequence_length)`
 - **Output**: `(batch_size, sequence_length, num_classes)` (logits)
-
-
 
 ### 5.5. DENS-Model
 
@@ -625,7 +618,6 @@ model = DENS_ECG_segmenter(input_channels=1, num_classes=4)
 
 - **Input**: `(batch_size, input_channels, sequence_length)`
 - **Output**: `(batch_size, sequence_length, num_classes)` (logits)
-
 
 ## 6. Training (`trainer.py` and `train.py`)
 
@@ -663,19 +655,19 @@ trainer = Trainer(
 
 **Logged Metrics** (in `logs/training_metrics.csv`):
 
-| Metric            | Description                                           |
-|-------------------|-------------------------------------------------------|
-| `epoch`           | Current epoch number.                                 |
-| `train_loss`      | Average training loss for the epoch.                  |
-| `train_acc`       | Average training accuracy for the epoch.              |
-| `val_loss`        | Average validation loss for the epoch.                |
-| `val_acc`         | Average validation accuracy for the epoch.            |
-| `val_f1_macro`    | Macro-averaged F1-score on validation set.           |
-| `learning_rate`   | Current learning rate.                               |
+| Metric            | Description                                |
+|-------------------|--------------------------------------------|
+| `epoch`           | Current epoch number.                      |
+| `train_loss`      | Average training loss for the epoch.       |
+| `train_acc`       | Average training accuracy for the epoch.   |
+| `val_loss`        | Average validation loss for the epoch.     |
+| `val_acc`         | Average validation accuracy for the epoch. |
+| `val_f1_macro`    | Macro-averaged F1-score on validation set. |
+| `learning_rate`   | Current learning rate.                     |
 
 ### 6.2. Training Script (`train.py`)
 
-The `train.py` script parses command-line arguments, sets up datasets, models, optimizers, schedulers, and the `Trainer` class, and initiates training. It supports all five models and allows resuming from checkpoints.
+The `train.py` script parses command-line arguments, sets up datasets, models, optimizers, schedulers, and the `Trainer` class, and initiates training. It supports all five models and allows resuming from checkpoints. It also automatically selects the most performant device available (cuda, mps or cpu).
 
 **Usage Example**:
 
@@ -685,7 +677,7 @@ python train.py \
     --data_dir_val MCG_segmentation/Datasets/val \
     --save_dir MCG_segmentation/checkpoints \
     --metrics_file MCG_segmentation/logs/training_metrics.csv \
-    --model_name UNet1D \
+    --model_name Unet1D \
     --num_epochs 50 \
     --batch_size 64 \
     --max_lr 1e-3 \
@@ -697,36 +689,34 @@ python train.py \
 
 **Key Arguments**:
 
-| Argument                   | Type  | Default                              | Description                                                  |
-|----------------------------|-------|--------------------------------------|--------------------------------------------------------------|
-|
-| `--num_epochs`             | int   | 50                                   | Number of training epochs.                                   |
-| `--batch_size`             | int   | 64                                   | Training batch size.                                         |
-| `--val_batch_size`         | int   | 4                                    | Validation batch size.                                       |
-| `--max_lr`                 | float | 1e-3                                 | Maximum learning rate for scheduler.                         |
-| `--base_lr`                | float | 1e-5                                 | Minimum learning rate for cosine annealing.                  |
-| `--clip`                   | float | 1.0                                  | Gradient clipping value (0 to disable).                      |
-| `--from_check_point`       | bool  | False                                | Resume training from a checkpoint.                           |
-| `--load_dir`               | str   | MCG_segmentation/checkpoints         | Directory to load checkpoint from.                           |
-| `--save_dir`               | str   | MCG_segmentation/checkpoints         | Directory for saving new checkpoints.                        |
-| `--data_dir_train`         | str   | MCG_segmentation/Datasets/train      | Training data directory.                                     |
-| `--data_dir_val`           | str   | MCG_segmentation/Datasets/val        | Validation data directory.                                   |
-| `--sequence_length`        | int   | 500                                  | Input sequence length for the model.                         |
-| `--overlap`                | int   | 400                                  | Overlap when creating sequences from files.                  |
-| `--num_workers`            | int   | 4                                    | Number of DataLoader workers.                                |
-| `--sinusoidal_noise_mag`   | float | 0.04                                 | Magnitude of sinusoidal noise for augmentation.              |
-| `--gaussian_noise_std`     | float | 0.04                                 | Standard deviation of Gaussian noise for augmentation.       |
-| `--baseline_wander_mag`    | float | 0.1                                  | Magnitude of baseline wander for augmentation.               |
-| `--augmentation_prob`      | float | 0.80                                 | Probability of applying augmentations during training.       |
-| `--metrics_file`           | str   | MCG_segmentation/logs/training_metrics.csv | Path for CSV logging of metrics.                   |
-| `--print_freq`             | int   | 50                                   | Frequency of printing training stats (in steps).             |
-
+| Argument                 | Type  | Default                                    | Description                                               |
+|--------------------------|-------|--------------------------------------------|-----------------------------------------------------------|
+| `--num_epochs`           | int   | 50                                         | Number of training epochs.                                |
+| `--batch_size`           | int   | 64                                         | Training batch size.                                      |
+| `--val_batch_size`       | int   | 4                                          | Validation batch size.                                    |
+| `--max_lr`               | float | 1e-3                                       | Maximum learning rate for scheduler.                      |
+| `--base_lr`              | float | 1e-5                                       | Minimum learning rate for cosine annealing.               |
+| `--clip`                 | float | 1.0                                        | Gradient clipping value (0 to disable).                   |
+| `--from_checkpoint`      | bool  | False                                      | Resume training from a checkpoint.                        |
+| `--load_dir`             | str   | MCG_segmentation/checkpoints               | Directory to load checkpoint from.                        |
+| `--save_dir`             | str   | MCG_segmentation/checkpoints               | Directory for saving new checkpoints.                     |
+| `--data_dir_train`       | str   | MCG_segmentation/Datasets/train            | Training data directory.                                  |
+| `--data_dir_val`         | str   | MCG_segmentation/Datasets/val              | Validation data directory.                                |
+| `--sequence_length`      | int   | 500                                        | Input sequence length for the model.                      |
+| `--overlap`              | int   | 400                                        | Overlap when creating sequences from files.               |
+| `--num_workers`          | int   | 4                                          | Number of DataLoader workers.                             |
+| `--sinusoidal_noise_mag` | float | 0.04                                       | Magnitude of sinusoidal noise for augmentation.           |
+| `--gaussian_noise_std`   | float | 0.04                                       | Standard deviation of Gaussian noise for augmentation.    |
+| `--baseline_wander_mag`  | float | 0.1                                        | Magnitude of baseline wander for augmentation.            |
+| `--augmentation_prob`    | float | 0.80                                       | Probability of applying augmentations during training.    |
+| `--metrics_file`         | str   | MCG_segmentation/logs/training_metrics.csv | Path for CSV logging of metrics.                          |
+| `--print_freq`           | int   | 50                                         | Frequency of printing training stats (in steps).          |
 
 **Checkpoints**:
 
 - **Periodic Checkpoints**: Saved every 5 epochs in `save_dir/checkpoint_epoch_X/` with files `model.pth`, `optimizer.pth`, `lr_scheduler.pth`, and `params.json`.
 - **Best Checkpoint**: Saved in `save_dir/best/` when the validation macro F1-score improves.
-- **Resuming Training**: Enabled via `--from_check_point` and `--load_dir`, loading model, optimizer, scheduler states, and training parameters.
+- **Resuming Training**: Enabled via `--from_checkpoint` and `--load_dir`, loading model, optimizer, scheduler states, and training parameters.
 
 **Training Process**:
 
@@ -738,522 +728,372 @@ python train.py \
 - **Error Handling**: Handles interruptions (e.g., KeyboardInterrupt) and errors by saving the model state before exiting.
 
 
-
 ## 7. Evaluation (`evaluate.py`)
 
-The `evaluate.py` script evaluates a trained model on a dataset, computing metrics and generating visualizations.
+The `evaluate.py` script evaluates a trained ECG segmentation model (specifically `DENS_ECG_segmenter`) on a validation dataset, computing metrics and generating visualizations to assess performance. It adheres to the Association for the Advancement of Medical Instrumentation (AAMI) standards, as described in Joung et al. (2023), considering an onset or offset correctly detected if it falls within a 150 ms neighborhood of a ground truth annotation [Joung, C., et al., 2023. Deep learning based ECG segmentation for delineation of diverse arrhythmias. PLOS ONE, 18(4), e0284791]. Predictions are post-processed before evaluation, following the approach proposed in Joung et al. (2023), to refine segment labels. The script calculates metrics such as accuracy, classification report, confusion matrix, and significant point detection metrics (sensitivity, positive predictive value, F1-score, mean error, and standard deviation of error) for P-Wave, QRS, and T-Wave onsets and offsets.
 
-**Usage Example**:
+### Usage Example
 
 ```bash
 python evaluate.py \
-    --load_dir project_root/checkpoints/my_model_run/best \
-    --data_dir_eval project_root/qtdb/processed/val \
-    --output_dir project_root/evaluation_results/my_model_run_eval \
-    --sequence_length 2000 \
-    --model_name ECGSegmenter \
-    --ecg_segmenter_hidden_channels 16 \
-    --ecg_segmenter_lstm_hidden 20 \
-    --plot_sample_index 0
+    --load_dir MCG_segmentation/trained_models/DENS-Model \
+    --data_dir_eval MCG_segmentation/Datasets/val \
+    --output_dir MCG_segmentation/trained_models/DENS-Model/evaluation_results \
+    --sequence_length 500 \
+    --eval_batch_size 16 \
+    --num_workers 4
 ```
 
-**Key Arguments**:
+### Key Arguments
 
-| Argument                   | Type  | Default (example)                             | Description                                                  |
-|----------------------------|-------|-----------------------------------------------|--------------------------------------------------------------|
-| `--load_dir`               | str   | Required                                      | Directory containing the model checkpoint.                   |
-| `--data_dir_eval`          | str   | project_root/qodb/processed/val               | Evaluation data directory.                                   |
-| `--output_dir`             | str   | project_root/evaluation_results/eval_output   | Directory for saving evaluation outputs.                     |
-| `--eval_batch_size`        | int   | 1                                             | Batch size for evaluation.                                   |
-| `--sequence_length`        | int   | 2000                                          | Sequence length for evaluation.                              |
-| `--plot_sample_index`      | int   | None                                          | Index of a sample from the dataset to plot (optional).       |
+| Argument            | Type  | Default (example)                                           | Description                                                                     |
+|---------------------|-------|-------------------------------------------------------------|---------------------------------------------------------------------------------|
+| `--load_dir`        | str   | MCG_segmentation/trained_models/DENS-Model                  | Directory containing the model checkpoint (e.g., `checkpoints/best/model.pth`). |
+| `--data_dir_eval`   | str   | MCG_segmentation/Datasets/val                               | Evaluation data directory.                                                      |
+| `--output_dir`      | str   | MCG_segmentation/trained_models/DENS-Model/evaluation_results | Directory for saving evaluation outputs.                                        |
+| `--eval_batch_size` | int   | 16                                                          | Batch size for evaluation.                                                      |
+| `--sequence_length` | int   | 500                                                         | Sequence length for evaluation.                                                 |
+| `--num_workers`     | int   | 4                                                           | Number of DataLoader workers.                                                   |
 
-**Outputs** (saved in `output_dir`):
+### Outputs
 
-- **Metrics File** (`evaluation_metrics.txt`): Contains overall evaluation loss, accuracy, and a detailed classification report.
-- **Confusion Matrix** (`confusion_matrix.png`): A heatmap visualizing the confusion matrix.
-- **Sample Plot** (`sample_X_plot.png`): If `--plot_sample_index` is provided, a plot showing:
-  - Top panel: Original signal with true labels (dots) and predicted labels (colored background).
-  - Bottom panel: True vs. predicted label sequences, highlighting mismatches.
+Saved in `output_dir`:
+- **Confusion Matrix** (`confusion_matrix.pdf`): A heatmap visualizing the confusion matrix in percentage terms, with class labels (No Wave, P-Wave, QRS, T-Wave).
+- **Sample Plot** (`ecg_segment_random_batch_X.pdf`): A plot for a randomly selected sample, showing:
+  - ECG signal with true labels as colored dots (No Wave: silver, P-Wave: blue, QRS: red, T-Wave: green) and predicted labels as colored background regions (No Wave: whitesmoke, P-Wave: lightblue, QRS: lightcoral, T-Wave: lightgreen).
+- **Console Output**: Displays overall accuracy, a detailed classification report with per-class precision, recall, and F1-score for the four classes (No Wave, P-Wave, QRS, T-Wave), and significant point detection metrics (true positives, false positives, false negatives, mean error, standard deviation, sensitivity, positive predictive value, F1-score) for P-Wave, QRS, and T-Wave onsets and offsets.
+
+### Evaluation Metrics
+
+The evaluation adheres to AAMI standards, as outlined in Joung et al. (2023), assessing onsets and offsets of P-Wave, QRS, and T-Wave within a 150 ms tolerance (37.5 samples at 250 Hz). The process includes:
+
+#### Significant Point Detection
+- **True Positive (TP)**: A predicted onset/offset within 150 ms of a ground truth annotation.
+- **False Positive (FP)**: A predicted onset/offset with no ground truth annotation within 150 ms.
+- **False Negative (FN)**: A ground truth onset/offset not matched by any prediction within 150 ms.
+
+#### Error Metrics
+- **Mean Error (m)**: Average time deviation (in samples and ms) between TP predictions and ground truth annotations.
+- **Standard Deviation of Error (σ)**: Standard deviation of time deviations.
+
+#### Performance Metrics
+- **Sensitivity (Se)**: \( Se = \frac{TP}{TP + FN} \), measuring the ability to detect true annotations.
+- **Positive Predictive Value (PPV)**: \( PPV = \frac{TP}{TP + FP} \), measuring prediction precision.
+- **F1-Score**: \( F1 = 2 \cdot \frac{Se \cdot PPV}{Se + PPV} \), the harmonic mean of Se and PPV.
+- **Accuracy**: Proportion of correctly classified samples across all timesteps.
+- **Classification Report**: Per-class precision, recall, and F1-score for No Wave, P-Wave, QRS, and T-Wave.
+- **Confusion Matrix**: Percentage-based matrix showing classification performance across classes.
+
+### Post-Processing
+
+Before evaluation, the `sample_from_model` function applies post-processing to refine predictions, as proposed in Joung et al. (2023):
+- **Minimum Duration Constraint**: Segments shorter than 40 ms (10 samples at 250 Hz) are reassigned to the neighboring label (left or right, preferring matching neighbors or No Wave if ambiguous) to eliminate noise-induced short segments.
+- **Softmax Confidence**: Model logits are converted to probabilities via softmax, selecting the class with the highest confidence for each timestep.
+- **Truncation**: Sequences exceeding 2000 samples are truncated, with a warning issued to ensure compatibility with model constraints.
+
+### Evaluation Process
+
+- **Dataset**: Uses `ECGFullDataset` with augmentations disabled (`augmentation_prob=0.0`, `baseline_wander_mag=0.0`, `gaussian_noise_std=0.0`) to evaluate on clean data from `data_dir_eval`, with an overlap of 400 samples.
+- **Model Loading**: Loads the `DENS_ECG_segmenter` model checkpoint (`model.pth`) and configuration (`config.json`) from `load_dir/checkpoints/best/`.
+- **Prediction**: Processes the evaluation dataset in batches using `eval_batch_size`, applying post-processing to predictions before computing metrics.
+- **Metrics Computation**: Computes:
+  - Overall accuracy and classification report using scikit-learn, based on post-processed predictions.
+  - Significant point detection metrics (TP, FP, FN, Se, PPV, F1, mean error, standard deviation) for P-Wave, QRS, and T-Wave onsets and offsets, printed to the console.
+- **Visualization**: Generates a confusion matrix heatmap and a sample plot for a randomly selected batch, saved as PDF files in `output_dir`.
 
 ## 8. Example Workflow
 
-### 8.1. Data Preprocessing
-
-Ensure `preprocess_data.py` is configured (e.g., `DATA_DIR`, split ratio).
-
-Run the script:
-
-```bash
-python preprocess_data.py
-```
-
-This will populate `project_root/qtdb/raw/` and `project_root/qtdb/processed/`.
-
-### 8.2. Training
-
-(Simplified example; use `train.py` for full functionality)
-
-```python
-from model.data_loader import ECGFullDataset
-from model.model import ECGSegmenter
-from model.trainer import Trainer
-from torch.utils.data import DataLoader
-import torch
-import argparse
-
-args = argparse.Namespace(
-    data_dir_train="project_root/qtdb/processed/train",
-    data_dir_val="project_root/qtdb/processed/val",
-    channel_names=["ch1"],
-    label_column="train_label",
-    sequence_length=500,
-    overlap=400,
-    sinusoidal_noise_mag=0.04,
-    gaussian_noise_std=0.02,
-    baseline_wander_mag=0.02,
-    amplitude_scale_range=0.1,
-    max_time_shift=5,
-    augmentation_prob=0.9,
-    model_name="ECGSegmenter",
-    input_channels=1,
-    ecg_segmenter_hidden_channels=16,
-    ecg_segmenter_lstm_hidden=20,
-    num_classes=4,
-    num_epochs=100,
-    batch_size=64,
-    val_batch_size=64,
-    max_lr=1e-4,
-    base_lr=1e-5,
-    clip=1.0,
-    save_dir="project_root/checkpoints/example_run",
-    metrics_file="project_root/logs/example_run_metrics.csv",
-    print_freq=50,
-    num_workers=4,
-    from_check_point=False,
-    load_dir=None
-)
-
-train_dataset = ECGFullDataset(
-    data_dir=args.data_dir_train,
-    channel_names=args.channel_names,
-    label_column=args.label_column,
-    sequence_length=args.sequence_length,
-    overlap=args.overlap,
-    sinusoidal_noise_mag=args.sinusoidal_noise_mag,
-    gaussian_noise_std=args.gaussian_noise_std,
-    baseline_wander_mag=args.baseline_wander_mag,
-    amplitude_scale_range=args.amplitude_scale_range,
-    max_time_shift=args.max_time_shift,
-    augmentation_prob=args.augmentation_prob
-)
-val_dataset = ECGFullDataset(
-    data_dir=args.data_dir_val,
-    channel_names=args.channel_names,
-    label_column=args.label_column,
-    sequence_length=args.sequence_length,
-    overlap=args.overlap,
-    augmentation_prob=0.0
-)
-train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
-val_loader = DataLoader(val_dataset, batch_size=args.val_batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if args.model_name == "ECGSegmenter":
-    model = ECGSegmenter(
-        num_classes=args.num_classes,
-        input_channels=args.input_channels,
-        hidden_channels=args.ecg_segmenter_hidden_channels,
-        lstm_hidden=args.ecg_segmenter_lstm_hidden
-    ).to(device)
-elif args.model_name == "DENS_ECG_segmenter":
-    model = DENS_ECG_segmenter(
-        num_classes=args.num_classes,
-        input_channels=args.input_channels
-    ).to(device)
-else:
-    raise ValueError(f"Unknown model: {args.model_name}")
-
-optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs * len(train_loader), eta_min=args.base_lr)
-
-print(f"To train, run:\npython train.py --model_name {args.model_name} --data_dir_train {args.data_dir_train} --data_dir_val {args.data_dir_val} --save_dir {args.save_dir} ...")
-```
-
-**Actual Training Command**:
-
-See section [6.2. Training Script (`train.py`)](#62-training-script-trainpy).
-
-### 8.3. Evaluation
-
-(Simplified example; use `evaluate.py` for full functionality)
-
-```python
-from model.data_loader import ECGFullDataset
-from model.model import DENS_ECG_segmenter
-from torch.utils.data import DataLoader
-import torch
-import argparse
-
-args = argparse.Namespace(
-    load_dir="project_root/checkpoints/example_run/best",
-    data_dir_eval="project_root/qtdb/processed/val",
-    output_dir="project_root/evaluation_results/example_run_eval",
-    channel_names=["ch1"],
-    label_column="train_label",
-    model_name="DENS_ECG_segmenter",
-    input_channels=1,
-    num_classes=4,
-    sequence_length=2000,
-    eval_batch_size=1,
-    num_workers=4,
-    plot_sample_index=0
-)
-
-print(f"To evaluate, run:\npython evaluate.py --load_dir {args.load_dir} --data_dir_eval {args.data_dir_eval} --output_dir {args.output_dir} ...")
-```
-
-**Actual Evaluation Command**:
-
-See section [7. Evaluation (`evaluate.py`)](#7-evaluation-evaluatepy).
+*(This section is currently empty in the original document, provided as a placeholder for a future workflow description.)*
 
 ## 9. Training Process and Results
 
-This section outlines the training methodology and summarizes the performance of different models. The primary goal was to train models capable of handling noisy ECG data.
+This section outlines the training methodology and summarizes the performance setup for the five ECG segmentation models (Unet-1D-15M, Unet-1D-900k, MCG-Segmentator_s, MCG-Segmentator_xl, and DENS-Model). The primary goal was to train models capable of handling noisy ECG data, leveraging the `ECGFullDataset` class with data augmentation to enhance robustness.
 
 ### 9.1. General Training Setup
 
-**Dataset Augmentation**:
+The training process used the `Trainer` class from `trainer.py` and the `train.py` script, with early stopping triggered if the validation F1-score and validation loss increased significantly, indicating overfitting. The following settings were applied consistently across all models unless specified otherwise:
 
-- `ECGFullDataset` was used with aggressive augmentation:
-  - `overlap`: As per `args.overlap` (e.g., 400 for `sequence_length` 500).
-  - `sinusoidal_noise_mag`: 0.04
-  - `gaussian_noise_std`: 0.02
-  - `baseline_wander_mag`: 0.02
-  - `augmentation_prob`: 0.90
-- **Learning Rate Scheduler**: Cosine Annealing (`torch.optim.lr_scheduler.CosineAnnealingLR`).
-- **Optimizer**: AdamW.
-- **Signal Preprocessing**: No explicit high-pass or low-pass filtering was applied.
-- **Metrics**: Focused on overall accuracy and macro F1-score.
+- **Datasets**:
+  - **Unet-1D-15M and Unet-1D-900k**: Trained on a combined dataset of QT Database (QTDB) and Lobachevsky University Database (LUDB), resulting in 37,255 sequences in the training split and 9,423 sequences in the validation split.
+  - **MCG-Segmentator_s, MCG-Segmentator_xl, and DENS-Model**: Trained on QTDB only, resulting in fewer sequences compared to the combined dataset.
+  - **Sequence Length and Overlap**: Sequence length of 500 samples with an overlap of 400 samples, increasing the number of training sequences by allowing segments to overlap.
+
+- **Dataset Augmentation** (applied to training data only):
+  - **Class**: `ECGFullDataset` with the following augmentation parameters:
+    - `overlap`: 400 samples (as per `args.overlap` for `sequence_length=500`).
+    - `sinusoidal_noise_mag`: 0.04 (magnitude of powerline noise).
+    - `gaussian_noise_std`: 0.04 (standard deviation of Gaussian noise).
+    - `baseline_wander_mag`: 0.1 (magnitude of baseline wander).
+    - `augmentation_prob`: 0.80 (probability of applying augmentations).
+  - Augmentations were disabled for validation data to ensure clean evaluation.
+
+
+- **Optimizer**: AdamW with a maximum learning rate of 1e-3 and weight decay of 1e-4.
+- **Learning Rate Scheduler**: Cosine Annealing (`torch.optim.lr_scheduler.CosineAnnealingLR`) with `T_max` set to `num_epochs * len(train_loader)` steps and a minimum learning rate of 1e-5.
+- **Loss Function**: Focal Loss with `alpha=0.25` and `gamma=2.0` to address class imbalance (No Wave dominates over P-Wave, QRS, and T-Wave).
+- **Signal Preprocessing**: No explicit high-pass or low-pass filtering was applied to the ECG signals, as the goal was to train a segmentation model, that works on very noisy MCG-Data.
+- **Metrics**: Training focused on overall accuracy and macro F1-score, logged to a CSV file (`training_metrics.csv`) alongside training loss, validation loss, validation accuracy, and learning rate.
 
 <p align="center">
-<b>Plot of the Cosine Annealing scheduler</b><br>
-<img src="https://github.com/user-attachments/assets/7d877b72-1cba-4545-8dcd-06f1ebd44e8a" alt="Example Training Metrics Plot" width="600">
+<b>Plot of the Cosine Annealing Scheduler</b><br>
+<img src="./trained_models/UNet_1D_900k/evaluation_results/lr_plot.png" alt="Cosine Annealing Scheduler Plot" width="600">
 </p>
 
-### 9.2. Model Configurations and Parameters
-
-Three main model configurations were trained and evaluated:
-
-- **DENS_ECG_segmenter**:
-  - Input Channels: 1
-  - Number of Parameters: ~1,419,044
-- **ECGSegmenter (Small - 's')**:
-  - Input Channels: 1
-  - `hidden_channels`: 16
-  - `lstm_hidden`: 20
-  - Number of Parameters: ~375,692
-- **ECGSegmenter (XL - 'xl')**:
-  - Input Channels: 1
-  - `hidden_channels`: 32
-  - `lstm_hidden`: 64
-  - Number of Parameters: ~1,339,620
-
-
-Evaluation segment. Where the eval file is beeing explained along with the post processing similar to here but applied to my use case:
-
-n order to evaluate the performance of the proposed delineation algorithm, we compare the ground truth annotations for the onsets and offsets of P, QRS, and T waves with the predicted annotations. We follow the usual standard chosen by The Association for the Advancement of Medical Instrumentation(AAMI) [47], which considers an onset or an offset to be correctly detected if an algorithm locates the same type of annotation in a neighborhood of 150ms. Using this threshold value, we examine for each predicted point whether the prediction correctly detects a point in the ground truth annotation.
-If a ground truth annotation is correctly detected, we count a true positive(TP). In this case, the error is measured as the time deviation of the predicted point from the manual annotation. If there is no point of the ground truth annotation in the 150ms neighborhood of the prediction, then we count a false positive(FP). Once every prediction has been compared with the manual labels, we count for each point of the ground truth annotation which has not been related to any prediction a false negative(FN).
-Based on this, we calculate the following evaluation metrics:
-mean error m
-standard deviation of error σ
-sensitivity
-𝑆⁢𝑒=
-𝑇⁢𝑃
-𝑇⁢𝑃+𝐹⁡𝑁
- 
- 
-(5)
-positive predictive value
-𝑃⁢𝑃⁢𝑉=
-𝑇⁢𝑃
-𝑇⁢𝑃+𝐹⁡𝑃
- 
- 
-(6)
-F1-score
-𝐹⁡1=2·
-𝑆⁢𝑒·𝑃⁢𝑃⁢𝑉
-𝑆⁢𝑒+𝑃⁢𝑃⁢𝑉
- 
- 
-(7)
-Se indicates the algorithm’s ability to identify true positives among all ground truth annotations, while PPV quantifies the algorithm’s precision in detecting annotations. Furthermore, the F1-score, defined as the harmonic mean of Se and PPV, offers a unified assessment of the algorithm’s performance. These metrics have been commonly used in the literature for the evaluation of ECG delineation algorithms [3, 4, 8, 40], and we use them to evaluate performance of our model.
-
-
-
-### 9.3. DENS_ECG_segmenter Results
-
-
-change the structure of the results section. Each Model should have on plot showing how the loss and accuracy evolved during training then one example plot of the segmentation.
-
-In the end a tabular should be created that compares the performance on the onsets and offsets performance according to the Norm decsribed in the section above.
+### 9.2. DENS-Model Results
 
 **Reference**: Peimankar, A., & Puthusserypady, S. (2020). DENS-ECG: A deep learning approach for ECG signal delineation. arXiv. [https://arxiv.org/abs/2005.08689](https://arxiv.org/abs/2005.08689)
 
-<b>DENS_ECG_segmenter Training Metrics</b><br>
+<b>DENS-Model Training Metrics</b><br>
 <table>
 <tr>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/cf78d687-0ca5-4542-b9a6-5efa79c8368e" alt="DENS_ECG_segmenter Confusion Matrix (No Noise)" width="500">
+<img src="./trained_models/DENS_Model/evaluation_results/acc_plot.png" alt="DENS-Model Accuracy" width="500">
 </td>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/c5903618-57c9-4852-8b3b-85d7bf6071ed" alt="DENS_ECG_segmenter Training Metrics" width="500">
+<img src="./trained_models/DENS_Model/evaluation_results/loss_plot.png" alt="DENS-Model Loss" width="500">
 </td>
 </tr>
 </table>
 
-**Evaluation on Data without Additional DataLoader Noise** (validation set):
+The following metrics are computed by comparing every ground truth label to the predicted label. For the performance according to the AAMI standard see further below (significant point detection).
 
-- **Eval Loss**: 0.8990 | **Accuracy**: 0.8423
+- **Accuracy**: 0.8518
 
-| Class       | Precision | Recall | F1-Score | Support |
-|-------------|-----------|--------|----------|---------|
-| No Wave     | 0.8669    | 0.8312 | 0.8487   | 129300  |
-| P Wave      | 0.7875    | 0.8151 | 0.8011   | 29456   |
-| QRS         | 0.8664    | 0.8661 | 0.8663   | 29428   |
-| T Wave      | 0.8075    | 0.8695 | 0.8374   | 55816   |
-| **Macro Avg** | **0.8321** | **0.8455** | **0.8384** | **244000** |
-| **Weighted Avg** | **0.8436** | **0.8423** | **0.8425** | **244000** |
-
-
-
-**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
-
-- **Eval Loss**: 0.9147 | **Accuracy**: 0.8268
-
-| Class       | Precision | Recall | F1-Score | Support |
-|-------------|-----------|--------|----------|---------|
-| No Wave     | 0.8484    | 0.8214 | 0.8347   | 142230  |
-| P Wave      | 0.7529    | 0.7675 | 0.7601   | 32705   |
-| QRS         | 0.8611    | 0.8626 | 0.8619   | 32773   |
-| T Wave      | 0.8021    | 0.8515 | 0.8261   | 62292   |
-| **Macro Avg** | **0.8161** | **0.8258** | **0.8207** | **270000** |
-| **Weighted Avg** | **0.8277** | **0.8268** | **0.8270** | **270000** |
+| Class       | Precision | Recall | F1-Score |
+|-------------|-----------|--------|----------|
+| No Wave     | 0.9032    | 0.8368 | 0.8687   |
+| P Wave      | 0.6956    | 0.7958 | 0.7423   |
+| QRS         | 0.9131    | 0.8806 | 0.8966   |
+| T Wave      | 0.7861    | 0.9053 | 0.8415   |
+| **Macro Avg** | **0.8245** | **0.8546** | **0.8384** |
+| **Weighted Avg** | **0.8586** | **0.8518** | **0.8425** |
 
 
-<b>DENS_ECG_segmente Confusion Matrix (With Noise / w/o noise)</b><br>
+<p align="center">
+<b>DENS-Model Confusion Matrix</b><br>
+<img src="./trained_models/DENS_Model/evaluation_results/confusion_matrix.png" alt="DENS CM" width="500">
+</p>
+
+
+<p align="center">
+<b>Sample Segmentation</b><br>
+<img src="./trained_models/DENS_Model/evaluation_results/ecg_segment_random_batch_381.png" alt="DENS-Model Sample Plot" width="600">
+</p>
+
+### 9.3. MCG-Segmentator_s Results
+
+<b>MCG-Segmentator_s Training Metrics</b><br>
 <table>
 <tr>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/dc4b0d8e-3326-4cbe-940c-69fcf5eba399" alt="DENS_ECG_segmenter Sample Plot (No Noise)" width="400">
+<img src="./trained_models/MCGSegmentator_s/evaluation_results/acc_plot.png" alt="MCG-Segmentator_s Training Metric 1" width="500">
 </td>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/7c898f91-e31b-4613-b116-35dc6d9ce723" alt="DENS_ECG_segmenter Confusion Matrix (With Noise)" width="400">
+<img src="./trained_models/MCGSegmentator_s/evaluation_results/loss_plot.png" alt="MCGSegmentator_s Training Metric 2" width="500">
 </td>
 </tr>
 </table>
 
-<img src="https://github.com/user-attachments/assets/b266f523-d25f-4722-9235-4cce306bba11" alt="DENS_ECG_segmenter Sample Plot (With Noise)" width="1000">
+The following metrics are computed by comparing every ground truth label to the predicted label. For the performance according to the AAMI standard see further below (significant point detection).
 
+- **Accuracy**: 0.8634
 
-### 9.4. ECGSegmenter (Small) Results
+| Class       | Precision | Recall | F1-Score |
+|-------------|-----------|--------|----------|
+| No Wave     | 0.9075    | 0.8530 | 0.8794   |
+| P Wave      | 0.7285    | 0.8091 | 0.7667   |
+| QRS         | 0.9154    | 0.8863 | 0.9006   |
+| T Wave      | 0.8029    | 0.9063 | 0.8515   |
+| **Macro Avg** | **0.8386** | **0.8637** | **0.8495** |
+| **Weighted Avg** | **0.8682** | **0.8634** | **0.8644** |
 
+<p align="center">
+<b>MCG-Segmentator_s Confusion Matrix</b><br>
+<img src="./trained_models/MCGSegmentator_s/evaluation_results/confusion_matrix.png" alt="MCGSegmentator_s CM" width="500">
+</p>
 
-<b>ECGSegmenter (Small) Training Metrics</b><br>
+<p align="center">
+<b>Sample Segmentation</b><br>
+<img src="./trained_models/MCGSegmentator_s/evaluation_results/ecg_segment_random_batch_552.png" alt="MCG-Segmentator_s Sample Plot" width="600">
+</p>
+
+### 9.4. MCG-Segmentator_xl Results
+
+<b>MCG-Segmentator_xl Training Metrics</b><br>
 <table>
 <tr>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/3b78e756-3594-4089-b019-fcf98d1da11a" alt="ECGSegmenter (Small) Confusion Matrix (No Noise)" width="500">
+<img src="./trained_models/MCGSegmentator_xl/evaluation_results/acc_plot.png" alt="MCG-Segmentator_xl Training Metric 1" width="500">
 </td>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/e8a7e14f-9470-4e15-8326-99dc66dbb4c6" alt="ECGSegmenter (Small) Training Metrics" width="500">
-</td>
-</tr>
-
-
-
-**Evaluation on Data without Additional DataLoader Noise** (validation set):
-
-- **Eval Loss**: 0.3635 | **Accuracy**: 0.8477
-
-| Class       | Precision | Recall | F1-Score | Support |
-|-------------|-----------|--------|----------|---------|
-| No Wave     | 0.8669    | 0.8452 | 0.8559   | 129300  |
-| P Wave      | 0.8106    | 0.8071 | 0.8089   | 29456   |
-| QRS         | 0.8734    | 0.8678 | 0.8706   | 29428   |
-| T Wave      | 0.8125    | 0.8640 | 0.8375   | 55816   |
-| **Macro Avg** | **0.8408** | **0.8460** | **0.8432** | **244000** |
-| **Weighted Avg** | **0.8484** | **0.8477** | **0.8478** | **244000** |
-
-
-</table>
-
-
-
-
-**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
-
-- **Eval Loss**: 0.3913 | **Accuracy**: 0.8355
-
-| Class       | Precision | Recall | F1-Score | Support |
-|-------------|-----------|--------|----------|---------|
-| No Wave     | 0.8592    | 0.8283 | 0.8434   | 129301  |
-| P Wave      | 0.7848    | 0.7918 | 0.7883   | 29473   |
-| QRS         | 0.8750    | 0.8677 | 0.8713   | 29435   |
-| T Wave      | 0.7926    | 0.8583 | 0.8241   | 55791   |
-| **Macro Avg** | **0.8279** | **0.8365** | **0.8318** | **244000** |
-| **Weighted Avg** | **0.8369** | **0.8355** | **0.8357** | **244000** |
-
-
-<b>ECGSegmenter (Small) Confusion Matrix (With Noise / w/o noise)</b><br>
-<table>
-<tr>
-<td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/3c0b60c0-4049-4d66-9788-c2ca67a182cc" alt="ECGSegmenter (Small) Confusion Matrix (With Noise)" width="500">
-</td>
-<td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/d4772d72-28a3-45db-9757-56aec2a460cd" alt="ECGSegmenter (Small) Sample Plot (No Noise)" width="500">
+<img src="./trained_models/MCGSegmentator_xl/evaluation_results/loss_plot.png" alt="MCG-Segmentator_xl Training Metric 2" width="500">
 </td>
 </tr>
 </table>
 
-<img src="https://github.com/user-attachments/assets/28eaf65a-300a-4629-956c-ae8f59b99d4e" alt="ECGSegmenter (Small) Sample Plot (With Noise)" width="1000">
+The following metrics are computed by comparing every ground truth label to the predicted label. For the performance according to the AAMI standard see further below (significant point detection).
 
+- **Accuracy**: 0.8647
 
+| Class       | Precision | Recall | F1-Score |
+|-------------|-----------|--------|----------|
+| No Wave     | 0.9116    | 0.8506 | 0.8800   |
+| P Wave      | 0.7446    | 0.8112 | 0.7765   |
+| QRS         | 0.9169    | 0.8881 | 0.9023   |
+| T Wave      | 0.7921    | 0.9171 | 0.8501   |
+| **Macro Avg** | **0.8413** | **0.8667** | **0.8522** |
+| **Weighted Avg** | **0.8702** | **0.8647** | **0.8650** |
 
-### 9.5. ECGSegmenter (XL) Results
+<p align="center">
+<b>MCG-Segmentator_xl Confusion Matrix</b><br>
+<img src="./trained_models/MCGSegmentator_xl/evaluation_results/confusion_matrix.png" alt="MCG-Segmentator_xl CM" width="500">
+</p>
 
+<p align="center">
+<b>Sample Segmentation</b><br>
+<img src="./trained_models/MCGSegmentator_xl/evaluation_results/ecg_segment_random_batch_183.png" alt="MCG-Segmentator_xl Sample Plot" width="600">
+</p>
 
-<b>ECGSegmenter (XL) Training Metrics</b><br>
+### 9.5. Unet-1D-15M Results
+
+<b>Unet-1D-15M Training Metrics</b><br>
 <table>
 <tr>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/9e906eaa-6594-4920-b7e4-15f88b8a17fa" alt="ECGSegmenter (XL) Confusion Matrix (No Noise)" width="500">
+<img src="./trained_models/Unet_1D_15M/evaluation_results/acc_plot.png" alt="Unet-1D-15M Training Metric 1" width="500">
 </td>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/664a9405-d3e2-43dd-8066-12fa1758e069" alt="ECGSegmenter (XL) Training Metrics" width="500">
+<img src="./trained_models/Unet_1D_15M/evaluation_results/loss_plot.png" alt="Unet-1D-15M Training Metric 2" width="500">
 </td>
 </tr>
 </table>
 
+The following metrics are computed by comparing every ground truth label to the predicted label. For the performance according to the AAMI standard see further below (significant point detection).
 
-**Evaluation on Data without Additional DataLoader Noise** (validation set):
+- **Accuracy**: 0.9068
 
-- **Eval Loss**: 0.3778 | **Accuracy**: 0.8474
+| Class       | Precision | Recall | F1-Score |
+|-------------|-----------|--------|----------|
+| No Wave     | 0.9078    | 0.9354 | 0.9214   |
+| P Wave      | 0.8884    | 0.7926 | 0.8378   |
+| QRS         | 0.9174    | 0.9299 | 0.9236   |
+| T Wave      | 0.9061    | 0.8708 | 0.8881   |
+| **Macro Avg** | **0.9049** | **0.8822** | **0.8927** |
+| **Weighted Avg** | **0.9065** | **0.9068** | **0.9062** |
 
-| Class       | Precision | Recall | F1-Score | Support |
-|-------------|-----------|--------|----------|---------|
-| No Wave     | 0.8653    | 0.8433 | 0.8542   | 142196  |
-| P Wave      | 0.8333    | 0.7930 | 0.8127   | 32724   |
-| QRS         | 0.8768    | 0.8656 | 0.8712   | 32804   |
-| T Wave      | 0.8032    | 0.8756 | 0.8379   | 62276   |
-| **Macro Avg** | **0.8447** | **0.8444** | **0.8440** | **270000** |
-| **Weighted Avg** | **0.8485** | **0.8474** | **0.8474** | **270000** |
+<p align="center">
+<b>Unet-1D-15M Confusion Matrix</b><br>
+<img src="./trained_models/Unet_1D_15M/evaluation_results/confusion_matrix.png" alt="Unet-1D-15M CM" width="500">
+</p>
 
+<p align="center">
+<b>Sample Segmentation</b><br>
+<img src="./trained_models/Unet_1D_15M/evaluation_results/ecg_segment_random_batch_442.png" alt="Unet-1D-15M Sample Plot" width="600">
+</p>
 
+### 9.6. Unet-1D-900k Results
 
-**Evaluation on Data with Additional DataLoader Noise** (validation set, `augmentation_prob=1.0`):
-
-- **Eval Loss**: 0.4109 | **Accuracy**: 0.8329
-
-| Class       | Precision | Recall | F1-Score | Support |
-|-------------|-----------|--------|----------|---------|
-| No Wave     | 0.8602    | 0.8192 | 0.8392   | 142180  |
-| P Wave      | 0.7896    | 0.7830 | 0.7863   | 32701   |
-| QRS         | 0.8642    | 0.8718 | 0.8680   | 32796   |
-| T Wave      | 0.7847    | 0.8700 | 0.8252   | 62323   |
-| **Macro Avg** | **0.8247** | **0.8360** | **0.8297** | **270000** |
-| **Weighted Avg** | **0.8347** | **0.8329** | **0.8331** | **270000** |
-
-
-<b>ECGSegmenter (XL) Confusion Matrix (With Noise / w/o noise)</b><br>
+<b>Unet-1D-900k Training Metrics</b><br>
 <table>
 <tr>
 <td align="center" valign="top">
-<img src="https://github.com/user-attachments/assets/415ea4eb-0f49-467b-bb04-167c2b2b1ad2" alt="ECGSegmenter (XL) Confusion Matrix (With Noise)" width="500">
+<img src="./trained_models/Unet_1D_900k/evaluation_results/acc_plot.png" alt="Unet-1D-900k Training Metric 1" width="500">
 </td>
-<td align="center" valign pinc="top">
-<img src="https://github.com/user-attachments/assets/55b66bc5-b82b-449b-bbd9-c297f481e33a" alt="ECGSegmenter (XL) Sample Plot (No Noise)" width="500">
+<td align="center" valign="top">
+<img src="./trained_models/Unet_1D_900k/evaluation_results/loss_plot.png" alt="Unet-1D-900k Training Metric 2" width="500">
 </td>
 </tr>
 </table>
 
+The following metrics are computed by comparing every ground truth label to the predicted label. For the performance according to the AAMI standard see further below (significant point detection).
 
+- **Accuracy**: 0.9039
 
-<img src="https://github.com/user-attachments/assets/43be637f-2dd9-404d-8b33-fd3563e5fcd5" alt="ECGSegmenter (XL) Sample Plot (With Noise)" width="1000">
+| Class       | Precision | Recall | F1-Score |
+|-------------|-----------|--------|----------|
+| No Wave     | 0.9101    | 0.9274 | 0.9187   |
+| P Wave      | 0.8868    | 0.7883 | 0.8346   |
+| QRS         | 0.9114    | 0.9334 | 0.9222   |
+| T Wave      | 0.8895    | 0.8794 | 0.8844   |
+| **Macro Avg** | **0.8994** | **0.8821** | **0.8900** |
+| **Weighted Avg** | **0.9036** | **0.9039** | **0.9034** |
 
+<p align="center">
+<b>Unet-1D-900k Confusion Matrix</b><br>
+<img src="./trained_models/Unet_1D_900k/evaluation_results/confusion_matrix.png" alt="Unet-1D-900k CM" width="500">
+</p>
 
-also add a section about possible applications:
+<p align="center">
+<b>Sample Segmentation</b><br>
+<img src="./trained_models/Unet_1D_900k/evaluation_results/ecg_segment_random_batch_56.png" alt="Unet-1D-900k Sample Plot" width="600">
+</p>
 
-improved QRS detection
-identifying heart beat signal via an heart beat score. Describe the idea:
-num_channels, _ = confidence.shape
-        
-        mean_confidence = np.mean(confidence, axis=-1) # Shape: (num_channels,)
+### 9.7. Summary of Model Performance
 
+This section summarizes the performance of five ECG segmentation models: `Unet-1D-15M`, `Unet-1D-900k`, `MCG-Segmentator_s`, `MCG-Segmentator_xl`, and `DENS-Model`. The evaluation metrics include per-class accuracy, precision, recall, and F1-score, as well as significant point detection metrics for P-Wave, QRS, and T-Wave onsets and offsets, adhering to the AAMI standards with a 150 ms tolerance, as described in Joung et al. (2023) [Joung, C., et al., 2023. Deep learning based ECG segmentation for delineation of diverse arrhythmias. PLOS ONE, 18(4), e0284791]. The metrics were computed on a validation dataset comprised of QTDB and LUDB. The models were trained on datasets such as QTDB and LUDB, with varying architectures, parameter counts, loss functions, and training epochs, as shown in the table below.
 
-        # Calculate segment percentages
-        segment_percentages = np.zeros((num_channels, 4))
-        total_samples_per_channel = labels.shape[-1]
+#### Model Characteristics
 
-        if total_samples_per_channel > 0:
-            for segment_type in range(4): # 0, 1, 2, 3
-                segment_counts = np.sum(labels == segment_type, axis=1) # Sum over time axis
-                segment_percentages[:, segment_type] = (segment_counts / total_samples_per_channel) * 100
-        # Else: percentages remain zero
+| Model Name         | # Parameters | Loss Function | Datasets Used | Total Epochs |
+|--------------------|--------------|---------------|---------------|--------------|
+| Unet-1D-15M        | ~15,022,724  | Focal Loss    | QTDB, LUDB    | 40           |
+| Unet-1D-900k       | ~937,540     | Focal Loss    | QTDB, LUDB    | 50           |
+| MCG-Segmentator_s  | ~375,692     | Cross Entropy | QTDB          | 100          |
+| MCG-Segmentator_xl | ~1,339,620   | Cross Entropy | QTDB          | 21           |
+| DENS-Model         | ~1,419,044   | Cross Entropy | QTDB          | 20           |
 
-        # Define ideal ranges (consider making these class attributes or constants)
-        p_wave_range = (8, 15)      # Relaxed P-wave: 8-15%
-        qrs_range = (8, 15)         # Relaxed QRS: 8-15%
-        t_wave_range = (15, 30)     # Relaxed T-wave: 15-30%
+#### Performance Summary
 
-        # Calculate plausibility scores (vectorized)
-        p_percent = segment_percentages[:, self.LABEL_TO_IDX["P Wave"]]
-        qrs_percent = segment_percentages[:, self.LABEL_TO_IDX["QRS"]]
-        t_percent = segment_percentages[:, self.LABEL_TO_IDX["T Wave"]]
+The models were evaluated on a validation dataset (QTDB and LUDB), comparing predicted labels to ground truth labels for four classes: No Wave, P-Wave, QRS, and T-Wave. The `Unet-1D-15M` model achieved the highest accuracy (0.9070), followed closely by `Unet-1D-900k` (0.9039), `MCG-Segmentator_xl` (0.8647), `MCG-Segmentator_s` (0.8634), and `DENS-Model` (0.8518). The UNet models, trained with Focal Loss and on both QTDB and LUDB datasets, outperformed the others, likely due to their larger parameter counts and ability to handle class imbalance effectively. The MCG-Segmentator models and DENS-Model, trained with Cross Entropy and only on QTDB, showed slightly lower performance, particularly for the P-Wave class, which had the lowest F1-scores across all models (ranging from 0.7423 for DENS-Model to 0.8378 for Unet-1D-15M). This suggests P-Wave detection remains challenging, possibly due to its lower amplitude and shorter duration.
 
-        # Deviations (calculate difference from range boundaries)
-        p_dev = np.maximum(0, p_wave_range[0] - p_percent) + np.maximum(0, p_percent - p_wave_range[1])
-        qrs_dev = np.maximum(0, qrs_range[0] - qrs_percent) + np.maximum(0, qrs_percent - qrs_range[1])
-        t_dev = np.maximum(0, t_wave_range[0] - t_percent) + np.maximum(0, t_percent - t_wave_range[1])
+The confusion matrices (see respective model sections) indicate that misclassifications often occur between No Wave and P-Wave, reflecting their similarity in signal characteristics. QRS detection was consistently strong across all models, with F1-scores above 0.89, likely due to its distinct, high-amplitude morphology. T-Wave detection also performed well, with F1-scores ranging from 0.8415 (DENS-Model) to 0.8881 (Unet-1D-15M).
 
-        total_deviation = p_dev + qrs_dev + t_dev
+#### Significant Point Detection Metrics (F1-Scores)
 
-        # Normalize deviation - use a max possible deviation or just invert
-        # Simple inversion: Higher score for lower deviation. Add epsilon for stability.
-        # Scale factor can be adjusted based on expected deviation range.
-        plausibility_scores = 1.0 / (1.0 + total_deviation * 0.1) # Smaller multiplier = less sensitive
+The table below presents the F1-scores for significant point detection (onsets and offsets of P-Wave, QRS, and T-Wave) across all models, evaluated according to AAMI standards (±150 ms tolerance) as mentioned above, on a dataset comprised of QTDB and LUDB. Post-processing, as proposed in Joung et al. (2023), was applied before evaluation to refine segment labels. The onset/offset performance was determined using these AAMI standards.
 
-        # Combine scores
-        # Normalize confidence to avoid scale issues if confidence varies widely
+| Model Name         | P-Wave Onset | P-Wave Offset | QRS Onset | QRS Offset | T-Wave Onset | T-Wave Offset |
+|--------------------|--------------|---------------|-----------|------------|--------------|---------------|
+| Unet-1D-15M        | 0.9280       | 0.9281        | 0.9814    | 0.9815     | 0.9584       | 0.9613        |
+| Unet-1D-900k       | 0.9312       | 0.9324        | 0.9815    | 0.9816     | 0.9556       | 0.9536        |
+| MCG-Segmentator_s  | 0.9006       | 0.9011        | 0.9769    | 0.9771     | 0.9490       | 0.9473        |
+| MCG-Segmentator_xl | 0.9018       | 0.9032        | 0.9764    | 0.9765     | 0.9483       | 0.9493        |
+| DENS-Model         | 0.8870       | 0.8917        | 0.9731    | 0.9733     | 0.9503       | 0.9454        |
 
-        final_scores = (confidence_weight * mean_confidence) + (plausibility_weight * plausibility_scores)
+#### Discussion
 
-        if zero_input_mask is not None:
-            final_scores[zero_input_mask] = 0.0
+The `Unet-1D-15M` model’s superior performance (accuracy: 0.9068, macro F1: 0.8927) can be attributed to its large parameter count (~15M) and use of Focal Loss, which effectively handles class imbalance, particularly for the minority P-Wave class. The `Unet-1D-900k` model, with fewer parameters (~937k), performs comparably (accuracy: 0.9039, macro F1: 0.8900), suggesting that a smaller architecture can achieve strong results with sufficient training (50 epochs vs. 40 for Unet-1D-15M). The MCG-Segmentator models, with fewer parameters (~375k–1.34M) and trained only on QTDB, show slightly lower performance (accuracy: 0.8634–0.8647), likely due to limited dataset diversity and the use of Cross Entropy loss, which is less effective for imbalanced classes. The `DENS-Model` (accuracy: 0.8518, macro F1: 0.8384) underperforms, possibly due to its shorter training duration (20 epochs) and reliance on QTDB alone.
 
-        return final_scores, mean_confidence, segment_percentages, plausibility_scores
+For significant point detection, the F1-scores in the table, determined using AAMI standards as mentioned above, show that QRS detection is the strongest across all models, with F1-scores ranging from 0.9731 (`DENS-Model`) to 0.9816 (`Unet-1D-900k`), reflecting the distinct morphology of QRS complexes. P-Wave detection has the lowest F1-scores (0.8870–0.9324), with `Unet-1D-900k` performing best, likely due to its ability to capture subtle features with Focal Loss and diverse training data. T-Wave detection is robust, with F1-scores from 0.9454 (`DENS-Model`) to 0.9613 (`Unet-1D-15M`), though variability in T-Wave morphology may contribute to slightly lower scores compared to QRS.
 
-ICA filtering use the Code to determin independent componets that are unlikely to result from a human heart beat. Scrapping these signals improves Quality.
+Compared to the model proposed by Joung et al. (2023), which was trained on a more diverse dataset including various arrhythmias, the UNet architectures (`Unet-1D-15M` and `Unet-1D-900k`) achieve comparable performance on QTDB and LUDB datasets. For instance, Joung et al. report sensitivity (Se) and positive predictive value (PPV) for QRS detection on QTDB as 100.0% and 97.94–97.97%, respectively, while our `Unet-1D-15M` and `Unet-1D-900k` models achieve F1-scores of 0.9814–0.9816 for QRS onsets and offsets, indicating competitive performance. Notably, `Unet-1D-900k` and `MCG-Segmentator_s` have approximately 20 times fewer parameters (~937k and ~375k, respectively) than the model in Joung et al., which likely due to the added self-attention mechanisms in our approach. This suggests that smaller architectures can achieve high performance with appropriate loss functions (e.g., Focal Loss) and sufficient training, even on less diverse datasets like QTDB and LUDB.
 
-Also add two dummy fields where i can insert example pictures.
+<p align="center">
+<b> Performance Comparison Plot</b><br>
+<img src="./trained_models/val_comparison.png" alt="Validation Performance Comparison" width="500">
+</p>
 
-Also add a link to a different github repo where this is beeing used.
+## 10. Possible Applications to Magnetocardiography and ECG
 
+The high performance of the evaluated models, particularly in QRS detection, suggests several applications in magnetocardiography (MCG) and electrocardiography (ECG):
 
+**Improved QRS Detection**
 
-## 10. Discussion and Key Considerations
+The models, especially Unet-1D-15M and Unet-1D-900k, achieve F1-scores of 0.9814–0.9816 for QRS onsets and offsets, indicating precise identification of QRS complexes. This accuracy is critical for both ECG and MCG, where QRS detection is foundational for diagnosing cardiac conditions such as arrhythmias, myocardial infarction, and conduction abnormalities. In MCG, which measures magnetic fields produced by cardiac electrical activity, precise QRS detection can enhance the analysis of subtle biomagnetic signals, improving the detection of abnormalities in noisy environments.
 
-**Model Performance**:
+**Heartbeat Score for Signal Identification**
 
-- The `ECGSegmenter (Small)` model achieved the best F1-score on clean data and competitive performance on noisy data, despite having significantly fewer parameters than `ECGSegmenter (XL)` and `DENS_ECG_segmenter`. This suggests it generalizes well for this dataset size and task, potentially due to its architectural design (multi-scale convolutions, residual blocks, attention) without overfitting as much as larger models.
-- The `DENS_ECG_segmenter` model's performance was lower than reported in its original paper. This is likely due to:
-  - **No explicit signal filtering**: The original paper used pre-filtered data. This project intentionally trained on less processed signals.
-  - **Aggressive noise augmentation**: The extensive noise added during training makes the task significantly harder but aims for greater robustness. The paper reports an F1 of 87% on unfiltered data, but their "unfiltered" might still be cleaner than the augmented data used here, since they didn't add any additional augmentation.
-- **Impact of Noise Augmentation**: All models showed a slight degradation in performance when evaluated on data with additional synthetic noise, which is expected. However, training with noise augmentation is crucial for real-world applicability where signals are rarely pristine.
-- **Computational Cost**: `ECGSegmenter (XL)` and `DENS_ECG_segmenter` are more computationally intensive due to their larger parameter counts. `ECGSegmenter (Small)` offers the best performance and efficiency.
-- **Data Quality & Preprocessing**: The `preprocess_data.py` script is vital for generating the training data. The quality of annotations and the logic for handling gaps/overlaps in QTDB directly impact model performance. Manual exclusion of certain problematic files (e.g., those with only QRS labels if not handled carefully by preprocessing) was mentioned as a step, highlighting the importance of data curation.
-- **Extensibility**: The modular structure allows for easy addition of new models in `model.py` or new data augmentation techniques in `ECGFullDataset`.
-- **Logging & Reproducibility**: Training metrics are logged to CSV, aiding analysis. Checkpoints include `params.json`, which stores training arguments, facilitating reproducibility.
+A novel application involves using a heartbeat score to identify signals likely to originate from a human heartbeat, particularly in MCG where noise from non-cardiac sources (e.g., muscle activity, environmental interference) is common. The provided algorithm calculates a heartbeat score by combining model confidence and segment plausibility:
 
+- **Confidence Calculation**: For each channel, the mean confidence across time steps is computed from the model's softmax probabilities, reflecting the model's certainty in segment predictions (No Wave, P-Wave, QRS, T-Wave).
+- **Segment Percentages**: The algorithm calculates the percentage of each channel’s samples assigned to each segment type (P-Wave: 8–15%, QRS: 8–15%, T-Wave: 15–30%). These ranges are based on typical physiological durations in ECG/MCG signals.
+- **Plausibility Scores**: Deviations from ideal segment percentage ranges are computed, with lower deviations yielding higher plausibility scores. The score is normalized using a simple inversion formula: `1.0 / (1.0 + total_deviation * 0.1)`.
+- **Final Score**: The heartbeat score combines confidence and plausibility scores with adjustable weights, providing a metric to assess whether a signal resembles a typical cardiac cycle. Channels with low scores (e.g., due to excessive noise or non-cardiac patterns) can be flagged or excluded.
+
+This approach is particularly valuable in MCG, where multichannel data often includes non-cardiac artifacts. By identifying channels with high heartbeat scores, clinicians can focus on signals most likely to represent true cardiac activity, improving diagnostic accuracy.
+
+**ICA Filtering for Signal Quality Improvement**
+
+Independent Component Analysis (ICA) can leverage the heartbeat score to filter out independent components unlikely to result from a human heartbeat. In MCG and ECG, ICA decomposes multichannel signals into independent components, some of which may represent noise or non-cardiac sources. By applying the heartbeat score to each component, components with low scores (indicating low confidence or implausible segment distributions) can be identified and removed. This process enhances signal quality by isolating components that align with expected cardiac patterns (e.g., appropriate P-Wave, QRS, and T-Wave proportions). For example, a component with a QRS percentage far below 8% or a T-Wave percentage exceeding 30% would receive a low heartbeat score and be excluded, reducing noise in the reconstructed signal.
+
+This approach has been implemented in a related project, available at https://github.com/Drizzr/Bachelorarbeit, demonstrating its application in real-world MCG and ECG analysis.

@@ -191,8 +191,8 @@ if __name__ == "__main__":
     try:
         print("--- Testing ECGFullDataset for 1D Output ---")
         test_dataset = ECGFullDataset(
-            data_dir="MCG_segmentation/Datasets/train", # Adjust path
-            overlap=125,
+            data_dir="MCG_segmentation/Datasets/val", # Adjust path
+            overlap=400,
             sequence_length=500,
             sinusoidal_noise_mag=0.05,
             gaussian_noise_std=0.04,

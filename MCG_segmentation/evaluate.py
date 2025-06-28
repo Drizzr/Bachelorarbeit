@@ -45,7 +45,7 @@ def load_model(load_dir, device):
     with open(config_path, "r") as f:
         model_params = json.load(f)
 
-    model = DENS_ECG_segmenter(**model_params)
+    model = UNet1D(**model_params)
 
     try:
         model.load_state_dict(torch.load(best_model_path, map_location=device))
@@ -203,7 +203,7 @@ def plot_segmented_signal(signal, pred, ground_truth, output_dir, sample_rate=25
     axs.set_ylabel("Amplitude")
     axs.set_title("EKG-Signal mit vorhergesagten Segmenten und Ground-Truth-Labels")
 
-    plt.savefig(os.path.join(output_dir, f"{filename_prefix}.pdf"), bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, f"{filename_prefix}.png"), bbox_inches='tight')
     plt.close()
 
 
@@ -305,7 +305,7 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
     plt.xlabel("Predicted")
     plt.ylabel("True")
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "confusion_matrix.pdf"), bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, "confusion_matrix.png"), bbox_inches='tight')
     plt.close()
 
     evaluate_detection_metrics(all_preds, all_labels, sequence_length)
@@ -314,9 +314,9 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/DENS_Model")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_900k")
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/DENS_Model/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_900k/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--sequence_length", type=int, default=500)
