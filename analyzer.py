@@ -19,13 +19,8 @@ import copy
 import json
 from uncertainties import ufloat
 
+from MCG_segmentation.model.model import ECGSegmenter, UNet1D, DENS_ECG_segmenter
 
-# Attempt to import local MCG_segmentation package
-try:
-    from MCG_segmentation.model.model import ECGSegmenter, UNet1D, DENS_ECG_segmenter
-except ImportError:
-    logging.warning("Could not import ECGSegmenter. Segmentation features will be unavailable.")
-    ECGSegmenter = None
 
 # Configure logging
 logging.basicConfig(
@@ -359,9 +354,7 @@ class Analyzer:
         Returns:
             ECGSegmenter: Loaded model instance, or None if loading fails.
         """
-        if ECGSegmenter is None:
-            logging.warning("ECGSegmenter not available. Returning None.")
-            return None
+
 
         best_model_path = os.path.join(checkpoint_dir, "checkpoints/best/model.pth")
         config_path = os.path.join(checkpoint_dir, "config.json")
@@ -374,7 +367,7 @@ class Analyzer:
             model_params = json.load(f)
 
         # Create model with loaded parameters
-        model = UNet1D(**model_params)
+        model = ECGSegmenter(**model_params)
 
         try:
             model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))

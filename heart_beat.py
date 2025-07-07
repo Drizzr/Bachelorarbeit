@@ -89,7 +89,7 @@ def load_patient_data(patient: str, run: str = None):
         filename=file_name,
         add_filename=add_filename,
         log_file_path=log_file_path,
-        #model_checkpoint_dir="MCG_segmentation/trained_models/MCGSegmentator_s",
+        #model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter
 
@@ -100,7 +100,7 @@ for k in analysis.key_list:
         key = k
         break
     
-(x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=False)
+(x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=True)
 
 
 ########

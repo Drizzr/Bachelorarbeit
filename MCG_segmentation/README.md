@@ -464,7 +464,7 @@ model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dr
 
 **Architecture Diagram**:
 
-![UNet](./trained_models/Unet-1D-15M/evaluation_results/U-Net_architecture.png)
+![UNet](./trained_models/Unet_1D_15M/evaluation_results/U-Net_architecture.png)
 
 ### 5.2. Unet-1D-900k
 
@@ -543,7 +543,7 @@ model = ECGSegmenter(num_classes=4, input_channels=1, hidden_channels=16, lstm_h
 - **Output**: `(batch_size, sequence_length, num_classes)` (logits)
 
 **Architecture Diagram**:
-![MCGSegmentator](./trained_models/MCG-Segmentator_s/evaluation_results/ECG_segmentator_architecture.png)
+![MCGSegmentator](./trained_models/MCGSegmentator_s/evaluation_results/ECG_segmentator_architecture.png)
 
 ### 5.4. MCG-Segmentator_xl
 
