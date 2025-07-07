@@ -100,7 +100,7 @@ for k in analysis.key_list:
         key = k
         break
     
-(x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=True)
+(x_data, y_data, z_data), time, single_run = analysis.prepare_data(key, apply_default_filter=True, plot_alignment=False)
 
 
 ########
@@ -114,9 +114,9 @@ time_intervall = time[intervall_start:intervall_end]
 single_run_intervall = single_run[:, intervall_start:intervall_end]
 
 
-x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=True)
+x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=False)
 y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True)
-z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=True)
+z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=False)
 single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
 #single_run_filtered = single_run_intervall.copy()
@@ -131,7 +131,7 @@ single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_f
 
 # use cleanest channel for peak detection
 peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.7, confidence_weight=0.9, plausibility_weight=0.1)
-if peak_positions is not None and len(peak_positions) > 0:
+"""if peak_positions is not None and len(peak_positions) > 0:
     plt.figure(figsize=(12, 4))
     plt.plot(single_run_filtered[ch, :], label='Signal', linewidth=1.2)
     #plt.plot(resampled_data[ch, :], label='Signal', linewidth=1.2)
@@ -144,13 +144,13 @@ if peak_positions is not None and len(peak_positions) > 0:
     plt.tight_layout()
     plt.show()
 else:
-    print("No R peaks detected or `peak_positions` is empty.")
+    print("No R peaks detected or `peak_positions` is empty.")"""
 #analysis.plot_segmented_signal(single_run_filtered[ch, :], labels[ch, :])
 
 
 # window averaging
 avg_channels, time_window = analysis.avg_window(single_run_filtered, peak_positions, window_left=0.3, window_right=0.5)
-analysis.butterfly_plot(avg_channels, time_window, 48, f"Original {key}")
+#analysis.butterfly_plot(avg_channels, time_window, 48, f"Original {key}")
 
 
 avg_channels = np.array(avg_channels)
@@ -213,10 +213,10 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
             else:
                 print(f"Skipping {channel_name}{suffix} as it contains only zeros. (To change this decrease the threshold in the window averaging step.)")
         
-        if len(sensor_data) >= 2:
-            if len(sensor_data) == 3:
-                sensor_data = sensor_data[:2]
-                suffixes = suffixes[:2]
+        if len(sensor_data) == 2:
+            # Since each sensor only measures two components
+            # for the triax sensor that was used in the first measurments (NL) i manualy exclude the x component in the setup.json
+            
             sensor_data = np.array(sensor_data)
 
             if "_x" in suffixes and "_y" in suffixes:

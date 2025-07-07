@@ -1,0 +1,38 @@
+{
+    "age_all": {
+        "mean": 35.40909090909091,
+        "std": 12.408365422872283,
+        "count": 22,
+        "median": 30.5
+    },
+    "height_all": {
+        "mean": 1.7254545454545456,
+        "std": 0.08675985665774655,
+        "count": 11,
+        "median": 1.7
+    },
+    "age_arvc": {
+        "mean": 40.7,
+        "std": 14.606315224739072,
+        "count": 10,
+        "median": 42.5
+    },
+    "height_arvc": {
+        "mean": NaN,
+        "std": NaN,
+        "count": 0,
+        "median": NaN
+    },
+    "age_healthy": {
+        "mean": 31.0,
+        "std": 8.528028654224418,
+        "count": 12,
+        "median": 28.0
+    },
+    "height_healthy": {
+        "mean": 1.7254545454545456,
+        "std": 0.08675985665774655,
+        "count": 11,
+        "median": 1.7
+    }
+}

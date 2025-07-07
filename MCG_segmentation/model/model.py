@@ -92,7 +92,8 @@ class ECGSegmenter(nn.Module):
         self.self_attn = TransformerEncoderLayer(
             d_model=lstm_hidden * 2,
             nhead=8,
-            dropout=dropout_rate
+            dropout=dropout_rate,
+
         )
         self.transformer = TransformerEncoder(self.self_attn, num_layers=1)
         

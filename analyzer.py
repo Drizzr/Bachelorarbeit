@@ -815,17 +815,66 @@ class Analyzer:
                                  title_suffix="", ax=None, show=True, 
                                  save_path=None, 
                                  uncertainty_ms=100, n_realizations=100):
-        """Plot a 2D projection of the heart vector with metrics and uncertainty bars."""
+        """
+        Plot a 2D projection of the heart vector with metrics and uncertainty bars.
+        
+        Parameters
+        ----------
+        original_data : array-like
+            The original data array with shape (n_components, n_samples).
+        segment_start_global : int
+            Global start index of the segment to analyze.
+        segment_end_global : int
+            Global end index of the segment to analyze.
+        proj_name : str
+            Name of the projection (e.g., 'xy-Projection', 'xz-Projection', 'yz-Projection').
+        title_suffix : str, optional
+            Additional text to append to the plot title. Default is empty string.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes object to plot on. If None, creates a new figure. Default is None.
+        show : bool, optional
+            Whether to display the plot. Default is True.
+        save_path : str, optional
+            Path to save the plot. If None, plot is not saved. Default is None.
+        uncertainty_ms : int, optional
+            Uncertainty in milliseconds for metric calculations. Default is 100.
+        n_realizations : int, optional
+            Number of realizations for uncertainty estimation. Default is 100.
+        
+        Returns
+        -------
+        tuple
+            A tuple containing (ax, uncertain_metrics) where ax is the matplotlib axes
+            object and uncertain_metrics is a dictionary of calculated metrics.
+        
+        Raises
+        ------
+        ValueError
+            If input data is invalid or segment indices are out of bounds.
+        """
+        
+        # Input validation
+        if original_data is None or len(original_data) < 2:
+            raise ValueError("original_data must contain at least 2 components")
+        
+        if segment_start_global < 0 or segment_end_global <= segment_start_global:
+            raise ValueError("Invalid segment indices")
+        
+        if segment_end_global > original_data.shape[1]:
+            raise ValueError("Segment end index exceeds data length")
 
-        # Extract components from the original data using global indices
+        # Extract signal components
         component1 = original_data[0, segment_start_global:segment_end_global]
         component2 = original_data[1, segment_start_global:segment_end_global]
 
+        # Determine if this is a standalone plot
         standalone_plot = ax is None
+        
+        # Create figure and axes if needed
         if standalone_plot:
             fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
 
-        # Plot styling
+        # Configure plot styling
         ax.grid(True, linestyle='--', alpha=0.7)
         ax.set_facecolor('#f5f5f5')
         ax.spines['top'].set_visible(False)
@@ -837,88 +886,154 @@ class Analyzer:
         ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
         ax.set_aspect('equal', adjustable='box')
 
-        # Choose plot color
-        color_map = {"xy-Projection": 'dodgerblue', "xz-Projection": 'orange', "yz-Projection": 'forestgreen'}
-        plot_color = color_map.get(proj_name, 'purple')
+        # Choose plot color based on whether it's standalone (grayscale) or embedded (color)
+        if standalone_plot:
+            # Grayscale color scheme for standalone plots
+            grayscale_map = {
+                "xy-Projection": '#2F2F2F',    # Dark gray
+                "xz-Projection": '#5F5F5F',    # Medium gray
+                "yz-Projection": '#3F3F3F'     # Medium-dark gray
+            }
+            plot_color = grayscale_map.get(proj_name, '#4F4F4F')
+            arrow_color = '#000000'
+        else:
+            # Color scheme for embedded plots (maintains backwards compatibility)
+            color_map = {
+                "xy-Projection": 'dodgerblue', 
+                "xz-Projection": 'orange', 
+                "yz-Projection": 'forestgreen'
+            }
+            plot_color = color_map.get(proj_name, 'purple')
+            arrow_color = 'red'
 
-        # Plot line
-        ax.plot(component1, component2, label=proj_name, color=plot_color, linewidth=2.0)
+        # Plot the main trajectory
+        ax.plot(component1, component2, 
+                label=proj_name, 
+                color=plot_color, 
+                linewidth=2.0,
+                zorder=3)
 
-        # Fill enclosed area
-        ax.fill(component1, component2, color=plot_color, alpha=0.3, label=f'{proj_name} Area')
+        # Fill the enclosed area
+        ax.fill(component1, component2, 
+                color=plot_color, 
+                alpha=0.3, 
+                label=f'{proj_name} Area',
+                zorder=2)
 
         # Add directional arrows
         arrow_stride = max(1, len(component1) // 20)
         for i in range(0, len(component1) - arrow_stride, arrow_stride):
             next_idx = min(i + 1, len(component1) - 1)
-            vec = np.array([component1[next_idx], component2[next_idx]]) - np.array([component1[i], component2[i]])
+            vec = np.array([component1[next_idx], component2[next_idx]]) - \
+                np.array([component1[i], component2[i]])
+            
             if np.linalg.norm(vec) > 1e-6:
-                ax.annotate('', xy=(component1[next_idx], component2[next_idx]), xytext=(component1[i], component2[i]),
-                            arrowprops=dict(facecolor='red', edgecolor='red', arrowstyle='->', linewidth=1.5))
+                ax.annotate('', 
+                        xy=(component1[next_idx], component2[next_idx]), 
+                        xytext=(component1[i], component2[i]),
+                        arrowprops=dict(facecolor=arrow_color, 
+                                        edgecolor=arrow_color, 
+                                        arrowstyle='->', 
+                                        linewidth=1.5,
+                                        alpha=0.7))
 
         # Calculate metrics with uncertainty
-        uncertain_metrics = self.calculate_metrics_with_uncertainty(
-            original_data, segment_start_global, segment_end_global, uncertainty_ms, n_realizations
-        )
+        try:
+            uncertain_metrics = self.calculate_metrics_with_uncertainty(
+                original_data, segment_start_global, segment_end_global, 
+                uncertainty_ms, n_realizations
+            )
+        except Exception as e:
+            logging.error(f"Error calculating uncertain metrics for {proj_name}: {e}")
+            uncertain_metrics = {}
 
-        # Format metrics text with uncertainties
-        metrics_text = "Metrics N/A"
-        if len(component1) > 2:
+        # Format metrics text with proper error handling
+        if len(component1) <= 2:
+            metrics_text = "Metrics N/A\n(Insufficient data)"
+        elif not uncertain_metrics:
+            metrics_text = "Metrics Error\n(Calculation failed)"
+        else:
             try:
-                metrics_text = (f'\n Area: {uncertain_metrics["Area"]:.3u}\n'
-                                f'T-Dist: {uncertain_metrics["T-Dist"]:.2u}\n'
-                                f'Compact: {uncertain_metrics["Compact"]:.4u}\n'
-                                f'Angle: {uncertain_metrics["Angle"]:.1u}°')
-            except Exception as e:
+                metrics_text = (
+                    f'Area: {uncertain_metrics["Area"]:.3u}\n'
+                    f'T-Dist: {uncertain_metrics["T-Dist"]:.2u}\n'
+                    f'Compact: {uncertain_metrics["Compact"]:.4u}\n'
+                    f'Angle: {uncertain_metrics["Angle"]:.1u}°'
+                )
+            except (KeyError, ValueError, TypeError) as e:
                 logging.warning(f"Error formatting uncertain metrics for {proj_name}: {e}")
-                metrics_text = "Metrics Error"
+                metrics_text = "Metrics Error\n(Formatting failed)"
 
-        # Add metrics text
-        ax.text(0.05, 0.95, metrics_text, transform=ax.transAxes, fontsize=9, fontweight='bold', color='black',
-                verticalalignment='top', bbox=dict(facecolor='white', edgecolor='gray', alpha=0.8, boxstyle='round,pad=0.3'))
+        # Add metrics text to plot
+        ax.text(0.05, 0.95, metrics_text, 
+                transform=ax.transAxes, 
+                fontsize=9, 
+                fontweight='bold', 
+                color='black',
+                verticalalignment='top', 
+                bbox=dict(facecolor='white', 
+                        edgecolor='gray', 
+                        alpha=0.8, 
+                        boxstyle='round,pad=0.3'))
 
-        # Set axes limits
-        max_limit = max(np.max(np.abs(ax.get_xlim())), np.max(np.abs(ax.get_ylim()))) * 1.1
+        # Configure axes limits to be symmetric
+        current_xlim = ax.get_xlim()
+        current_ylim = ax.get_ylim()
+        max_limit = max(np.max(np.abs(current_xlim)), np.max(np.abs(current_ylim))) * 1.1
         ax.set_xlim(-max_limit, max_limit)
         ax.set_ylim(-max_limit, max_limit)
 
-        # Set labels
-        labels = {
+        # Set appropriate axis labels
+        label_map = {
             "xy-Projection": ('$B_x$ [pT]', '$B_y$ [pT]'),
             "xz-Projection": ('$B_x$ [pT]', '$B_z$ [pT]'),
             "yz-Projection": ('$B_y$ [pT]', '$B_z$ [pT]')
         }
-        ax.set_xlabel(labels.get(proj_name, ('Component 1', 'Component 2'))[0], fontsize=12)
-        ax.set_ylabel(labels.get(proj_name, ('Component 1', 'Component 2'))[1], fontsize=12)
+        xlabel, ylabel = label_map.get(proj_name, ('Component 1', 'Component 2'))
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
 
-        # Format ticks
-        locs_x, locs_y = ax.get_xticks(), ax.get_yticks()
-        xlabels = [f"{x:.0f}" if abs(x) > 1e-3 * max_limit else "" for x in locs_x]
-        ylabels = [f"{y:.0f}" if abs(y) > 1e-3 * max_limit else "" for y in locs_y]
-        ax.set_xticks(locs_x)
-        ax.set_xticklabels(xlabels)
-        ax.set_yticks(locs_y)
-        ax.set_yticklabels(ylabels)
+        # Format tick labels for clean appearance
+        threshold = 1e-3 * max_limit
+        x_ticks = ax.get_xticks()
+        y_ticks = ax.get_yticks()
+        x_labels = [f"{x:.0f}" if abs(x) > threshold else "" for x in x_ticks]
+        y_labels = [f"{y:.0f}" if abs(y) > threshold else "" for y in y_ticks]
+        ax.set_xticks(x_ticks)
+        ax.set_xticklabels(x_labels)
+        ax.set_yticks(y_ticks)
+        ax.set_yticklabels(y_labels)
 
-        ax.legend(fontsize=10, loc='lower right', frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
+        # Add legend
+        ax.legend(fontsize=10, loc='lower right', frameon=True, 
+                facecolor='white', edgecolor='gray', framealpha=0.8)
 
+        # Handle standalone plot finalization
         if standalone_plot:
-            plt.suptitle(f"Heart Vector Projection: {proj_name}{' - ' + title_suffix if title_suffix else ''}",
-                        fontsize=16, fontweight='bold')
+            # Set title
+            title = f"Heart Vector Projection: {proj_name}"
+            if title_suffix:
+                title += f" - {title_suffix}"
+            
+            plt.suptitle(title, fontsize=16, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-            if show: plt.show()
-            if save_path: 
+            
+            # Save plot if requested
+            if save_path:
                 try:
                     plt.savefig(save_path, dpi=200, bbox_inches='tight')
-                    logging.info(f"Saved projection plot to: {save_path}")
+                    logging.info(f"Successfully saved projection plot to: {save_path}")
                 except Exception as e:
-                    logging.error(f"Failed to save projection plot: {e}")
+                    logging.error(f"Failed to save projection plot to {save_path}: {e}")
+            
+            # Show plot if requested
+            if show:
+                plt.show()
 
-        # Log metrics with uncertainties
+        # Log metrics information
         logging.info(f"Uncertain metrics for {proj_name}: {metrics_text}")
 
         return ax, uncertain_metrics
-
 
     def plot_all_heart_vector_projections(self, heart_vector_components, segment_start_global, segment_end_global,
                                       title_suffix="", save_path=None, uncertainty_ms=100, n_realizations=100):
