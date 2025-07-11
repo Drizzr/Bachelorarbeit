@@ -927,9 +927,8 @@ After running `heart_beat.py` for all subjects, this script performs the group-l
 **Workflow**:
 1.  **Data Aggregation**: Automatically finds and loads all `result.csv` files from the `Results` directory. It can analyze each sensor individually or aggregate them by projection type (e.g., combine all `_xy` projections).
 2.  **Demographic Analysis**: Reads `Data/setup.json` to generate and save plots of age, height, and gender distributions for the ARVC and healthy cohorts.
-    <br>
-    `[Placeholder: Image of Gender Distribution Plot]`
-    <br>
+    <img width="717" height="440" alt="image" src="https://github.com/user-attachments/assets/11a517e2-9d35-4622-a5e2-3c2f07a6f985" />
+
 3.  **Statistical Comparisons**: For each feature (e.g., T-Wave Area), it performs a comprehensive statistical comparison between the two groups:
     *   **T-Test Analysis**: It runs `perform_t_test()`, which calculates Welch's t-test to get a p-value. It generates a plot of the t-distribution and a detailed boxplot showing the data distribution.
     *   **ROC Analysis**: It runs `determine_optimal_threshold()` to evaluate diagnostic performance. This function calculates the AUC, F1-score, sensitivity, and specificity, and generates an ROC curve plot and a confusion matrix.
