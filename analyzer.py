@@ -69,6 +69,7 @@ class Analyzer:
         scaling=DEFAULT_SCALING,
         num_ch=DEFAULT_NUM_CHANNELS,
         model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR,
+        model_class = ECGSegmenter
     ):
         """Initialize the Analyzer with data and model configurations.
 
@@ -124,7 +125,7 @@ class Analyzer:
         self.cmaplist = [self.cmap(x) for x in np.linspace(0, 1, num=self.num_ch)]
 
         # Load segmentation model
-        self.model = self._load_segmentation_model(model_checkpoint_dir)
+        self.model = self._load_segmentation_model(model_checkpoint_dir, model_class)
 
     @staticmethod
     def bandstop_filter(data, center_frequency, bandwidth, sampling_rate, order=4):
@@ -345,7 +346,7 @@ class Analyzer:
 
 
 
-    def _load_segmentation_model(self, checkpoint_dir):
+    def _load_segmentation_model(self, checkpoint_dir, model_class):
         """Load the trained ECGSegmenter model from the checkpoint directory.
 
         Args:
@@ -367,7 +368,7 @@ class Analyzer:
             model_params = json.load(f)
 
         # Create model with loaded parameters
-        model = ECGSegmenter(**model_params)
+        model = model_class(**model_params)
 
         try:
             model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
