@@ -691,8 +691,7 @@ ax, uncertain_metrics = analyzer.plot_heart_vector_projection(
 - `ValueError`: If `original_data` is invalid or segment indices are out of bounds.
 
 **Example Output**:
-![Heart Vector Projection](https://github.com/user-attachments/assets/755764c0-819b-4ff1-83cb-a3491631e6f9)
-
+![Heart Vector Projection](https://github.com/user-attachments/assets/3bc59e5a-985f-4596-96c8-b524208e5a7d)
 
 
 
@@ -936,12 +935,10 @@ After running `heart_beat.py` for all subjects, this script performs the group-l
     *   **ROC Analysis**: It runs `determine_optimal_threshold()` to evaluate diagnostic performance. This function calculates the AUC, F1-score, sensitivity, and specificity, and generates an ROC curve plot and a confusion matrix.
 4.  **Monte Carlo Simulation**: The script's main strength is its use of Monte Carlo simulations. The `_unc` columns in the `result.csv` files are used to run `perform_t_test()` and `determine_optimal_threshold()` hundreds of times on perturbed data. This produces robust confidence intervals for all key statistical outputs (p-value, AUC, optimal threshold, etc.).
 5.  **Save Outputs**: All generated plots and summary tables are saved to the `Results/` directory, organized into `Overall_Generated_Plots`, `Overall_Generated_Tables`, and sensor-specific subdirectories.
-    <br>
-    `[Placeholder: Image of Boxplot with MC Error Bars]`
-    `[Placeholder: Image of ROC Curve]`
-    `[Placeholder: Image of p-value MC Distribution]`
-    <br>
 
+<img width="727" height="552" alt="image" src="https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc" />
+<img width="642" height="433" alt="image" src="https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d" />
+<img width="642" height="430" alt="image" src="https://github.com/user-attachments/assets/4c8afc26-c580-44c1-9eef-b47815e44221" />
 
 ## Troubleshooting
 
