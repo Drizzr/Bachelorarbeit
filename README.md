@@ -359,8 +359,8 @@ filtered, components, best_idx, mask = analyzer.ICA_filter(data, heart_beat_scor
 | `data`                      | `np.ndarray` | —       | Input `(channels, samples)` or `(grid_x, grid_y, samples)`. |
 | `heart_beat_score_threshold`| `float`      | `0.85`  | Threshold for retaining components.         |
 | `max_iter`                  | `int`        | `5000`  | Max ICA iterations.                         |
-| `confidence_weight`         | `float`      | `0.8`   | Weight for confidence in scoring.           |
-| `plausibility_weight`       | `float`      | `0.2`   | Weight for plausibility in scoring.         |
+| `confidence_weight`         | `float`      | `0.9`   | Weight for confidence in scoring.           |
+| `plausibility_weight`       | `float`      | `0.1`   | Weight for plausibility in scoring.         |
 | `print_result`              | `bool`       | `False` | Print channel evaluation metrics.           |
 | `plot_result`               | `bool`       | `False` | Show interactive plot for 3D data.          |
 
@@ -490,6 +490,8 @@ peaks, best_channel, labels, hr, hrv = analyzer.detect_qrs_complex_peaks_cleanes
 | `min_qrs_length_sec` | `float`      | `0.08`  | Min QRS duration (seconds).                 |
 | `min_distance_sec`   | `float`      | `0.3`   | Min distance between peaks (seconds).       |
 | `print_heart_rate`   | `bool`       | `False` | Print HR and HRV.                           |
+| `confidence_weight`  | `float`      | `0.8`   | Confidence weight in scoring.               |
+| `plausibility_weight`| `float`      | `0.2`   | Plausibility weight in scoring.             |
 
 **Returns**:
 - `List[int]`: Peak indices for the cleanest channel.
@@ -561,8 +563,8 @@ avg_waveforms, time_window = analyzer.avg_window(data, peak_positions, window_le
 | `data`                      | `np.ndarray`     | —       | Input `(channels, samples)` at 250 Hz.      |
 | `peak_positions`            | `list` or `dict` | —       | Peak indices or per-channel indices.        |
 | `window_left`               | `float`          | `0.3`   | Seconds left of peak.                       |
-| `window_right`              | `float`          | `0.5`   | Seconds right of peak.                      |
-| `heart_beat_score_threshold`| `float`          | `0.0`   | Min score for window inclusion.             |
+| `window_right`              | `float`          | `0.4`   | Seconds right of peak.                      |
+| `heart_beat_score_threshold`| `float`          | `0.7`   | Min score for window inclusion.             |
 | `sigma`                     | `float`          | `1`     | Std deviation for gaussian filter.          |
 
 **Returns**:
