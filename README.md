@@ -105,20 +105,7 @@ The study was reviewed and approved by the ethics committee of the University Ho
 
 ## Installation and Setup
 
-### Dependencies
-The `Analyzer` class requires several Python libraries. Install them by running:
-
-```bash
-pip install -r requirements.txt
-```
-
-(Note that all of this code was developed and tested using python 3.11.2 64-bit. Newer versions should work as well, although you might have to use different version of the libaries listed in the requirements.txt file)
-
-Required libraries include:
-- `numpy`, `scipy`, `matplotlib`, `torch`, `sklearn`, `nptdms`, `logging`, `ffmpeg-python` (for animations).
-
-### MCG Segmentation Package
-The `ECGSegmenter` model, used for cardiac segmentation, must be available in a local package named `MCG_segmentation`. The expected directory structure is:
+The Project has the following structure:
 
 ```
 .
@@ -144,7 +131,25 @@ The `ECGSegmenter` model, used for cardiac segmentation, must be available in a 
 └── README.md                  # This documentation file.
 ```
 
-Ensure `MCG_segmentation` is in your `PYTHONPATH` or the working directory. If unavailable, segmentation-related methods (`segment_entire_run`, `find_cleanest_channel`, `detect_qrs_complex_peaks_*`, `ICA_filter` with heartbeat scoring) will log warnings and may not function.
+
+### Dependencies
+The `Analyzer` class requires several Python libraries. Install them by running:
+
+```bash
+pip install -r requirements.txt
+```
+
+(Note that all of this code was developed and tested using python 3.11.2 64-bit. Newer versions should work as well, although you might have to use different version of the libaries listed in the requirements.txt file)
+
+Required libraries include:
+- `numpy`, `scipy`, `matplotlib`, `torch`, `sklearn`, `nptdms`, `logging`, `ffmpeg-python` (for animations).
+
+### MCG Segmentation Package
+The `ECGSegmenter` model, used for cardiac segmentation, must be available in a local package named `MCG_segmentation`. 
+
+Ensure `MCG_segmentation` is in your `PYTHONPATH` or the working directory. If unavailable, segmentation-related methods (`segment_entire_run`, `find_cleanest_channel`, `detect_qrs_complex_peaks_*`, `ICA_filter` with heartbeat scoring) will log warnings and may not function. For a more detailed documentation see here: [MCG_segmentation/README.md](https://github.com/Drizzr/Bachelorarbeit/blob/main/MCG_segmentation/README.md)
+
+
 
 ### Model Checkpoints
 The default model checkpoint path is `MCG_segmentation/MCGSegmentator_s/checkpoints/best`. Specify a custom path using the `model_checkpoint_dir` parameter during `Analyzer` initialization.
