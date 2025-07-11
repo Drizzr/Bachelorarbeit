@@ -940,9 +940,10 @@ After running `heart_beat.py` for all subjects, this script performs the group-l
 4.  **Monte Carlo Simulation**: The script's main strength is its use of Monte Carlo simulations. The `_unc` columns in the `result.csv` files are used to run `perform_t_test()` and `determine_optimal_threshold()` hundreds of times on perturbed data. This produces robust confidence intervals for all key statistical outputs (p-value, AUC, optimal threshold, etc.).
 5.  **Save Outputs**: All generated plots and summary tables are saved to the `Results/` directory, organized into `Overall_Generated_Plots`, `Overall_Generated_Tables`, and sensor-specific subdirectories.
 
-<img width="727" height="552" alt="image" src="https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc" />
-<img width="642" height="433" alt="image" src="https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d" />
-<img width="642" height="430" alt="image" src="https://github.com/user-attachments/assets/4c8afc26-c580-44c1-9eef-b47815e44221" />
+![image](https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc)
+![image](https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d)
+![image](https://github.com/user-attachments/assets/4c8afc26-c580-44c1-9eef-b47815e44221)
+
 
 ## Troubleshooting
 
