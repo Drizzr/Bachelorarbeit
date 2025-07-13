@@ -91,9 +91,9 @@ def load_patient_data(patient: str, run: str = None):
         log_file_path=log_file_path,
         #model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
         sensor_channels_to_exclude=sensor_channels_to_exclude
-    ), intervall_start, intervall_end, ica_filter
+    ), intervall_start, intervall_end, ica_filter, run
 
-analysis, intervall_start, intervall_end, ica_filter = load_patient_data(Patient, run)
+analysis, intervall_start, intervall_end, ica_filter, run = load_patient_data(Patient, run)
 
 for k in analysis.key_list:
     if k in ["Brustlage", "Brust", "Bauchlage", "Bauch", "Rene_Brust", "Lena_Brustlage"]:
@@ -150,7 +150,7 @@ else:
 
 
 # window averaging
-avg_channels, time_window = analysis.avg_window(single_run_filtered, peak_positions, window_left=0.3, window_right=0.5)
+avg_channels, time_window = analysis.avg_window(single_run_filtered, peak_positions, window_left=0.3, window_right=0.5, sigma=1)
 #analysis.butterfly_plot(avg_channels, time_window, 48, f"Original {key}")
 
 
@@ -175,26 +175,35 @@ best_channel, labels, confidence, _ = analysis.find_cleanest_channel(
 # option of manual segmentation of the cleanest channel
 edited_labels = analysis.plot_segments_with_editing(avg_channels[best_channel], labels[best_channel])
 
-# --- Extract T-wave segment ---
+# Extract T-wave segment
 mask_t = edited_labels == 3
-mask_t[:110] = False  # Ignore early segment
-mask_t[175:] = False  # Ignore late segment
-
+mask_t[:110] = False
+mask_t[175:] = False
 t_indices = np.where(mask_t)[0]
-t_start, t_end = t_indices[0], t_indices[-1] 
+t_start, t_end = t_indices[0], t_indices[-1]
 
-
-
-# --- Extract QRS-wave segment ---
+# Extract QRS-wave segment
 mask_qrs = edited_labels == 2
 mask_qrs[:50] = False
 mask_qrs[-50:] = False
-t_start_qrs = np.where(mask_qrs)[0][0] 
-t_end_qrs = np.where(mask_qrs)[0][-1] 
+t_start_qrs = np.where(mask_qrs)[0][0]
+t_end_qrs = np.where(mask_qrs)[0][-1]
 
 
-# Set default run if not provided
-run_id = run if run else "S01"
+# Create grid view for heart vector projections
+overall_plot_dir = "Results/Overall_Generated_Plots/Patient_Heart_Vectors_4_x_4"
+os.makedirs(overall_plot_dir, exist_ok=True)
+
+fig_t, axs_t = plt.subplots(4, 4, figsize=(16, 16))
+fig_qrs, axs_qrs = plt.subplots(4, 4, figsize=(16, 16))
+fig_st, axs_st = plt.subplots(4, 4, figsize=(16, 16))
+
+grayscale_map = {
+    "xy-Projection": '#2F2F2F',  # Dark gray
+    "xz-Projection": '#5F5F5F',  # Medium gray
+    "yz-Projection": '#CCCBCB'  # Light gray
+}
+
 
 for row_idx, row in enumerate(analysis.quspin_position_list):
     for col_idx, quspin_id in enumerate(row):
@@ -204,7 +213,7 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
             channel_name = quspin_id + suffix
             channel_index = analysis.quspin_channel_dict.get(channel_name)
             if channel_index is None or (analysis.sensor_channels_to_exclude.get(key) and channel_name in analysis.sensor_channels_to_exclude.get(key, [])) or \
-            (analysis.sensor_channels_to_exclude.get(key) and f"*{suffix}" in analysis.sensor_channels_to_exclude.get(key, [])):
+                (analysis.sensor_channels_to_exclude.get(key) and f"*{suffix}" in analysis.sensor_channels_to_exclude.get(key, [])):
                 continue
 
             channel_index = abs(int(channel_index))
@@ -212,97 +221,149 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
                 sensor_data.append(target[row_idx, col_idx, :])
                 suffixes.append(suffix)
             else:
-                print(f"Skipping {channel_name}{suffix} as it contains only zeros. (To change this decrease the threshold in the window averaging step.)")
-        
+                print(f"Skipping {channel_name}{suffix} as it contains only zeros.")
+
         if len(sensor_data) == 2:
-            # Since each sensor only measures two components
-            # for the triax sensor that was used in the first measurments (NL) i manualy exclude the x component in the setup.json
-            
             sensor_data = np.array(sensor_data)
 
             if "_x" in suffixes and "_y" in suffixes:
                 name = "xy-Projection"
+                comp1_idx, comp2_idx = 0, 1
             elif "_x" in suffixes and "_z" in suffixes:
                 name = "xz-Projection"
+                comp1_idx, comp2_idx = 0, 1
             elif "_y" in suffixes and "_z" in suffixes:
                 name = "yz-Projection"
+                comp1_idx, comp2_idx = 0, 1
+            else:
+                continue
 
+            print(f"Processing Sensor: {quspin_id}")
 
-            print(f"processing Sensor: {quspin_id}")
-
-            # Create the new directory structure
-            # Results/sensor_name/Patients/patient_id_run/**_heart_vector
             sensor_base_path = f"Results/{quspin_id}_{name[:2]}"
-            patient_run_path = f"{sensor_base_path}/Patients/{Patient}_{run_id}"
+            patient_run_path = f"{sensor_base_path}/Patients/{Patient}_{run}"
             
-            # Create directories for heart vector plots
             t_path = f"{patient_run_path}/T_heart_vector"
             qrs_path = f"{patient_run_path}/QRS_heart_vector"
             st_path = f"{patient_run_path}/ST_heart_vector"
             
             for path in [t_path, qrs_path, st_path]:
-                if not os.path.exists(path):
-                    os.makedirs(path)
+                os.makedirs(path, exist_ok=True)
 
-            # --- Plot and calculate uncertainty metrics using updated method ---
             t_segment_path = os.path.join(t_path, f"{quspin_id}_{name[:2]}.pdf")
             qrs_segment_path = os.path.join(qrs_path, f"{quspin_id}_{name[:2]}.pdf")
             st_segment_path = os.path.join(st_path, f"{quspin_id}_{name[:2]}.pdf")
 
-            _, t_metrics = analysis.plot_heart_vector_projection(
+            _, t_metrics = analysis.visualize_heart_vector(
                 original_data=sensor_data,
                 segment_start_global=t_start,
                 segment_end_global=t_end,
                 proj_name=name,
-                title_suffix="T Segment",
+                title_suffix=f"T Segment - {quspin_id}",
                 show=False,
                 save_path=t_segment_path,
                 uncertainty_ms=40
             )
 
-            _, qrs_metrics = analysis.plot_heart_vector_projection(
+            _, qrs_metrics = analysis.visualize_heart_vector(
                 original_data=sensor_data,
                 segment_start_global=t_start_qrs,
                 segment_end_global=t_end_qrs,
                 proj_name=name,
-                title_suffix="QRS Segment",
+                title_suffix=f"QRS Segment - {quspin_id}",
                 show=False,
                 save_path=qrs_segment_path,
                 uncertainty_ms=40
             )
 
-            _, st_metrics = analysis.plot_heart_vector_projection(
+            _, st_metrics = analysis.visualize_heart_vector(
                 original_data=sensor_data,
                 segment_start_global=t_end_qrs + 1,
                 segment_end_global=t_start,
                 proj_name=name,
-                title_suffix="ST Segment",
+                title_suffix=f"ST Segment - {quspin_id}",
                 show=False,
                 save_path=st_segment_path,
                 uncertainty_ms=40
             )
 
+            # Grid plots
+            ax_t = axs_t[row_idx, col_idx]
+            analysis._configure_trajectory_plot(
+                ax_t,
+                component1=sensor_data[comp1_idx, t_start:t_end + 1],
+                component2=sensor_data[comp2_idx, t_start:t_end + 1],
+                proj_name=name,
+                plot_color=grayscale_map[name]
+            )
+
+            t_max_lim = max(np.max(np.abs(sensor_data[comp1_idx, t_start:t_end + 1])), np.max(sensor_data[comp2_idx, t_start:t_end + 1])) 
+            t_max_lim += t_max_lim * 0.3  # Add a margin of 10%
+            ax_t.set_xlim(-t_max_lim, t_max_lim)
+            ax_t.set_ylim(-t_max_lim, t_max_lim)
+
+            ax_qrs = axs_qrs[row_idx, col_idx]
+            analysis._configure_trajectory_plot(
+                ax_qrs,
+                component1=sensor_data[comp1_idx, t_start_qrs:t_end_qrs + 1],
+                component2=sensor_data[comp2_idx, t_start_qrs:t_end_qrs + 1],
+                proj_name=name,
+                plot_color=grayscale_map[name]
+            )
+
+            qrs_max_lim = max(np.max(np.abs(sensor_data[comp1_idx, t_start_qrs:t_end_qrs + 1])), np.max(sensor_data[comp2_idx, t_start_qrs:t_end_qrs + 1]))
+            qrs_max_lim += qrs_max_lim * 0.3  # Add a margin of 10%
+            ax_qrs.set_xlim(-qrs_max_lim, qrs_max_lim)
+            ax_qrs.set_ylim(-qrs_max_lim, qrs_max_lim)
+
+            ax_st = axs_st[row_idx, col_idx]
+            analysis._configure_trajectory_plot(
+                ax_st,
+                component1=sensor_data[comp1_idx, t_end_qrs + 1:t_start + 1],
+                component2=sensor_data[comp2_idx, t_end_qrs + 1:t_start + 1],
+                proj_name=name,
+                plot_color=grayscale_map[name]
+            )
+
+            st_max_lim = max(np.max(np.abs(sensor_data[comp1_idx, t_end_qrs + 1:t_start + 1])), np.max(sensor_data[comp2_idx, t_end_qrs + 1:t_start + 1]))
+            st_max_lim += st_max_lim * 0.3
+            ax_st.set_xlim(-st_max_lim, st_max_lim)
+            ax_st.set_ylim(-st_max_lim, st_max_lim)
+
             out_put = np.stack((t_metrics, qrs_metrics, st_metrics), axis=0)
 
-            row = {"patient": Patient, "run": run_id}
+            row = {"patient": Patient, "run": run}
 
             for prefix, metrics in zip(["t", "qrs", "st"], [t_metrics, qrs_metrics, st_metrics]):
                 if isinstance(metrics, dict):
                     for k, v in metrics.items():
-                        row[f"{prefix}_{k}"] = float(v.n)      # Nominal value
-                        row[f"{prefix}_{k}_unc"] = float(v.s)  # Uncertainty
+                        row[f"{prefix}_{k}"] = float(v.n)
+                        row[f"{prefix}_{k}_unc"] = float(v.s)
 
-
-            # Store the metrics CSV file in the sensor base directory
             output_file = os.path.join(sensor_base_path, "result.csv")
 
             if os.path.exists(output_file):
                 existing_data = pd.read_csv(output_file)
                 updated_data = pd.concat([existing_data, pd.DataFrame([row])], ignore_index=True)
-                updated_data.to_csv(output_file, index=False) 
+                updated_data.to_csv(output_file, index=False)
             else:
-                # Create sensor base directory if it doesn't exist
-                if not os.path.exists(sensor_base_path):
-                    os.makedirs(sensor_base_path)
+                os.makedirs(sensor_base_path, exist_ok=True)
                 df = pd.DataFrame([row])
                 df.to_csv(output_file, index=False)
+
+# Save grid view plots
+fig_t.suptitle(f"T Segment Heart Vector Projections - {Patient}_{run}", fontsize=16)
+fig_qrs.suptitle(f"QRS Segment Heart Vector Projections - {Patient}_{run}", fontsize=16)
+fig_st.suptitle(f"ST Segment Heart Vector Projections - {Patient}_{run}", fontsize=16)
+
+fig_t.tight_layout(rect=[0, 0.03, 1, 0.95])
+fig_qrs.tight_layout(rect=[0, 0.03, 1, 0.95])
+fig_st.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+fig_t.savefig(os.path.join(overall_plot_dir, f"T_heart_vectors_{Patient}_{run}.pdf"), dpi=200, bbox_inches='tight')
+fig_qrs.savefig(os.path.join(overall_plot_dir, f"QRS_heart_vectors_{Patient}_{run}.pdf"), dpi=200, bbox_inches='tight')
+fig_st.savefig(os.path.join(overall_plot_dir, f"ST_heart_vectors_{Patient}_{run}.pdf"), dpi=200, bbox_inches='tight')
+
+plt.close(fig_t)
+plt.close(fig_qrs)
+plt.close(fig_st)

@@ -22,6 +22,9 @@ from uncertainties import ufloat
 from MCG_segmentation.model.model import ECGSegmenter, UNet1D, DENS_ECG_segmenter
 
 
+plt.rcParams['text.usetex'] = True
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -812,69 +815,9 @@ class Analyzer:
             "Angle": angle_unc
         }
 
-    def plot_heart_vector_projection(self, original_data, segment_start_global, segment_end_global, proj_name, 
-                                 title_suffix="", ax=None, show=True, 
-                                 save_path=None, 
-                                 uncertainty_ms=100, n_realizations=100):
-        """
-        Plot a 2D projection of the heart vector with metrics and uncertainty bars.
-        
-        Parameters
-        ----------
-        original_data : array-like
-            The original data array with shape (n_components, n_samples).
-        segment_start_global : int
-            Global start index of the segment to analyze.
-        segment_end_global : int
-            Global end index of the segment to analyze.
-        proj_name : str
-            Name of the projection (e.g., 'xy-Projection', 'xz-Projection', 'yz-Projection').
-        title_suffix : str, optional
-            Additional text to append to the plot title. Default is empty string.
-        ax : matplotlib.axes.Axes, optional
-            Existing axes object to plot on. If None, creates a new figure. Default is None.
-        show : bool, optional
-            Whether to display the plot. Default is True.
-        save_path : str, optional
-            Path to save the plot. If None, plot is not saved. Default is None.
-        uncertainty_ms : int, optional
-            Uncertainty in milliseconds for metric calculations. Default is 100.
-        n_realizations : int, optional
-            Number of realizations for uncertainty estimation. Default is 100.
-        
-        Returns
-        -------
-        tuple
-            A tuple containing (ax, uncertain_metrics) where ax is the matplotlib axes
-            object and uncertain_metrics is a dictionary of calculated metrics.
-        
-        Raises
-        ------
-        ValueError
-            If input data is invalid or segment indices are out of bounds.
-        """
-        
-        # Input validation
-        if original_data is None or len(original_data) < 2:
-            raise ValueError("original_data must contain at least 2 components")
-        
-        if segment_start_global < 0 or segment_end_global <= segment_start_global:
-            raise ValueError("Invalid segment indices")
-        
-        if segment_end_global > original_data.shape[1]:
-            raise ValueError("Segment end index exceeds data length")
-
-        # Extract signal components
-        component1 = original_data[0, segment_start_global:segment_end_global]
-        component2 = original_data[1, segment_start_global:segment_end_global]
-
-        # Determine if this is a standalone plot
-        standalone_plot = ax is None
-        
-        # Create figure and axes if needed
-        if standalone_plot:
-            fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
-
+    @staticmethod
+    def _configure_trajectory_plot(ax, component1, component2, proj_name, plot_color, arrow_color='black'):
+        """Configure and plot the heart vector trajectory with styling and annotations."""
         # Configure plot styling
         ax.grid(True, linestyle='--', alpha=0.7)
         ax.set_facecolor('#f5f5f5')
@@ -886,26 +829,6 @@ class Analyzer:
         ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
         ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
         ax.set_aspect('equal', adjustable='box')
-
-        # Choose plot color based on whether it's standalone (grayscale) or embedded (color)
-        if standalone_plot:
-            # Grayscale color scheme for standalone plots
-            grayscale_map = {
-                "xy-Projection": '#2F2F2F',    # Dark gray
-                "xz-Projection": '#5F5F5F',    # Medium gray
-                "yz-Projection": '#3F3F3F'     # Medium-dark gray
-            }
-            plot_color = grayscale_map.get(proj_name, '#4F4F4F')
-            arrow_color = '#000000'
-        else:
-            # Color scheme for embedded plots (maintains backwards compatibility)
-            color_map = {
-                "xy-Projection": 'dodgerblue', 
-                "xz-Projection": 'orange', 
-                "yz-Projection": 'forestgreen'
-            }
-            plot_color = color_map.get(proj_name, 'purple')
-            arrow_color = 'red'
 
         # Plot the main trajectory
         ax.plot(component1, component2, 
@@ -938,6 +861,91 @@ class Analyzer:
                                         linewidth=1.5,
                                         alpha=0.7))
 
+
+    def visualize_heart_vector(self, original_data, segment_start_global, segment_end_global, proj_name, 
+                            title_suffix="", ax=None, show=True, save_path=None, 
+                            uncertainty_ms=100, n_realizations=100, display_legend=True):
+        """
+        Visualize a 2D projection of the heart vector with metrics and uncertainty bars.
+        
+        Parameters
+        ----------
+        original_data : array-like
+            The original data array with shape (n_components, n_samples).
+        segment_start_global : int
+            Global start index of the segment to analyze.
+        segment_end_global : int
+            Global end index of the segment to analyze.
+        proj_name : str
+            Name of the projection (e.g., 'xy-Projection', 'xz-Projection', 'yz-Projection').
+        title_suffix : str, optional
+            Additional text to append to the plot title. Default is empty string.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes object to plot on. If None, creates a new figure. Default is None.
+        show : bool, optional
+            Whether to display the plot. Default is True.
+        save_path : str, optional
+            Path to save the plot. If None, plot is not saved. Default is None.
+        uncertainty_ms : int, optional
+            Uncertainty in milliseconds for metric calculations. Default is 100.
+        n_realizations : int, optional
+            Number of realizations for uncertainty estimation. Default is 100.
+        display_legend : bool, optional
+            Whether to display the legend with metrics. Default is True.
+        
+        Returns
+        -------
+        tuple
+            A tuple containing (ax, uncertain_metrics) where ax is the matplotlib axes
+            object and uncertain_metrics is a dictionary of calculated metrics.
+        
+        Raises
+        ------
+        ValueError
+            If input data is invalid or segment indices are out of bounds.
+        """
+        # Input validation
+        if original_data is None or len(original_data) < 2:
+            raise ValueError("original_data must contain at least 2 components")
+        
+        if segment_start_global < 0 or segment_end_global <= segment_start_global:
+            raise ValueError("Invalid segment indices")
+        
+        if segment_end_global > original_data.shape[1]:
+            raise ValueError("Segment end index exceeds data length")
+
+        # Extract signal components
+        component1 = original_data[0, segment_start_global:segment_end_global]
+        component2 = original_data[1, segment_start_global:segment_end_global]
+
+        # Determine if this is a standalone plot
+        standalone_plot = ax is None
+        
+        # Create figure and axes if needed
+        if standalone_plot:
+            fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
+
+        # Choose plot color based on whether it's standalone (grayscale) or embedded (color)
+        if standalone_plot:
+            grayscale_map = {
+                "xy-Projection": '#2F2F2F',    # Dark gray
+                "xz-Projection": '#5F5F5F',    # Medium gray
+                "yz-Projection": '#3F3F3F'     # Medium-dark gray
+            }
+            plot_color = grayscale_map.get(proj_name, '#4F4F4F')
+            arrow_color = '#000000'
+        else:
+            color_map = {
+                "xy-Projection": 'dodgerblue', 
+                "xz-Projection": 'orange', 
+                "yz-Projection": 'forestgreen'
+            }
+            plot_color = color_map.get(proj_name, 'purple')
+            arrow_color = 'red'
+
+        # Configure and plot the trajectory
+        self._configure_trajectory_plot(ax, component1, component2, proj_name, plot_color, arrow_color)
+
         # Calculate metrics with uncertainty
         try:
             uncertain_metrics = self.calculate_metrics_with_uncertainty(
@@ -956,26 +964,26 @@ class Analyzer:
         else:
             try:
                 metrics_text = (
-                    f'Area: {uncertain_metrics["Area"]:.3u}\n'
-                    f'T-Dist: {uncertain_metrics["T-Dist"]:.2u}\n'
-                    f'Compact: {uncertain_metrics["Compact"]:.4u}\n'
-                    f'Angle: {uncertain_metrics["Angle"]:.1u}°'
+                    f'Area: ${uncertain_metrics["Area"].n:.3f} \\pm {uncertain_metrics["Area"].s:.3f}$ $pT^2$\n'
+                    f'T-Dist: ${uncertain_metrics["T-Dist"].n:.2f} \\pm {uncertain_metrics["T-Dist"].s:.2f}$ $pT$\n'
+                    f'Compact: ${uncertain_metrics["Compact"].n:.4f} \\pm {uncertain_metrics["Compact"].s:.4f}$ $pT$\n'
+                    f'Angle: ${uncertain_metrics["Angle"].n:.1f} \\pm {uncertain_metrics["Angle"].s:.1f} ^\circ$'
                 )
             except (KeyError, ValueError, TypeError) as e:
                 logging.warning(f"Error formatting uncertain metrics for {proj_name}: {e}")
                 metrics_text = "Metrics Error\n(Formatting failed)"
 
-        # Add metrics text to plot
-        ax.text(0.05, 0.95, metrics_text, 
-                transform=ax.transAxes, 
-                fontsize=9, 
-                fontweight='bold', 
-                color='black',
-                verticalalignment='top', 
-                bbox=dict(facecolor='white', 
-                        edgecolor='gray', 
-                        alpha=0.8, 
-                        boxstyle='round,pad=0.3'))
+        if display_legend:
+            ax.text(0.05, 0.95, metrics_text, 
+                    transform=ax.transAxes, 
+                    fontsize=9, 
+                    fontweight='bold', 
+                    color='black',
+                    verticalalignment='top', 
+                    bbox=dict(facecolor='white', 
+                            edgecolor='gray', 
+                            alpha=0.8, 
+                            boxstyle='round,pad=0.3'))
 
         # Configure axes limits to be symmetric
         current_xlim = ax.get_xlim()
@@ -986,9 +994,9 @@ class Analyzer:
 
         # Set appropriate axis labels
         label_map = {
-            "xy-Projection": ('$B_x$ [pT]', '$B_y$ [pT]'),
-            "xz-Projection": ('$B_x$ [pT]', '$B_z$ [pT]'),
-            "yz-Projection": ('$B_y$ [pT]', '$B_z$ [pT]')
+            "xy-Projection": ('$B_x$ [$pT$]', '$B_y$ [$pT$]'),
+            "xz-Projection": ('$B_x$ [$pT$]', '$B_z$ [$pT$]'),
+            "yz-Projection": ('$B_y$ [$pT$]', '$B_z$ [$pT$]')
         }
         xlabel, ylabel = label_map.get(proj_name, ('Component 1', 'Component 2'))
         ax.set_xlabel(xlabel, fontsize=12)
@@ -1011,7 +1019,6 @@ class Analyzer:
 
         # Handle standalone plot finalization
         if standalone_plot:
-            # Set title
             title = f"Heart Vector Projection: {proj_name}"
             if title_suffix:
                 title += f" - {title_suffix}"
@@ -1019,7 +1026,6 @@ class Analyzer:
             plt.suptitle(title, fontsize=16, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             
-            # Save plot if requested
             if save_path:
                 try:
                     plt.savefig(save_path, dpi=200, bbox_inches='tight')
@@ -1027,17 +1033,18 @@ class Analyzer:
                 except Exception as e:
                     logging.error(f"Failed to save projection plot to {save_path}: {e}")
             
-            # Show plot if requested
             if show:
                 plt.show()
+            
+            plt.close(fig)  # Close the figure to free memory
 
         # Log metrics information
         logging.info(f"Uncertain metrics for {proj_name}: {metrics_text}")
 
         return ax, uncertain_metrics
 
-    def plot_all_heart_vector_projections(self, heart_vector_components, segment_start_global, segment_end_global,
-                                      title_suffix="", save_path=None, uncertainty_ms=100, n_realizations=100):
+    def visualize_heart_vectors(self, heart_vector_components, segment_start_global, segment_end_global,
+                                    title_suffix="", save_path=None, uncertainty_ms=100, n_realizations=100):
         """Plot XY, XZ, and YZ projections of the heart vector with uncertainty metrics.
 
         Args:
@@ -1064,7 +1071,7 @@ class Analyzer:
         ]
 
         for ax, (proj_data, name) in zip(axes, projections):
-            self.plot_heart_vector_projection(
+            self.visualize_heart_vector(
                 original_data=proj_data,
                 segment_start_global=segment_start_global,
                 segment_end_global=segment_end_global,
@@ -1606,7 +1613,8 @@ class Analyzer:
 
         time_window = np.linspace(0, window_length / self.INTERNAL_SAMPLING_RATE, num=window_length, endpoint=False)
 
-        avg_channels = gaussian_filter1d(avg_channels, sigma=sigma, axis=-1, mode='nearest')
+        if sigma > 0:
+            avg_channels = gaussian_filter1d(avg_channels, sigma=sigma, axis=-1, mode='nearest')
         return avg_channels, time_window
 
     def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2, sampling_rate=1000):
