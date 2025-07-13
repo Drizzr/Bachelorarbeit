@@ -966,111 +966,140 @@ else:
 # =============================================================================
 
 print("\n\n--- AGGREGATED ANALYSIS ---")
-# Group sensor data by projection type (xy, yz) for combined analysis.
-proj_dfs_agg = {"xy": [], "yz": []}
-for s_name_iter, df_s_iter in all_sensor_data_dfs.items():
-    if s_name_iter.endswith("_xy"):
-        proj_dfs_agg["xy"].append(df_s_iter)
-    elif s_name_iter.endswith("_yz"):
-        proj_dfs_agg["yz"].append(df_s_iter)
 
+# Define the 4x4 sensor grid layout to identify subsquares.
+sensor_grid = [
+    ["F1", "OX", "OO", "OQ"],
+    ["YQ", "NL", "OY", "OW"],
+    ["OT", "F2", "F0", "C1"],
+    ["EY", "YP", "OR", "EZ"]
+]
+
+# Define the four 2x2 subsquares by grouping their sensor IDs.
+subsquares = {
+    "TopLeft": [sensor_grid[0][0], sensor_grid[0][1], sensor_grid[1][0], sensor_grid[1][1]],
+    "TopRight": [sensor_grid[0][2], sensor_grid[0][3], sensor_grid[1][2], sensor_grid[1][3]],
+    "BottomLeft": [sensor_grid[2][0], sensor_grid[2][1], sensor_grid[3][0], sensor_grid[3][1]],
+    "BottomRight": [sensor_grid[2][2], sensor_grid[2][3], sensor_grid[3][2], sensor_grid[3][3]]
+}
+
+# Define the projections to be analyzed for each subsquare.
+projections_to_analyze = ["xy", "yz"]
+
+# This list will store the records for the final summary CSV.
 agg_analysis_records = []
-# Loop through each aggregated projection dataset.
-for proj_suf, dfs_list in proj_dfs_agg.items():
-    if not dfs_list:
-        print(f"No data found for aggregated {proj_suf.upper()} projection. Skipping.")
-        continue
 
-    # Concatenate all dataframes for the current projection into one.
-    df_agg = pd.concat(dfs_list, ignore_index=True)
-    src_name_agg = f"aggregated_{proj_suf}"
-    # Create a clean, human-readable name for plot titles
-    clean_proj_name = f"Aggregated {proj_suf.upper()}"
-    print(f"\n--- Analyzing {clean_proj_name} Data ({len(df_agg)} records) ---")
+# Loop through each defined subsquare.
+for subsquare_name, sensor_ids in subsquares.items():
+    # For each subsquare, loop through the projection types (xy, yz).
+    for projection in projections_to_analyze:
+        
+        # Construct the name for this specific aggregation task (e.g., "aggregated_TopLeft_xy").
+        aggregation_name = f"aggregated_{subsquare_name}_{projection}"
+        
+        # Create a clean, human-readable name for plots and logs (e.g., "Aggregated TopLeft XY").
+        clean_aggregation_name = f"Aggregated {subsquare_name} {projection.upper()}"
 
-    # Create a dedicated directory for aggregated plots.
-    agg_plots_dir = os.path.join(OVERALL_PLOTS_DIR, "Aggregated_Plots_MC")
-    os.makedirs(agg_plots_dir, exist_ok=True)
+        # Collect the dataframes for the sensors in the current subsquare and for the current projection.
+        dfs_to_aggregate = []
+        for sensor_id in sensor_ids:
+            # The key in `all_sensor_data_dfs` is composed of the sensor ID and projection (e.g., "F1_xy").
+            sensor_data_key = f"{sensor_id}_{projection}"
+            if sensor_data_key in all_sensor_data_dfs:
+                dfs_to_aggregate.append(all_sensor_data_dfs[sensor_data_key])
 
-    # This loop is identical to the individual sensor analysis loop but runs on aggregated data.
-    for seg_lbl, _ in segment_cols_map.items():
-        for feat_short_n in features_to_analyze_short:
-            nom_col = f"{seg_lbl.lower()}_{feat_short_n}"
-            unc_col = f"{seg_lbl.lower()}_{feat_short_n}_unc"
-            if nom_col not in df_agg.columns:
-                continue
+        # If no dataframes were found for this aggregation group, skip it.
+        if not dfs_to_aggregate:
+            print(f"No data found for {clean_aggregation_name}. Skipping.")
+            continue
 
-            has_unc_agg = unc_col in df_agg.columns
-            if not has_unc_agg:
-                print(f"Warning: {unc_col} not found for {nom_col} in {src_name_agg}. No MC will be run.")
-            print(f"\n-- Aggregated Feature: {seg_lbl} {feat_short_n} ({nom_col}), Has Uncertainty: {has_unc_agg} --")
+        # Concatenate all found dataframes into a single dataframe for analysis.
+        df_agg = pd.concat(dfs_to_aggregate, ignore_index=True)
+        print(f"\n--- Analyzing {clean_aggregation_name} Data ({len(df_agg)} records) ---")
 
-            # Prepare data series from the aggregated dataframe.
-            nom_series = pd.to_numeric(df_agg[nom_col], errors='coerce')
-            valid_idx = nom_series.notna()
-            unc_series = (pd.to_numeric(df_agg.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
-                          if has_unc_agg else pd.Series(0.0, index=nom_series[valid_idx].index))
+        # Create a dedicated directory for the aggregated plots.
+        agg_plots_dir = os.path.join(OVERALL_PLOTS_DIR, "Aggregated_Plots_MC")
+        os.makedirs(agg_plots_dir, exist_ok=True)
 
-            # Split data into ARVC and Healthy groups.
-            nom_v, unc_v, arvc_l = nom_series[valid_idx].values, unc_series.values, df_agg.loc[valid_idx, "ARVC"].values
-            pos_nom, neg_nom = nom_v[arvc_l == True], nom_v[arvc_l == False]
-            pos_unc_agg, neg_unc_agg = (unc_v[arvc_l == True], unc_v[arvc_l == False]) if has_unc_agg else (None, None)
+        # This loop performs the statistical analysis for each feature on the aggregated data.
+        for seg_lbl, _ in segment_cols_map.items():
+            for feat_short_n in features_to_analyze_short:
+                nom_col = f"{seg_lbl.lower()}_{feat_short_n}"
+                unc_col = f"{seg_lbl.lower()}_{feat_short_n}_unc"
+                if nom_col not in df_agg.columns:
+                    continue
 
-            if len(pos_nom) < 1 or len(neg_nom) < 1:
-                print(f"Skipping {nom_col} for {src_name_agg}: Insufficient data.")
-                continue
+                has_unc_agg = unc_col in df_agg.columns
+                if not has_unc_agg:
+                    print(f"Warning: {unc_col} not found for {nom_col} in {aggregation_name}. No MC will be run.")
+                print(f"\n-- Aggregated Feature: {seg_lbl} {feat_short_n} ({nom_col}), Has Uncertainty: {has_unc_agg} --")
 
-            cfg = feature_analysis_config.get(nom_col, feature_analysis_config["default"])
-            plot_pref_agg = os.path.join(agg_plots_dir, f"{src_name_agg}_{seg_lbl}_{feat_short_n}")
+                # Prepare data series from the aggregated dataframe.
+                nom_series = pd.to_numeric(df_agg[nom_col], errors='coerce')
+                valid_idx = nom_series.notna()
+                unc_series = (pd.to_numeric(df_agg.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
+                              if has_unc_agg else pd.Series(0.0, index=nom_series[valid_idx].index))
 
-            # Run ROC and t-test analyses on the aggregated data.
-            roc_res_mc_agg = determine_optimal_threshold(
-                pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
-                hypothesis=cfg["hypothesis"], labels=("ARVC", "Healthy"),
-                remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
-            )
-            nom_thresh_plot_agg = roc_res_mc_agg["Threshold"][0]
-            
-            # Use the clean name for the plot title
-            plot_title_name = f"{seg_lbl} {feat_short_n} ({clean_proj_name})"
-            ttest_res_mc_agg = perform_t_test(
-                pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
-                name=plot_title_name, hypothesis=cfg["hypothesis"],
-                threshold=nom_thresh_plot_agg, labels=("ARVC", "Healthy"),
-                remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
-            )
-            
-            # Determine the positive class for metrics.
-            if cfg["hypothesis"] == "data1_greater":
-                pos_class = "ARVC"
-            elif cfg["hypothesis"] == "data2_greater":
-                pos_class = "Healthy"
-            else: # not_equal
-                pos_mean = np.mean(remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom)
-                neg_mean = np.mean(remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom)
-                pos_class = "ARVC" if pos_mean > neg_mean else "Healthy"
+                # Split data into ARVC and Healthy groups.
+                nom_v, unc_v, arvc_l = nom_series[valid_idx].values, unc_series.values, df_agg.loc[valid_idx, "ARVC"].values
+                pos_nom, neg_nom = nom_v[arvc_l == True], nom_v[arvc_l == False]
+                pos_unc_agg, neg_unc_agg = (unc_v[arvc_l == True], unc_v[arvc_l == False]) if has_unc_agg else (None, None)
 
-            # Compile results into a record for the aggregated analysis.
-            agg_analysis_records.append({
-                "source": src_name_agg, "segment": seg_lbl, "feature": feat_short_n, "column_name": nom_col,
-                "hypothesis_tested": cfg["hypothesis"], "outliers_removed": cfg["remove_outliers"],
-                "mc_iterations": N_MC_ITERATIONS if has_unc_agg else 0,
-                "p_value_mean": ttest_res_mc_agg[1][0], "p_value_ci_lower": ttest_res_mc_agg[1][1], "p_value_ci_upper": ttest_res_mc_agg[1][2],
-                "t_stat_mean": ttest_res_mc_agg[0][0], "t_stat_ci_lower": ttest_res_mc_agg[0][1], "t_stat_ci_upper": ttest_res_mc_agg[0][2],
-                "significant_ttest (mean_p<0.05)": ttest_res_mc_agg[2],
-                "opt_threshold_mean": roc_res_mc_agg["Threshold"][0], "opt_threshold_ci_lower": roc_res_mc_agg["Threshold"][1], "opt_threshold_ci_upper": roc_res_mc_agg["Threshold"][2],
-                "roc_auc_mean": roc_res_mc_agg["AUC"][0], "roc_auc_ci_lower": roc_res_mc_agg["AUC"][1], "roc_auc_ci_upper": roc_res_mc_agg["AUC"][2],
-                "roc_positive_class_for_metrics": pos_class,
-                "sensitivity_mean": roc_res_mc_agg["Sensitivity"][0], "sensitivity_ci_lower": roc_res_mc_agg["Sensitivity"][1], "sensitivity_ci_upper": roc_res_mc_agg["Sensitivity"][2],
-                "specificity_mean": roc_res_mc_agg["Specificity"][0], "specificity_ci_lower": roc_res_mc_agg["Specificity"][1], "specificity_ci_upper": roc_res_mc_agg["Specificity"][2],
-                "f1_score_mean": roc_res_mc_agg["F1-Score"][0], "f1_score_ci_lower": roc_res_mc_agg["F1-Score"][1], "f1_score_ci_upper": roc_res_mc_agg["F1-Score"][2],
-                "n_arvc_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
-                "plot_nominal_tdist_path": f"{plot_pref_agg}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref_agg}_boxplot.pdf",
-                "plot_nominal_roc_path": f"{plot_pref_agg}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref_agg}_cm.pdf",
-                "plot_mc_pvalue_dist_path": f"{plot_pref_agg}_p_value_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_threshold_dist_path": f"{plot_pref_agg}_threshold_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_f1_dist_path": f"{plot_pref_agg}_f1_score_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None
-            })
+                if len(pos_nom) < 1 or len(neg_nom) < 1:
+                    print(f"Skipping {nom_col} for {aggregation_name}: Insufficient data.")
+                    continue
+
+                cfg = feature_analysis_config.get(nom_col, feature_analysis_config["default"])
+                plot_pref_agg = os.path.join(agg_plots_dir, f"{aggregation_name}_{seg_lbl}_{feat_short_n}")
+
+                # Run ROC and t-test analyses on the aggregated data.
+                roc_res_mc_agg = determine_optimal_threshold(
+                    pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
+                    hypothesis=cfg["hypothesis"], labels=("ARVC", "Healthy"),
+                    remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
+                )
+                nom_thresh_plot_agg = roc_res_mc_agg["Threshold"][0]
+
+                # Use the clean name for the plot title.
+                plot_title_name = f"{seg_lbl} {feat_short_n} ({clean_aggregation_name})"
+                ttest_res_mc_agg = perform_t_test(
+                    pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
+                    name=plot_title_name, hypothesis=cfg["hypothesis"],
+                    threshold=nom_thresh_plot_agg, labels=("ARVC", "Healthy"),
+                    remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
+                )
+                
+                # Determine the positive class for metrics.
+                if cfg["hypothesis"] == "data1_greater":
+                    pos_class = "ARVC"
+                elif cfg["hypothesis"] == "data2_greater":
+                    pos_class = "Healthy"
+                else: # not_equal
+                    pos_mean = np.mean(remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom)
+                    neg_mean = np.mean(remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom)
+                    pos_class = "ARVC" if pos_mean > neg_mean else "Healthy"
+
+                # Compile results into a record for the aggregated analysis.
+                agg_analysis_records.append({
+                    "source": aggregation_name, "segment": seg_lbl, "feature": feat_short_n, "column_name": nom_col,
+                    "hypothesis_tested": cfg["hypothesis"], "outliers_removed": cfg["remove_outliers"],
+                    "mc_iterations": N_MC_ITERATIONS if has_unc_agg else 0,
+                    "p_value_mean": ttest_res_mc_agg[1][0], "p_value_ci_lower": ttest_res_mc_agg[1][1], "p_value_ci_upper": ttest_res_mc_agg[1][2],
+                    "t_stat_mean": ttest_res_mc_agg[0][0], "t_stat_ci_lower": ttest_res_mc_agg[0][1], "t_stat_ci_upper": ttest_res_mc_agg[0][2],
+                    "significant_ttest (mean_p<0.05)": ttest_res_mc_agg[2],
+                    "opt_threshold_mean": roc_res_mc_agg["Threshold"][0], "opt_threshold_ci_lower": roc_res_mc_agg["Threshold"][1], "opt_threshold_ci_upper": roc_res_mc_agg["Threshold"][2],
+                    "roc_auc_mean": roc_res_mc_agg["AUC"][0], "roc_auc_ci_lower": roc_res_mc_agg["AUC"][1], "roc_auc_ci_upper": roc_res_mc_agg["AUC"][2],
+                    "roc_positive_class_for_metrics": pos_class,
+                    "sensitivity_mean": roc_res_mc_agg["Sensitivity"][0], "sensitivity_ci_lower": roc_res_mc_agg["Sensitivity"][1], "sensitivity_ci_upper": roc_res_mc_agg["Sensitivity"][2],
+                    "specificity_mean": roc_res_mc_agg["Specificity"][0], "specificity_ci_lower": roc_res_mc_agg["Specificity"][1], "specificity_ci_upper": roc_res_mc_agg["Specificity"][2],
+                    "f1_score_mean": roc_res_mc_agg["F1-Score"][0], "f1_score_ci_lower": roc_res_mc_agg["F1-Score"][1], "f1_score_ci_upper": roc_res_mc_agg["F1-Score"][2],
+                    "n_arvc_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
+                    "plot_nominal_tdist_path": f"{plot_pref_agg}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref_agg}_boxplot.pdf",
+                    "plot_nominal_roc_path": f"{plot_pref_agg}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref_agg}_cm.pdf",
+                    "plot_mc_pvalue_dist_path": f"{plot_pref_agg}_p_value_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
+                    "plot_mc_threshold_dist_path": f"{plot_pref_agg}_threshold_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
+                    "plot_mc_f1_dist_path": f"{plot_pref_agg}_f1_score_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None
+                })
 
 # Save the summary table for the aggregated analysis.
 if agg_analysis_records:

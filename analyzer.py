@@ -816,20 +816,10 @@ class Analyzer:
         }
 
     @staticmethod
-    def _configure_trajectory_plot(ax, component1, component2, proj_name, plot_color, arrow_color='black'):
+    def _trajectory_plot(ax, component1, component2, proj_name, plot_color, arrow_color='black'):
         """Configure and plot the heart vector trajectory with styling and annotations."""
         # Configure plot styling
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.set_facecolor('#f5f5f5')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('gray')
-        ax.spines['bottom'].set_color('gray')
-        ax.tick_params(axis='both', which='major', labelsize=10, colors='gray')
-        ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
-        ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
-        ax.set_aspect('equal', adjustable='box')
-
+        
         # Plot the main trajectory
         ax.plot(component1, component2, 
                 label=proj_name, 
@@ -930,7 +920,7 @@ class Analyzer:
             grayscale_map = {
                 "xy-Projection": '#2F2F2F',    # Dark gray
                 "xz-Projection": '#5F5F5F',    # Medium gray
-                "yz-Projection": '#3F3F3F'     # Medium-dark gray
+                "yz-Projection": "#FFFFFF"     # Medium-dark gray
             }
             plot_color = grayscale_map.get(proj_name, '#4F4F4F')
             arrow_color = '#000000'
@@ -944,7 +934,18 @@ class Analyzer:
             arrow_color = 'red'
 
         # Configure and plot the trajectory
-        self._configure_trajectory_plot(ax, component1, component2, proj_name, plot_color, arrow_color)
+        ax.grid(True, linestyle='--', alpha=0.7)
+        ax.set_facecolor('#f5f5f5')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('gray')
+        ax.spines['bottom'].set_color('gray')
+        ax.tick_params(axis='both', which='major', labelsize=10, colors='gray')
+        ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
+        ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
+        ax.set_aspect('equal', adjustable='box')
+
+        self._trajectory_plot(ax, component1, component2, proj_name, plot_color, arrow_color)
 
         # Calculate metrics with uncertainty
         try:

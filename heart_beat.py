@@ -201,7 +201,7 @@ fig_st, axs_st = plt.subplots(4, 4, figsize=(16, 16))
 grayscale_map = {
     "xy-Projection": '#2F2F2F',  # Dark gray
     "xz-Projection": '#5F5F5F',  # Medium gray
-    "yz-Projection": '#CCCBCB'  # Light gray
+    "yz-Projection": "#FFFFFF"  # Light gray
 }
 
 
@@ -235,6 +235,9 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
             elif "_y" in suffixes and "_z" in suffixes:
                 name = "yz-Projection"
                 comp1_idx, comp2_idx = 0, 1
+                axs_t[row_idx, col_idx].set_facecolor("#DCDCDC")  # Set background color for yz projection
+                axs_qrs[row_idx, col_idx].set_facecolor("#DCDCDC")  # Set background color for yz projection
+                axs_st[row_idx, col_idx].set_facecolor("#DCDCDC")  # Set background color for yz projection
             else:
                 continue
 
@@ -289,7 +292,7 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
 
             # Grid plots
             ax_t = axs_t[row_idx, col_idx]
-            analysis._configure_trajectory_plot(
+            analysis._trajectory_plot(
                 ax_t,
                 component1=sensor_data[comp1_idx, t_start:t_end + 1],
                 component2=sensor_data[comp2_idx, t_start:t_end + 1],
@@ -297,13 +300,12 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
                 plot_color=grayscale_map[name]
             )
 
-            t_max_lim = max(np.max(np.abs(sensor_data[comp1_idx, t_start:t_end + 1])), np.max(sensor_data[comp2_idx, t_start:t_end + 1])) 
-            t_max_lim += t_max_lim * 0.3  # Add a margin of 10%
+            t_max_lim = 20
             ax_t.set_xlim(-t_max_lim, t_max_lim)
             ax_t.set_ylim(-t_max_lim, t_max_lim)
 
             ax_qrs = axs_qrs[row_idx, col_idx]
-            analysis._configure_trajectory_plot(
+            analysis._trajectory_plot(
                 ax_qrs,
                 component1=sensor_data[comp1_idx, t_start_qrs:t_end_qrs + 1],
                 component2=sensor_data[comp2_idx, t_start_qrs:t_end_qrs + 1],
@@ -311,13 +313,12 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
                 plot_color=grayscale_map[name]
             )
 
-            qrs_max_lim = max(np.max(np.abs(sensor_data[comp1_idx, t_start_qrs:t_end_qrs + 1])), np.max(sensor_data[comp2_idx, t_start_qrs:t_end_qrs + 1]))
-            qrs_max_lim += qrs_max_lim * 0.3  # Add a margin of 10%
+            qrs_max_lim = 45
             ax_qrs.set_xlim(-qrs_max_lim, qrs_max_lim)
             ax_qrs.set_ylim(-qrs_max_lim, qrs_max_lim)
 
             ax_st = axs_st[row_idx, col_idx]
-            analysis._configure_trajectory_plot(
+            analysis._trajectory_plot(
                 ax_st,
                 component1=sensor_data[comp1_idx, t_end_qrs + 1:t_start + 1],
                 component2=sensor_data[comp2_idx, t_end_qrs + 1:t_start + 1],
@@ -325,8 +326,7 @@ for row_idx, row in enumerate(analysis.quspin_position_list):
                 plot_color=grayscale_map[name]
             )
 
-            st_max_lim = max(np.max(np.abs(sensor_data[comp1_idx, t_end_qrs + 1:t_start + 1])), np.max(sensor_data[comp2_idx, t_end_qrs + 1:t_start + 1]))
-            st_max_lim += st_max_lim * 0.3
+            st_max_lim = 3
             ax_st.set_xlim(-st_max_lim, st_max_lim)
             ax_st.set_ylim(-st_max_lim, st_max_lim)
 
