@@ -267,8 +267,8 @@ class Analyzer:
         fig.text(0.5, 0.06, 'Time [s]', ha='center', fontsize=12)
         fig.text(0.06, 0.5, 'Magnetic Field [pT]', va='center', rotation='vertical', fontsize=12)
 
-        plt.subplots_adjust(wspace=0.1, hspace=0.2, left=0.12, bottom=0.1, right=0.98, top=0.93)
-
+        plt.subplots_adjust(wspace=0.3, hspace=0.4, left=0.12, bottom=0.1, right=0.98, top=0.93)
+        
         if save and path:
             os.makedirs(path, exist_ok=True)
             plt.savefig(os.path.join(path, f'{name}_sensor_matrix.png'), bbox_inches='tight')
@@ -626,86 +626,108 @@ class Analyzer:
             logging.error(f"ICA failed: {e}")
             return None, None, None, None, None
 
-    def plot_lsd_multichannel(self, data, noise_theos, channels, labels=None, path="", name = "", save = False):
-
+    def plot_lsd_multichannel(self, data, noise_theos=None, channels=None, labels=None,
+                            path="", name="", save=False):
         """
         Plots the Linear Spectral Density (LSD) of multichannel time-series data using Welch's method.
-
-        This method computes and visualizes the LSD for specified channels, optionally overlaying theoretical noise 
-        levels and saving the plot to disk. The secondary Y-axis shows the corresponding linear amplitude scale.
 
         Parameters:
         ----------
         data : np.ndarray
             2D array where each row corresponds to a signal from one channel (shape: channels x time).
-        noise_theos : list or np.ndarray
-            Theoretical noise floor values for each channel, used for reference lines.
-        name : str
-            A string used in the plot title and filename (if saved).
-        labels : list of str
+        noise_theos : list or np.ndarray, optional
+            Theoretical noise floor values for each channel (default is None, no overlay).
+        channels : list of int, optional
+            Indices of the channels to plot (default is all).
+        labels : list of str, optional
             List of labels for each channel to display in the legend.
-        channels : list of int
-            Indices of the channels to plot.
-        path : str
-            Directory path where the plot will be saved (if `save` is True).
+        path : str, optional
+            Directory path where the plot will be saved (default is "").
+        name : str, optional
+            String for the plot title and filename (default is "").
         save : bool, optional
-            If True, saves the plot as a PNG file in the given `path` (default is False).
-
-        Notes:
-        -----
-        - Uses a Nuttall window and NENBW of 1.9761 for spectral estimation.
-        - Adds a secondary y-axis to convert LSD to linear amplitude scale.
-        - The function displays the plot regardless of the `save` option.
-
-        Raises:
-        ------
-        ValueError
-            If the input arrays/lists are inconsistent in length or incorrectly formatted.
+            If True, saves the plot as a high-resolution PNG (default is False).
         """
 
-        nenbw=1.9761
-        fig, elem= plt.subplots(nrows=1,ncols=1, sharex=True, figsize=(10,5),dpi=100)  
+        nenbw = 1.9761
 
-        for ind,ch in enumerate(channels):
-            f_bins,Pxx=signal.welch(data[ch], fs=self.INTERNAL_SAMPLING_RATE, nperseg=int(self.INTERNAL_SAMPLING_RATE)*100, window='nuttall', return_onesided=True, scaling='density')
-            
-            Lxx=np.sqrt(Pxx)
-            enbw=f_bins[1]*nenbw #calculated from acutal f_res
-            if labels is None:
-                elem.loglog(f_bins,Lxx,color=self.cmaplist[ind*int(len(self.cmaplist)/len(channels))], alpha = 0.5)
-            else:
-                elem.loglog(f_bins,Lxx,label=labels[ind],color=self.cmaplist[ind*int(len(self.cmaplist)/len(channels))], alpha = 0.5)
-                
-            if noise_theos[0] !=np.mean(noise_theos) and (ind<len(channels)):
-                
-                elem.plot(f_bins,np.full(len(f_bins),noise_theos[ind]),
-                        label='Sensor theo.',color=self.cmaplist[ind],linestyle='-.')
+        if channels is None:
+            channels = list(range(data.shape[0]))
 
+        if noise_theos is None:
+            noise_theos = [None] * len(channels)
+
+        if labels is None:
+            labels = [f"Channel {i}" for i in channels]
+
+        fig, ax = plt.subplots(figsize=(10, 5), dpi=150)
+
+        for ind, ch in enumerate(channels):
+            f_bins, Pxx = signal.welch(
+                data[ch],
+                fs=self.INTERNAL_SAMPLING_RATE,
+                nperseg=int(self.INTERNAL_SAMPLING_RATE * 100),
+                window='nuttall',
+                return_onesided=True,
+                scaling='density'
+            )
+
+            Lxx = np.sqrt(Pxx)
+            enbw = f_bins[1] * nenbw
+            color = self.cmaplist[ind * int(len(self.cmaplist) / len(channels))]
+
+            ax.loglog(f_bins, Lxx, label=labels[ind], color=color, alpha=0.7)
+
+            # Plot theoretical noise floor if valid
+            if noise_theos[ind] is not None:
+                ax.plot(
+                    f_bins,
+                    np.full_like(f_bins, noise_theos[ind]),
+                    label='Sensor theo.',
+                    color=color,
+                    linestyle='--',
+                    alpha=0.5
+                )
+
+        # Secondary Y-axis
         def forward(x):
-            return x*np.sqrt(enbw)*np.sqrt(2)
-        def inverse(x):
-            return x/(np.sqrt(enbw)*np.sqrt(2))
+            return x * np.sqrt(enbw) * np.sqrt(2)
 
-        elem.plot(f_bins,np.full(len(f_bins),noise_theos[ind]),
-                label='Sensor theo.',color=self.cmaplist[ind],linestyle='-.')
-        secax = elem.secondary_yaxis('right', functions=(forward, inverse))
-        secax.set_ylabel("LS (linear amplitude) [$ pT$]")
-        elem.set_xlabel('Frequency [Hz]')
-        elem.set_ylabel('LSD [$ pT$/$\sqrt{Hz}$]')
-        fig.suptitle('Magnetic flux linear spectral density '
-                    '[$ pT$/$\sqrt{Hz}$], NENBW=1.9761 bins\n '
-                    '$f_s$=%d Hz, $f_{res}$=%.3f Hz \n' %(self.INTERNAL_SAMPLING_RATE,f_bins[1])+name,size='small',
-                    y=1.0)
-        elem.set_xlim(0.1)
-        elem.legend(loc='lower center',bbox_to_anchor=(0.5,-0.25),ncol=4)
-        elem.grid(alpha=0.7)
-        elem.minorticks_on()
-        elem.grid(True,which='minor',linestyle='dotted',alpha=0.7)
-        # elem.set_yticks([10,100,500, 1000, 5000, 1e4,5e4,1e5,5e5])
-        plt.subplots_adjust(top = 0.9, bottom = 0.2)
+        def inverse(x):
+            return x / (np.sqrt(enbw) * np.sqrt(2))
+
+        secax = ax.secondary_yaxis('right', functions=(forward, inverse))
+        secax.set_ylabel("LS (linear amplitude) [$pT$]")
+
+        # Labels and styling
+        ax.set_xlabel("Frequency [Hz]")
+        ax.set_ylabel("LSD [$pT$/$\sqrt{Hz}$]")
+        ax.set_xlim(0.1)
+        ax.grid(True, which='both', linestyle='--', alpha=0.6)
+        ax.minorticks_on()
+
+        title = (
+            f"Magnetic flux linear spectral density [$pT$/$\\sqrt{{Hz}}$], NENBW={nenbw}\n"
+            f"$f_s$={self.INTERNAL_SAMPLING_RATE} Hz, $f_{{res}}$={f_bins[1]:.3f} Hz"
+        )
+        if name:
+            title += f" - {name}"
+        fig.suptitle(title, fontsize='medium', y=1.02)
+
+        handles, legend_labels = ax.get_legend_handles_labels()
+        if len(legend_labels) <= 10:
+            ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.3), ncol=3)
+        else:
+            print("Legend suppressed due to too many entries.")
+        plt.tight_layout()
+
         if save:
-            plt.savefig(path+f'{name}_LSD.png')
+            filename = f"{path}{name}_LSD.png"
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {filename}")
+
         plt.show()
+
 
     def calculate_metrics_with_uncertainty(self, original_data, segment_start_global, segment_end_global, uncertainty_ms=100, n_realizations=100):
         """
@@ -1995,7 +2017,7 @@ class Analyzer:
                 slider.on_changed(update)
                 button.on_clicked(apply_threshold)
                 
-                plt.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.12, hspace=0.4, wspace=0.3)
+                plt.subplots_adjust(left=0.12, right=0.98, top=0.92, bottom=0.12, hspace=0.4, wspace=0.3)
                 plt.show()
                 
                 # Return the applied result
