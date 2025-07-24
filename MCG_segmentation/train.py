@@ -30,7 +30,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
         params = json.load(f)
 
     # Define model structure based on args (or potentially loaded args)
-    model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dropout=0.4, num_heads=8)
+    model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4)
     model.to(device)
 
     # Define optimizer
@@ -95,8 +95,8 @@ def main():
     parser.add_argument("--save_dir", type=str, default="MCG_segmentation/checkpoints", help="Directory where model checkpoints will be saved")
 
     # Data Args
-    parser.add_argument("--data_dir_train", type=str, default="MCG_segmentation/Datasets/train", help="Path to training data directory")
-    parser.add_argument("--data_dir_val", type=str, default="MCG_segmentation/Datasets/val", help="Path to validation data directory")
+    parser.add_argument("--data_dir_train", type=str, default="MCG_segmentation/Datasets/base/qtdb/processed", help="Path to training data directory")
+    parser.add_argument("--data_dir_val", type=str, default="MCG_segmentation/Datasets/base/ludb/processed", help="Path to validation data directory")
     parser.add_argument("--sinusoidal_noise_mag", type=float, default=0.04, help="Magnitude of sinusoidal noise added during training")
     parser.add_argument("--sequence_length", type=int, default=500, help="Length of ECG sequence segments")
     parser.add_argument("--overlap", type=int, default=400, help="Overlap between consecutive sequence segments")
@@ -182,7 +182,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dropout=0.4, num_heads=8)
+        model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4)
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
