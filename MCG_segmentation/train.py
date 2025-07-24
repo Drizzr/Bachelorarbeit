@@ -95,8 +95,8 @@ def main():
     parser.add_argument("--save_dir", type=str, default="MCG_segmentation/checkpoints", help="Directory where model checkpoints will be saved")
 
     # Data Args
-    parser.add_argument("--data_dir_train", type=str, default="MCG_segmentation/Datasets/base/qtdb/processed", help="Path to training data directory")
-    parser.add_argument("--data_dir_val", type=str, default="MCG_segmentation/Datasets/base/ludb/processed", help="Path to validation data directory")
+    parser.add_argument("--data_dir_train", type=str, default="MCG_segmentation/Datasets/train", help="Path to training data directory")
+    parser.add_argument("--data_dir_val", type=str, default="MCG_segmentation/Datasets/val", help="Path to validation data directory")
     parser.add_argument("--sinusoidal_noise_mag", type=float, default=0.04, help="Magnitude of sinusoidal noise added during training")
     parser.add_argument("--sequence_length", type=int, default=500, help="Length of ECG sequence segments")
     parser.add_argument("--overlap", type=int, default=400, help="Overlap between consecutive sequence segments")
