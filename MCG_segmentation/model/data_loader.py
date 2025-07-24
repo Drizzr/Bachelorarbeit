@@ -129,6 +129,15 @@ class ECGFullDataset(Dataset):
         signal = signal_processed; labels = labels_processed # Update signal/labels if shifted
 
 
+        # Normalize to zero mean
+        signal_mean = signal.mean()
+        if not torch.isnan(signal_mean) and not torch.isinf(signal_mean): 
+            signal = signal - signal_mean
+
+        # Normalize [-1, 1]
+        max_val = signal.abs().max()
+        if max_val > 1e-6: signal = signal / max_val
+
         # Baseline Wander
         noisy_signal = signal # Start noise addition here
         if self.baseline_wander_mag > 0 and torch.rand(1).item() < self.augmentation_prob:
@@ -160,15 +169,6 @@ class ECGFullDataset(Dataset):
             noisy_signal = noisy_signal + sinusoidal_noise
         # --- End Augmentations ---
 
-        # Normalize to zero mean
-        signal_mean = signal.mean()
-        if not torch.isnan(signal_mean) and not torch.isinf(signal_mean): 
-            signal = signal - signal_mean
-
-        # Normalize [-1, 1]
-        max_val = signal.abs().max()
-        if max_val > 1e-6: signal = signal / max_val
-
         # Add channel dimension: (1, T) - Conv1d expects (Batch, Channels, Length)
         final_signal_output = noisy_signal.unsqueeze(0)
 
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     try:
         print("--- Testing ECGFullDataset for 1D Output ---")
         test_dataset = ECGFullDataset(
-            data_dir="MCG_segmentation/Datasets/train", # Adjust path
+            data_dir="MCG_segmentation/Datasets/val", # Adjust path
             overlap=400,
             sequence_length=500,
             sinusoidal_noise_mag=0.05,

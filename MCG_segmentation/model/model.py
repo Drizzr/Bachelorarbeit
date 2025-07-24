@@ -43,7 +43,7 @@ class ResidualBlock(nn.Module):
         return x + self.conv_block(x)
 
 
-class MCGSegmenter(nn.Module):
+class ECGSegmenter(nn.Module):
     def __init__(self, num_classes=4, input_channels=1, hidden_channels=32,  # 32, 64 for xl
                 lstm_hidden=64, dropout_rate=0.3, max_seq_len=2000):
         super().__init__()
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     input_channels = 1
     num_classes = 4
     
-    model = UNet1D(num_classes=num_classes, input_channels=input_channels) #32, 64, 128
+    model = UNet1D(num_classes=num_classes, input_channels=input_channels, num_heads=16) #32, 64, 128
     #model = ECGSegmenter(num_classes = 4, input_channels = 1, hidden_channels = 16, lstm_hidden = 20, dropout_rate = 0.3, max_seq_len = 2000)
     # Test input
     dummy_input = torch.randn(batch_size, input_channels, seq_len)

@@ -57,7 +57,7 @@ def load_model(load_dir, device):
     return model
 
 
-def sample_from_model(model, device, data: torch.Tensor, min_duration_sec: float = 0.04):
+def sample_from_model(model, device, data: torch.Tensor, min_duration_sec: float = 0.00):
     if data.numel() == 0:
         warnings.warn("No data to segment.")
         batch_size = data.shape[0]
@@ -314,12 +314,12 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M")
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M",)
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
     parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--sequence_length", type=int, default=1500)
+    parser.add_argument("--sequence_length", type=int, default=1250)
     args = parser.parse_args()
 
     # Create output directory

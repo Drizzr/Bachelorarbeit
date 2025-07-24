@@ -1,6 +1,3 @@
-#Datasets/create_training_data.py
-
-
 import os
 import random
 import shutil
@@ -24,82 +21,76 @@ def create_directory(directory):
         except IOError as e:
             LOGGER.warning(f"Could not create .gitignore in {directory}: {e}")
 
-def split_files(processed_path, train_dir, val_dir, test_dir=None, train_ratio=0.8, random_seed=42, exclude_records=None):
-    """Split CSV files into train and val directories, excluding specified records."""
+def split_files_for_training(processed_path, train_dir, val_dir, test_dir=None, val_ratio=0.15, random_seed=42, exclude_records=None, is_qtdb=False):
+    """Splits CSV files into train, val, and test directories based on specified logic."""
     random.seed(random_seed)
 
-    # Get all CSV files, excluding hidden files
     all_files = [f for f in os.listdir(processed_path) if f.endswith('.csv') and not f.startswith('.')]
     
     if not all_files:
         LOGGER.warning(f"No CSV files found in {processed_path}")
         return
     
-    # Extract unique record names (assuming files are named like record_name_chX.csv)
-    record_names = []
-    for f in all_files:
-        if '_' in f:
-            record_name = f.split('_')[0]
-            if record_name not in record_names:
-                record_names.append(record_name)
-    
-    record_names = sorted(record_names)
+    record_names = sorted(list(set([f.split('_')[0] for f in all_files if '_' in f])))
     
     if not record_names:
         LOGGER.warning(f"No valid record names found in {processed_path}")
         return
 
-    # Filter out excluded records
     if exclude_records is None:
         exclude_records = []
     
-    valid_records = [record for record in record_names if record not in exclude_records]
+    # Separate test records from the main pool
     test_records = [record for record in record_names if record in exclude_records]
+    train_val_records = [record for record in record_names if record not in exclude_records]
     
-    LOGGER.info(f"Filtering records: {len(record_names)} total, {len(valid_records)} included, {len(test_records)} excluded")
+    LOGGER.info(f"Total records: {len(record_names)}, Test records: {len(test_records)}, Train/Val records: {len(train_val_records)}")
 
-    if not valid_records:
-        LOGGER.error(f"No valid records found in {processed_path} after excluding specified records")
-        return
+    train_records, val_records = [], []
 
-    # Shuffle records for random split
-    random.shuffle(valid_records)
+    if is_qtdb:
+        # All non-excluded QTDB records go to training
+        train_records = train_val_records
+    else:
+        # For LUDB, split the train/val records
+        random.shuffle(train_val_records)
+        val_count = int(len(train_val_records) * val_ratio)
+        val_records = train_val_records[:val_count]
+        train_records = train_val_records[val_count:]
 
-    # Calculate split index
-    train_count = int(len(valid_records) * train_ratio)
-    train_records = valid_records[:train_count]
-    val_records = valid_records[train_count:]
-
-    # Create train and val directories
+    # Create directories
     create_directory(train_dir)
     create_directory(val_dir)
     if test_dir:
         create_directory(test_dir)
 
-    # Move files
-    files_moved = 0
-    for record in record_names:
-        record_files = [f for f in all_files if f.startswith(record + '_') or f == record + '.csv']
-        if record in valid_records:
-            target_dir = train_dir if record in train_records else val_dir
-        else:
-            if not test_dir:
-                LOGGER.warning(f"Test directory not provided but excluded record '{record}' exists.")
-                continue
-            target_dir = test_dir
+    # Function to move files for a list of records to a target directory
+    def move_files(records, target_dir):
+        files_moved = 0
+        for record in records:
+            record_files = [f for f in all_files if f.startswith(record + '_') or f == record + '.csv']
+            for file in record_files:
+                src_path = os.path.join(processed_path, file)
+                dst_path = os.path.join(target_dir, file)
+                try:
+                    shutil.copy2(src_path, dst_path)
+                    files_moved += 1
+                    LOGGER.debug(f"Copied {file} to {os.path.basename(target_dir)}")
+                except Exception as e:
+                    LOGGER.error(f"Failed to copy {file} to {target_dir}: {e}")
+        return files_moved
 
-        for file in record_files:
-            src_path = os.path.join(processed_path, file)
-            dst_path = os.path.join(target_dir, file)
-            try:
-                shutil.copy2(src_path, dst_path)
-                files_moved += 1
-                LOGGER.debug(f"Copied {file} to {os.path.basename(target_dir)}")
-            except Exception as e:
-                LOGGER.error(f"Failed to copy {file} to {target_dir}: {e}")
+    # Move files to respective directories
+    train_files_moved = move_files(train_records, train_dir)
+    val_files_moved = move_files(val_records, val_dir)
+    test_files_moved = 0
+    if test_dir:
+        test_files_moved = move_files(test_records, test_dir)
 
-    LOGGER.info(f"Split complete for {processed_path}: {len(train_records)} train, {len(val_records)} val, "
-                f"{len(test_records)} test records ({files_moved} files total)")
+    LOGGER.info(f"Split complete for {os.path.basename(processed_path)}: "
+                f"{len(train_records)} train records ({train_files_moved} files), "
+                f"{len(val_records)} val records ({val_files_moved} files), "
+                f"{len(test_records)} test records ({test_files_moved} files)")
 
 
 def main():
@@ -107,41 +98,41 @@ def main():
     qtdb_processed = os.path.join(DATA_DIR, 'base/qtdb/processed')
     ludb_processed = os.path.join(DATA_DIR, 'base/ludb/processed')
     
-    # Define train and val directories for each dataset
+    # Define output directories
     train_dir = os.path.join(DATA_DIR, "train")
     val_dir = os.path.join(DATA_DIR, "val")
-    test_dir = os.path.join(DATA_DIR, "test")  # Optional test directory
+    test_dir = os.path.join(DATA_DIR, "test")
 
-    # Define QTDB records to exclude (records that should go to test set)
+    # Manually excluded QTDB records for the test set
     qtdb_exclude_records = [
         "sel102", "sel104", "sel221", "sel232", "sel310", "sel35", "sel36", "sel37",
     ]
     
-    # Split QTDB files
+    # Process QTDB dataset
     if os.path.exists(qtdb_processed):
         LOGGER.info(f"Processing QTDB directory: {qtdb_processed}")
-        split_files(
+        split_files_for_training(
             processed_path=qtdb_processed,
             train_dir=train_dir,
             val_dir=val_dir,
             test_dir=test_dir,
-            train_ratio=0.8,
-            random_seed=123,
-            exclude_records=qtdb_exclude_records
+            exclude_records=qtdb_exclude_records,
+            is_qtdb=True # Flag to handle QTDB logic
         )
     else:
         LOGGER.error(f"QTDB processed directory not found: {qtdb_processed}")
     
-    # Split LUDB files (no exclusions)
+    # Process LUDB dataset
     if os.path.exists(ludb_processed):
         LOGGER.info(f"Processing LUDB directory: {ludb_processed}")
-        split_files(
+        split_files_for_training(
             processed_path=ludb_processed,
             train_dir=train_dir,
             val_dir=val_dir,
-            train_ratio=0.8,
+            test_dir=test_dir, # LUDB has no test files, but directory might be needed
+            val_ratio=0.15,
             random_seed=123,
-            exclude_records=None  # No exclusions for LUDB
+            is_qtdb=False # Flag to handle LUDB logic
         )
     else:
         LOGGER.error(f"LUDB processed directory not found: {ludb_processed}")
