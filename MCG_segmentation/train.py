@@ -30,7 +30,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
         params = json.load(f)
 
     # Define model structure based on args (or potentially loaded args)
-    model = UNet1D(num_classes=4, input_channels=1, features=[16, 32, 64], dropout=0.4, num_heads=8)
+    model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4)
     model.to(device)
 
     # Define optimizer
@@ -135,7 +135,7 @@ def main():
         
         val_dataset = ECGFullDataset(
             data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=args.sinusoidal_noise_mag, augmentation_prob=0.00, baseline_wander_mag=0.0, gaussian_noise_std=0.00
+            sinusoidal_noise_mag=0.00, augmentation_prob=0.00, baseline_wander_mag=0.0, gaussian_noise_std=0.00
         )
 
         if len(train_dataset) == 0: 
@@ -183,7 +183,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = UNet1D(num_classes=4, input_channels=1, features=[16, 32, 64], dropout=0.4, num_heads=8)
+        model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4)
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
