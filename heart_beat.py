@@ -91,7 +91,7 @@ def load_patient_data(patient: str, run: str = None):
         filename=file_name,
         add_filename=add_filename,
         log_file_path=log_file_path,
-        #model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
+        #model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_150k",
         #model_class=UNet1D,
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter, run
@@ -118,9 +118,9 @@ single_run_intervall = single_run[:, intervall_start:intervall_end]
 
 # comment the following lines to use the original data without ICA filtering
 
-x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=False)
-y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True)
-z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=False)
+x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=False, max_iter=20000)
+y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True, max_iter=20000)
+z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=False, max_iter=20000)
 single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
 #single_run_filtered = single_run_intervall.copy() # uncomment this line to use the original data without filtering

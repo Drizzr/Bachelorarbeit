@@ -614,7 +614,7 @@ class Analyzer:
         
         try:
             # Apply ICA - transpose for sklearn's expected format
-            ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter)
+            ica = FastICA(n_components=arr_cleaned.shape[0], random_state=0, max_iter=max_iter, tol=1e-3)
             components = ica.fit_transform(arr_cleaned.T).T
             
             # Store mixing matrix and mean for reconstruction
