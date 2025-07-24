@@ -314,9 +314,9 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_150k",)
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M",)
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_150k/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--sequence_length", type=int, default=1500)

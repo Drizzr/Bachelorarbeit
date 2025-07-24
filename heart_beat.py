@@ -91,8 +91,8 @@ def load_patient_data(patient: str, run: str = None):
         filename=file_name,
         add_filename=add_filename,
         log_file_path=log_file_path,
-        #model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_150k",
-        #model_class=UNet1D,
+        model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
+        model_class=UNet1D,
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter, run
 
