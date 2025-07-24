@@ -30,7 +30,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
         params = json.load(f)
 
     # Define model structure based on args (or potentially loaded args)
-    model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dropout=0.5, num_heads=8)
+    model = UNet1D(num_classes=4, input_channels=1, features=[16, 32, 64], dropout=0.4, num_heads=8)
     model.to(device)
 
     # Define optimizer
@@ -183,7 +183,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = UNet1D(num_classes=4, input_channels=1, features=[64, 128, 256, 512], dropout=0.5, num_heads=8) # Initialize model
+        model = UNet1D(num_classes=4, input_channels=1, features=[16, 32, 64], dropout=0.4, num_heads=8)
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
