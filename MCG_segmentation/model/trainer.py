@@ -11,21 +11,6 @@ from sklearn.metrics import f1_score, classification_report, accuracy_score
 from tqdm import tqdm
 
 
-def sample_from_model(model, device, data: torch.Tensor):
-    if data.numel() == 0:
-        warnings.warn("No data to segment.")
-        return np.array([])
-
-    data = data.to(device)
-    with torch.no_grad():
-        logits = model(data)
-        probabilities = torch.softmax(logits, dim=-1)
-        _, predicted_indices_pt = torch.max(probabilities, dim=-1)
-
-    predicted_indices = predicted_indices_pt.cpu().numpy()
-    # Flatten the predictions for processing
-    return predicted_indices.flatten()
-
 
 class Trainer(object):
     def __init__(self, model, train_loader, args, val_loader, optimizer, device,
@@ -230,12 +215,16 @@ class Trainer(object):
                 
                 probabilities = torch.softmax(logits, dim=-1)
                 _, predicted_indices_pt = torch.max(probabilities, dim=-1)
-                all_preds.extend(predicted_indices_pt.cpu().numpy())
+                
+                # --- FIX IS HERE ---
+                # Flatten both predictions and labels to ensure they are 1D lists of the same length
+                all_preds.extend(predicted_indices_pt.cpu().numpy().flatten().tolist())
                 all_labels.extend(labels.cpu().numpy().flatten().tolist())
 
 
         # --- METRICS CALCULATION AND PRINTING ---
         avg_val_loss = total_val_loss / len(self.val_loader)
+        # Now all_labels and all_preds will have the same length
         acc = accuracy_score(all_labels, all_preds)
         f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
 
@@ -258,7 +247,6 @@ class Trainer(object):
         print(f"Validation finished in {time.time() - val_start_time:.2f}s")
         self.model.train() # Set model back to training mode
         
-        # We return a dummy loss, as it's not the primary metric here
         return avg_val_loss, acc, f1
 
     def save_model(self, is_best=False):
