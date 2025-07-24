@@ -30,7 +30,6 @@ class ECGFullDataset(Dataset):
         gaussian_noise_std: float = 0.02,
         baseline_wander_mag: float = 0.05,
         baseline_wander_freq_max: float = 0.5,
-        amplitude_scale_range: float = 0.1,
         max_time_shift: int = 10,
         augmentation_prob: float = 0.5,
 
@@ -46,7 +45,6 @@ class ECGFullDataset(Dataset):
         self.gaussian_noise_std = gaussian_noise_std
         self.baseline_wander_mag = baseline_wander_mag
         self.baseline_wander_freq_max = baseline_wander_freq_max
-        self.amplitude_scale_range = amplitude_scale_range
         self.max_time_shift = max_time_shift
         self.augmentation_prob = augmentation_prob
 
@@ -131,20 +129,6 @@ class ECGFullDataset(Dataset):
         signal = signal_processed; labels = labels_processed # Update signal/labels if shifted
 
 
-        # Normalize to zero mean
-        signal_mean = signal.mean()
-        if not torch.isnan(signal_mean) and not torch.isinf(signal_mean): 
-            signal = signal - signal_mean
-
-        # Amplitude Scaling
-        if self.amplitude_scale_range > 0 and torch.rand(1).item() < self.augmentation_prob:
-            scale_factor = 1.0 + (torch.rand(1).item() - 0.5) * 2 * self.amplitude_scale_range
-            signal = signal * scale_factor
-
-        # Normalize [-1, 1]
-        max_val = signal.abs().max()
-        if max_val > 1e-6: signal = signal / max_val
-
         # Baseline Wander
         noisy_signal = signal # Start noise addition here
         if self.baseline_wander_mag > 0 and torch.rand(1).item() < self.augmentation_prob:
@@ -176,6 +160,15 @@ class ECGFullDataset(Dataset):
             noisy_signal = noisy_signal + sinusoidal_noise
         # --- End Augmentations ---
 
+        # Normalize to zero mean
+        signal_mean = signal.mean()
+        if not torch.isnan(signal_mean) and not torch.isinf(signal_mean): 
+            signal = signal - signal_mean
+
+        # Normalize [-1, 1]
+        max_val = signal.abs().max()
+        if max_val > 1e-6: signal = signal / max_val
+
         # Add channel dimension: (1, T) - Conv1d expects (Batch, Channels, Length)
         final_signal_output = noisy_signal.unsqueeze(0)
 
@@ -191,13 +184,12 @@ if __name__ == "__main__":
     try:
         print("--- Testing ECGFullDataset for 1D Output ---")
         test_dataset = ECGFullDataset(
-            data_dir="MCG_segmentation/Datasets/val", # Adjust path
+            data_dir="MCG_segmentation/Datasets/train", # Adjust path
             overlap=400,
             sequence_length=500,
             sinusoidal_noise_mag=0.05,
             gaussian_noise_std=0.04,
             baseline_wander_mag=0.1,
-            amplitude_scale_range=0.1,
             max_time_shift=5,
             augmentation_prob=1.0,
             # CWT params are removed from __init__

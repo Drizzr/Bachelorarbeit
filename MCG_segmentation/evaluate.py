@@ -12,7 +12,7 @@ from tqdm import tqdm
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from torch.utils.data import DataLoader
 
-from model.model import UNet1D, DENS_ECG_segmenter, ECGSegmenter
+from model.model import UNet1D, DENS_ECG_segmenter, MCGSegmenter
 from model.data_loader import ECGFullDataset
 import random
 
@@ -211,7 +211,7 @@ def plot_segmented_signal(signal, pred, ground_truth, output_dir, sample_rate=25
 def evaluate_detection_metrics(all_preds, all_labels, sequence_length, sample_rate=250, tolerance_ms=150):
     tolerance_samples = int((tolerance_ms / 1000) * sample_rate)
     stats = {wave: {f'{pt}_{metric}': 0 for pt in ['TP', 'FP', 'FN'] for metric in ['onset', 'offset']} |
-             {f'{pt}_errors': [] for pt in ['onset', 'offset']} for wave in [1, 2, 3]}
+            {f'{pt}_errors': [] for pt in ['onset', 'offset']} for wave in [1, 2, 3]}
 
     for i in range(0, len(all_labels), sequence_length):
         true_seq = all_labels[i:i + sequence_length]

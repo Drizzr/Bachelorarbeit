@@ -19,7 +19,7 @@ import copy
 import json
 from uncertainties import ufloat
 
-from MCG_segmentation.model.model import ECGSegmenter, UNet1D, DENS_ECG_segmenter
+from MCG_segmentation.model.model import MCGSegmenter, UNet1D, DENS_ECG_segmenter
 
 
 plt.rcParams['text.usetex'] = True
@@ -48,7 +48,7 @@ class Analyzer:
     DEFAULT_SOURCE_SAMPLING_RATE = 1000 # Default assumed rate of raw TDMS files
     DEFAULT_SCALING = 2.7 / 1000
     DEFAULT_NUM_CHANNELS = 48
-    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/MCGSegmentator_s"
+    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/MCGsegmenter_s"
 
     # Determine device for PyTorch computations
     try:
@@ -72,7 +72,7 @@ class Analyzer:
         scaling=DEFAULT_SCALING,
         num_ch=DEFAULT_NUM_CHANNELS,
         model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR,
-        model_class = ECGSegmenter
+        model_class = MCGSegmenter
     ):
         """Initialize the Analyzer with data and model configurations.
 

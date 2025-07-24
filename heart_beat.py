@@ -8,6 +8,8 @@ import re
 import os
 import json
 import numpy as np
+from MCG_segmentation.model.model import MCGSegmenter, UNet1D, DENS_ECG_segmenter
+
 
 def get_user_inputs():
     print("🫀 ECG Vector Metrics Export Tool 🧪\n")
@@ -90,6 +92,7 @@ def load_patient_data(patient: str, run: str = None):
         add_filename=add_filename,
         log_file_path=log_file_path,
         #model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
+        #model_class=UNet1D,
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter, run
 
