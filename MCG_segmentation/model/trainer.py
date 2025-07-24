@@ -11,7 +11,7 @@ from sklearn.metrics import f1_score, classification_report, accuracy_score
 from tqdm import tqdm
 
 
-def sample_from_model(model, device, data: torch.Tensor, min_duration_sec: float = 0.00):
+def sample_from_model(model, device, data: torch.Tensor):
     if data.numel() == 0:
         warnings.warn("No data to segment.")
         return np.array([])
@@ -215,22 +215,32 @@ class Trainer(object):
         val_start_time = time.time()
         self.model.eval()
         all_preds, all_labels = [], []
+        total_val_loss = 0.0
         
         val_bar = tqdm(self.val_loader, desc=f"Epoch {self.epoch}/{self.last_epoch} Validation", leave=False)
         
         with torch.no_grad():
             for signals, labels in val_bar:
                 signals = signals.to(self.device)
+                labels = labels.to(self.device)
+
+                logits = self.model(signals)
+                loss = self.focal_loss(logits.reshape(-1, logits.size(-1)), labels.reshape(-1))
+                total_val_loss += loss.item()
                 
-                preds = sample_from_model(self.model, self.device, signals)
-                all_preds.extend(preds)
-                all_labels.extend(labels.numpy().flatten().tolist())
+                probabilities = torch.softmax(logits, dim=-1)
+                _, predicted_indices_pt = torch.max(probabilities, dim=-1)
+                all_preds.extend(predicted_indices_pt.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy().flatten().tolist())
+
 
         # --- METRICS CALCULATION AND PRINTING ---
+        avg_val_loss = total_val_loss / len(self.val_loader)
         acc = accuracy_score(all_labels, all_preds)
         f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
-        
-        print(f"\nValidation Accuracy: {acc:.4f}")
+
+        print(f"\nValidation Loss: {avg_val_loss:.4f}")
+        print(f"Validation Accuracy: {acc:.4f}")
         print(f"Validation Macro F1-Score: {f1:.4f}")
         
         print("\n--- Classification Report ---")
@@ -249,7 +259,7 @@ class Trainer(object):
         self.model.train() # Set model back to training mode
         
         # We return a dummy loss, as it's not the primary metric here
-        return 0.0, acc, f1
+        return avg_val_loss, acc, f1
 
     def save_model(self, is_best=False):
         save_dir = os.path.join(self.args.save_dir, "best" if is_best else f"checkpoint_epoch_{self.epoch}")

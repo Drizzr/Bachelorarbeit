@@ -134,8 +134,8 @@ def main():
             )
         
         val_dataset = ECGFullDataset(
-            data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=args.sequence_length,
-            sinusoidal_noise_mag=0.00, augmentation_prob=0.00, baseline_wander_mag=0.0, gaussian_noise_std=0.00
+            data_dir=args.data_dir_val, overlap=args.overlap, sequence_length=1250,
+            sinusoidal_noise_mag=0.00, augmentation_prob=0.00, baseline_wander_mag=0.0, gaussian_noise_std=0.00, overlap=0
         )
 
         if len(train_dataset) == 0: 
