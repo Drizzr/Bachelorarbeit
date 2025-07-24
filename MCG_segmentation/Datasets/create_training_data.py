@@ -12,14 +12,7 @@ DATA_DIR = "MCG_segmentation/Datasets"
 def create_directory(directory):
     """Creates directory and adds a .gitignore file."""
     os.makedirs(directory, exist_ok=True)
-    gitignore_path = os.path.join(directory, '.gitignore')
-    if not os.path.exists(gitignore_path):
-        try:
-            with open(gitignore_path, 'w') as f:
-                f.write('*\n!.gitignore\n')
-            LOGGER.info(f"Created .gitignore in {directory}")
-        except IOError as e:
-            LOGGER.warning(f"Could not create .gitignore in {directory}: {e}")
+    
 
 def split_files_for_training(processed_path, train_dir, val_dir, test_dir=None, val_ratio=0.20, random_seed=42, exclude_records=None, is_qtdb=False):
     """Splits CSV files into train, val, and test directories based on specified logic."""
@@ -130,7 +123,7 @@ def main():
             train_dir=train_dir,
             val_dir=val_dir,
             test_dir=test_dir, # LUDB has no test files, but directory might be needed
-            val_ratio=0.15,
+            val_ratio=0.4,
             random_seed=123,
             is_qtdb=False # Flag to handle LUDB logic
         )
