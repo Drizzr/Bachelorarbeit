@@ -91,7 +91,7 @@ def load_patient_data(patient: str, run: str = None):
         filename=file_name,
         add_filename=add_filename,
         log_file_path=log_file_path,
-        model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_900k",
+        model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
         model_class=UNet1D,
         sensor_channels_to_exclude=sensor_channels_to_exclude
     ), intervall_start, intervall_end, ica_filter, run
@@ -118,9 +118,9 @@ single_run_intervall = single_run[:, intervall_start:intervall_end]
 
 # comment the following lines to use the original data without ICA filtering
 
-x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=False, max_iter=20000)
+x_data_filtered, _, _, _ = analysis.ICA_filter(x_data_intervall, heart_beat_score_threshold=ica_filter[0], plot_result=True, max_iter=20000)
 y_data_filtered, ica_components, _, _ = analysis.ICA_filter(y_data_intervall, heart_beat_score_threshold=ica_filter[1], plot_result=True, max_iter=20000)
-z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=False, max_iter=20000)
+z_data_filtered, _, _, _ = analysis.ICA_filter(z_data_intervall, heart_beat_score_threshold=ica_filter[2], plot_result=True, max_iter=20000)
 single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_filtered, z_data_filtered, key, 48)
 
 #single_run_filtered = single_run_intervall.copy() # uncomment this line to use the original data without filtering
@@ -134,7 +134,7 @@ single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_f
 #analysis.butterfly_plot(single_run_filtered, time_intervall, 48, f"Original {key}")
 
 # use cleanest channel for peak detection
-peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.7, confidence_weight=0.9, plausibility_weight=0.1)
+peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.5, confidence_weight=0.9, plausibility_weight=0.1)
 if peak_positions is not None and len(peak_positions) > 0:
     plt.figure(figsize=(12, 4))
     plt.plot(single_run_filtered[ch, :], label='Signal', linewidth=1.2)
@@ -153,7 +153,7 @@ else:
 
 
 # window averaging
-avg_channels, time_window = analysis.avg_window(single_run_filtered, peak_positions, window_left=0.3, window_right=0.5, sigma=1)
+avg_channels, time_window = analysis.avg_window(single_run_filtered, peak_positions, window_left=0.3, window_right=0.4, sigma=1, heart_beat_score_threshold=0.50)
 #analysis.butterfly_plot(avg_channels, time_window, 48, f"Original {key}")
 
 
@@ -161,9 +161,9 @@ avg_channels = np.array(avg_channels)
 # --- Load averaged field data ---
 x_data_window, y_data_window, z_data_window = analysis.get_field_directions(avg_channels, key)
 
-#analysis.plot_sensor_matrix(x_data_window, time_window, name="X-Field")
+analysis.plot_sensor_matrix(x_data_window, time_window, name="X-Field")
 analysis.plot_sensor_matrix(y_data_window, time_window, name="Y-Field")
-#analysis.plot_sensor_matrix(z_data_window, time_window, name="Z-Field")
+analysis.plot_sensor_matrix(z_data_window, time_window, name="Z-Field")
 
 # Use a sample vector for projection
 f1_data = np.array([x_data_window[0, 1, :], y_data_window[0, 1, :]])

@@ -46,7 +46,7 @@ features_to_analyze_short = ["Area", "T-Dist", "Compact", "Angle"]
 
 # Configuration for statistical analysis of each feature.
 # Defines the hypothesis for the t-test and whether to remove outliers.
-# 'data2_greater': Healthy > ARVC (e.g., area is expected to be larger in healthy patients).
+# 'data2_greater': Healthy > ACM (e.g., area is expected to be larger in healthy patients).
 # 'not_equal': Two-tailed test where the direction is not pre-specified.
 feature_analysis_config = {
     "default": {"hypothesis": "not_equal", "remove_outliers": False},
@@ -76,11 +76,11 @@ with open("Data/setup.json") as f:
 # Process the raw metadata into a structured list of records.
 demographic_records = []
 for pid, p_data in patient_meta_data.items():
-    arvc_status_patient = None
-    # Extract ARVC status from the first available run for the patient.
+    ACM_status_patient = None
+    # Extract ACM status from the first available run for the patient.
     if p_data.get("runs"):
         first_run_id = next(iter(p_data["runs"]))
-        arvc_status_patient = p_data["runs"][first_run_id].get("ARVC")
+        ACM_status_patient = p_data["runs"][first_run_id].get("ACM")
 
     # Create a dictionary for the patient's demographic information.
     record = {
@@ -88,15 +88,15 @@ for pid, p_data in patient_meta_data.items():
         "gender": p_data.get("gender", "unknown") or "unknown", # Handle None or empty strings
         "height": float(p_data.get("height")) if p_data.get("height") not in [None, ""] else None,
         "age": int(p_data.get("age")) if p_data.get("age") not in [None, ""] else None,
-        "ARVC": arvc_status_patient
+        "ACM": ACM_status_patient
     }
     demographic_records.append(record)
 
 # Convert the list of records into a pandas DataFrame.
 df_demographics = pd.DataFrame(demographic_records)
 
-# Remove patients where ARVC status could not be determined.
-df_demographics.dropna(subset=['ARVC'], inplace=True)
+# Remove patients where ACM status could not be determined.
+df_demographics.dropna(subset=['ACM'], inplace=True)
 
 # Define a consistent B&W palette for gender across all plots.
 gender_palette_global = {"male": "#555555", "female": "#AAAAAA"}
@@ -153,12 +153,12 @@ plot_gender_distribution(
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_all.pdf")
 )
 plot_gender_distribution(
-    df_demographics[df_demographics["ARVC"] == True],
-    "Gender Distribution (ARVC)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_arvc.pdf")
+    df_demographics[df_demographics["ACM"] == True],
+    "Gender Distribution (ACM)",
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_ACM.pdf")
 )
 plot_gender_distribution(
-    df_demographics[df_demographics["ARVC"] == False],
+    df_demographics[df_demographics["ACM"] == False],
     "Gender Distribution (Healthy)",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_healthy.pdf")
 )
@@ -232,23 +232,23 @@ demographics_summary_stats["height_all"] = plot_hist_and_stats(
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_all.pdf")
 )
 
-print("\n--- AGE & HEIGHT (ARVC Positive) ---")
-demographics_summary_stats["age_arvc"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == True], "age", "Age Distribution (ARVC)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_arvc.pdf")
+print("\n--- AGE & HEIGHT (ACM Positive) ---")
+demographics_summary_stats["age_ACM"] = plot_hist_and_stats(
+    df_demographics[df_demographics["ACM"] == True], "age", "Age Distribution (ACM)", "darkgray",
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_ACM.pdf")
 )
-demographics_summary_stats["height_arvc"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == True], "height", "Height Distribution (ARVC)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_arvc.pdf")
+demographics_summary_stats["height_ACM"] = plot_hist_and_stats(
+    df_demographics[df_demographics["ACM"] == True], "height", "Height Distribution (ACM)", "darkgray",
+    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_ACM.pdf")
 )
 
-print("\n--- AGE & HEIGHT (ARVC Negative) ---")
+print("\n--- AGE & HEIGHT (ACM Negative) ---")
 demographics_summary_stats["age_healthy"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == False], "age", "Age Distribution (Healthy)", "darkgray",
+    df_demographics[df_demographics["ACM"] == False], "age", "Age Distribution (Healthy)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_healthy.pdf")
 )
 demographics_summary_stats["height_healthy"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ARVC"] == False], "height", "Height Distribution (Healthy)", "darkgray",
+    df_demographics[df_demographics["ACM"] == False], "height", "Height Distribution (Healthy)", "darkgray",
     save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_healthy.pdf")
 )
 
@@ -801,9 +801,9 @@ def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, da
 # Main Analysis Execution: Individual Sensors
 # =============================================================================
 
-# Create a mapping from (patient_id, run_id) to ARVC status for easy lookup.
-arvc_map = {
-    (pid, run_id): run_data["ARVC"]
+# Create a mapping from (patient_id, run_id) to ACM status for easy lookup.
+ACM_map = {
+    (pid, run_id): run_data["ACM"]
     for pid, p_data in patient_meta_data.items()
     for run_id, run_data in p_data.get("runs", {}).items()
 }
@@ -825,24 +825,24 @@ for f_path in result_files:
         if 'run' in df_sensor.columns:
             df_sensor['run'] = df_sensor['run'].astype(str)
 
-        # Map the ARVC status to each row using the patient and run IDs.
-        df_sensor["ARVC"] = df_sensor.apply(
-            lambda row: arvc_map.get((row["patient"], row["run"]), None), axis=1
+        # Map the ACM status to each row using the patient and run IDs.
+        df_sensor["ACM"] = df_sensor.apply(
+            lambda row: ACM_map.get((row["patient"], row["run"]), None), axis=1
         )
 
-        if df_sensor["ARVC"].isna().sum() > 0:
-            print(f"Warning: {sensor_projection_name} - {df_sensor['ARVC'].isna().sum()} rows missing ARVC status!")
+        if df_sensor["ACM"].isna().sum() > 0:
+            print(f"Warning: {sensor_projection_name} - {df_sensor['ACM'].isna().sum()} rows missing ACM status!")
 
-        # Clean data by dropping rows without an ARVC label.
-        df_sensor.dropna(subset=["ARVC"], inplace=True)
-        df_sensor["ARVC"] = df_sensor["ARVC"].astype(bool)
+        # Clean data by dropping rows without an ACM label.
+        df_sensor.dropna(subset=["ACM"], inplace=True)
+        df_sensor["ACM"] = df_sensor["ACM"].astype(bool)
 
         if not df_sensor.empty:
             all_sensor_data_dfs[sensor_projection_name] = df_sensor
             sensor_file_paths[sensor_projection_name] = f_path
             print(f"Loaded {sensor_projection_name}: {len(df_sensor)} records.")
         else:
-            print(f"Warning: {sensor_projection_name} - No data after ARVC mapping and NA removal.")
+            print(f"Warning: {sensor_projection_name} - No data after ACM mapping and NA removal.")
     except Exception as e:
         print(f"Error loading {f_path}: {e}")
 
@@ -880,10 +880,10 @@ for sensor_name, df_sensor_iter in all_sensor_data_dfs.items():
             unc_series = (pd.to_numeric(df_sensor_iter.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
                           if has_unc else pd.Series(0.0, index=nom_series[valid_idx].index))
 
-            # Split data into ARVC (positive) and Healthy (negative) groups.
-            nom_v, unc_v, arvc_l = nom_series[valid_idx].values, unc_series.values, df_sensor_iter.loc[valid_idx, "ARVC"].values
-            pos_nom, neg_nom = nom_v[arvc_l == True], nom_v[arvc_l == False]
-            pos_unc, neg_unc = (unc_v[arvc_l == True], unc_v[arvc_l == False]) if has_unc else (None, None)
+            # Split data into ACM (positive) and Healthy (negative) groups.
+            nom_v, unc_v, ACM_l = nom_series[valid_idx].values, unc_series.values, df_sensor_iter.loc[valid_idx, "ACM"].values
+            pos_nom, neg_nom = nom_v[ACM_l == True], nom_v[ACM_l == False]
+            pos_unc, neg_unc = (unc_v[ACM_l == True], unc_v[ACM_l == False]) if has_unc else (None, None)
 
             if len(pos_nom) < 1 or len(neg_nom) < 1:
                 print(f"Skipping {nom_col} for {sensor_name}: Insufficient nominal data in one or both groups.")
@@ -896,7 +896,7 @@ for sensor_name, df_sensor_iter in all_sensor_data_dfs.items():
             # Run ROC analysis to find the optimal threshold.
             roc_res_mc = determine_optimal_threshold(
                 pos_nom, neg_nom, data1_unc=pos_unc, data2_unc=neg_unc,
-                hypothesis=cfg["hypothesis"], labels=("ARVC", "Healthy"),
+                hypothesis=cfg["hypothesis"], labels=("ACM", "Healthy"),
                 remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref
             )
             # Use the nominal threshold from ROC for the t-test boxplot.
@@ -906,19 +906,19 @@ for sensor_name, df_sensor_iter in all_sensor_data_dfs.items():
             ttest_res_mc = perform_t_test(
                 pos_nom, neg_nom, data1_unc=pos_unc, data2_unc=neg_unc,
                 name=f"{seg_lbl} {feat_short_n}", hypothesis=cfg["hypothesis"],
-                threshold=nom_thresh_plot, labels=("ARVC", "Healthy"),
+                threshold=nom_thresh_plot, labels=("ACM", "Healthy"),
                 remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref
             )
             
             # Determine which group was treated as the "positive" class for metrics like sensitivity.
             if cfg["hypothesis"] == "data1_greater":
-                pos_class = "ARVC" # ARVC is data1
+                pos_class = "ACM" # ACM is data1
             elif cfg["hypothesis"] == "data2_greater":
                 pos_class = "Healthy" # Healthy is data2
             else: # not_equal
                 pos_mean = np.mean(remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom)
                 neg_mean = np.mean(remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom)
-                pos_class = "ARVC" if pos_mean > neg_mean else "Healthy"
+                pos_class = "ACM" if pos_mean > neg_mean else "Healthy"
 
             # Compile all results into a single record.
             rec = {
@@ -934,7 +934,7 @@ for sensor_name, df_sensor_iter in all_sensor_data_dfs.items():
                 "sensitivity_mean": roc_res_mc["Sensitivity"][0], "sensitivity_ci_lower": roc_res_mc["Sensitivity"][1], "sensitivity_ci_upper": roc_res_mc["Sensitivity"][2],
                 "specificity_mean": roc_res_mc["Specificity"][0], "specificity_ci_lower": roc_res_mc["Specificity"][1], "specificity_ci_upper": roc_res_mc["Specificity"][2],
                 "f1_score_mean": roc_res_mc["F1-Score"][0], "f1_score_ci_lower": roc_res_mc["F1-Score"][1], "f1_score_ci_upper": roc_res_mc["F1-Score"][2],
-                "n_arvc_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
+                "n_ACM_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
                 "plot_nominal_tdist_path": f"{plot_pref}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref}_boxplot.pdf",
                 "plot_nominal_roc_path": f"{plot_pref}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref}_cm.pdf",
                 "plot_mc_pvalue_dist_path": f"{plot_pref}_p_value_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None,
@@ -1040,10 +1040,10 @@ for subsquare_name, sensor_ids in subsquares.items():
                 unc_series = (pd.to_numeric(df_agg.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
                               if has_unc_agg else pd.Series(0.0, index=nom_series[valid_idx].index))
 
-                # Split data into ARVC and Healthy groups.
-                nom_v, unc_v, arvc_l = nom_series[valid_idx].values, unc_series.values, df_agg.loc[valid_idx, "ARVC"].values
-                pos_nom, neg_nom = nom_v[arvc_l == True], nom_v[arvc_l == False]
-                pos_unc_agg, neg_unc_agg = (unc_v[arvc_l == True], unc_v[arvc_l == False]) if has_unc_agg else (None, None)
+                # Split data into ACM and Healthy groups.
+                nom_v, unc_v, ACM_l = nom_series[valid_idx].values, unc_series.values, df_agg.loc[valid_idx, "ACM"].values
+                pos_nom, neg_nom = nom_v[ACM_l == True], nom_v[ACM_l == False]
+                pos_unc_agg, neg_unc_agg = (unc_v[ACM_l == True], unc_v[ACM_l == False]) if has_unc_agg else (None, None)
 
                 if len(pos_nom) < 1 or len(neg_nom) < 1:
                     print(f"Skipping {nom_col} for {aggregation_name}: Insufficient data.")
@@ -1055,7 +1055,7 @@ for subsquare_name, sensor_ids in subsquares.items():
                 # Run ROC and t-test analyses on the aggregated data.
                 roc_res_mc_agg = determine_optimal_threshold(
                     pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
-                    hypothesis=cfg["hypothesis"], labels=("ARVC", "Healthy"),
+                    hypothesis=cfg["hypothesis"], labels=("ACM", "Healthy"),
                     remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
                 )
                 nom_thresh_plot_agg = roc_res_mc_agg["Threshold"][0]
@@ -1065,19 +1065,19 @@ for subsquare_name, sensor_ids in subsquares.items():
                 ttest_res_mc_agg = perform_t_test(
                     pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
                     name=plot_title_name, hypothesis=cfg["hypothesis"],
-                    threshold=nom_thresh_plot_agg, labels=("ARVC", "Healthy"),
+                    threshold=nom_thresh_plot_agg, labels=("ACM", "Healthy"),
                     remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
                 )
                 
                 # Determine the positive class for metrics.
                 if cfg["hypothesis"] == "data1_greater":
-                    pos_class = "ARVC"
+                    pos_class = "ACM"
                 elif cfg["hypothesis"] == "data2_greater":
                     pos_class = "Healthy"
                 else: # not_equal
                     pos_mean = np.mean(remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom)
                     neg_mean = np.mean(remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom)
-                    pos_class = "ARVC" if pos_mean > neg_mean else "Healthy"
+                    pos_class = "ACM" if pos_mean > neg_mean else "Healthy"
 
                 # Compile results into a record for the aggregated analysis.
                 agg_analysis_records.append({
@@ -1093,7 +1093,7 @@ for subsquare_name, sensor_ids in subsquares.items():
                     "sensitivity_mean": roc_res_mc_agg["Sensitivity"][0], "sensitivity_ci_lower": roc_res_mc_agg["Sensitivity"][1], "sensitivity_ci_upper": roc_res_mc_agg["Sensitivity"][2],
                     "specificity_mean": roc_res_mc_agg["Specificity"][0], "specificity_ci_lower": roc_res_mc_agg["Specificity"][1], "specificity_ci_upper": roc_res_mc_agg["Specificity"][2],
                     "f1_score_mean": roc_res_mc_agg["F1-Score"][0], "f1_score_ci_lower": roc_res_mc_agg["F1-Score"][1], "f1_score_ci_upper": roc_res_mc_agg["F1-Score"][2],
-                    "n_arvc_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
+                    "n_ACM_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
                     "plot_nominal_tdist_path": f"{plot_pref_agg}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref_agg}_boxplot.pdf",
                     "plot_nominal_roc_path": f"{plot_pref_agg}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref_agg}_cm.pdf",
                     "plot_mc_pvalue_dist_path": f"{plot_pref_agg}_p_value_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
