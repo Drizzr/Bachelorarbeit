@@ -10,6 +10,8 @@ import json
 import numpy as np
 from MCG_segmentation.model.model import MCGSegmenter, UNet1D, DENS_ECG_segmenter
 
+plt.rcParams['text.usetex'] = True
+
 
 def get_user_inputs():
     print("🫀 ECG Vector Metrics Export Tool 🧪\n")
@@ -136,20 +138,25 @@ single_run_filtered = analysis.invert_field_directions(x_data_filtered, y_data_f
 # use cleanest channel for peak detection
 peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(single_run_filtered, print_heart_rate=True, confidence_threshold=0.5, confidence_weight=0.9, plausibility_weight=0.1)
 if peak_positions is not None and len(peak_positions) > 0:
-    plt.figure(figsize=(12, 4))
+    plt.figure(figsize=(12, 4), dpi=150)
     plt.plot(single_run_filtered[ch, :], label='Signal', linewidth=1.2)
     #plt.plot(resampled_data[ch, :], label='Signal', linewidth=1.2)
     plt.plot(peak_positions, single_run_filtered[ch, peak_positions], "ro", markersize=6, label='R Peaks')
     plt.title(f"QRS Detection - Cleanest Channel {ch + 1}")
-    plt.xlabel("Time (samples)")
-    plt.ylabel("Amplitude")
+    plt.xlabel("Time Step (Sample Index)")
+    plt.ylabel("Amplitude $(pT)$")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 else:
     print("No R peaks detected or `peak_positions` is empty.")
-#analysis.plot_segmented_signal(single_run_filtered[ch, :], labels[ch, :])
+
+
+segment_fig, segment_axs = plt.subplots(figsize=(15, 8), dpi=120)
+segment_axs.set_ylabel("Amplitude $(pT)$")
+segment_axs.set_xlabel("Time (Sample Index)")
+analysis.plot_segmented_signal(single_run_filtered[ch, :1000], labels[ch, :1000], segment_axs)
 
 
 # window averaging

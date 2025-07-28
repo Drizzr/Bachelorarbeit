@@ -1133,7 +1133,7 @@ class Analyzer:
         t = np.arange(len(signal))
 
         if axs is None:
-            fig, axs = plt.subplots(figsize=(15, 8))
+            fig, axs = plt.subplots(figsize=(15, 8), dpi=150)
             standalone = True
         else:
             standalone = False
@@ -1172,7 +1172,7 @@ class Analyzer:
                 combined_handles.append(patch)
                 combined_labels.append(label_name_pred)
 
-        axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
+        axs.legend(combined_handles, combined_labels, loc='upper right', ncol=2)
         if standalone:
             plt.show()
 

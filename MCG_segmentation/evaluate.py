@@ -45,7 +45,7 @@ def load_model(load_dir, device):
     with open(config_path, "r") as f:
         model_params = json.load(f)
 
-    model = UNet1D(**model_params)
+    model = MCGSegmenter(**model_params)
 
     try:
         model.load_state_dict(torch.load(best_model_path, map_location=device))
@@ -57,7 +57,7 @@ def load_model(load_dir, device):
     return model
 
 
-def sample_from_model(model, device, data: torch.Tensor, min_duration_sec: float = 0.00):
+def sample_from_model(model, device, data: torch.Tensor, min_duration_sec: float = 0.04):
     if data.numel() == 0:
         warnings.warn("No data to segment.")
         batch_size = data.shape[0]
@@ -144,7 +144,7 @@ def plot_segmented_signal(signal, pred, ground_truth, output_dir, sample_rate=25
     ground_truth = ground_truth.squeeze()
     t = np.arange(len(signal)) / sample_rate  # Zeitachse in Sekunden
 
-    fig, axs = plt.subplots(figsize=(15, 8))
+    fig, axs = plt.subplots(figsize=(15, 8), dpi=300)
     axs.plot(t, signal, color='black', linewidth=0.8, label='Signal (Processed)')
     axs.grid(True, linestyle=':', alpha=0.7)
 
@@ -199,11 +199,10 @@ def plot_segmented_signal(signal, pred, ground_truth, output_dir, sample_rate=25
             combined_labels.append(label_name_true)
 
     axs.legend(combined_handles, combined_labels, loc='upper right', fontsize='x-small', ncol=2)
-    axs.set_xlabel("Zeit (s)")
-    axs.set_ylabel("Amplitude")
-    axs.set_title("EKG-Signal mit vorhergesagten Segmenten und Ground-Truth-Labels")
+    axs.set_xlabel("Time (s)")
+    axs.set_ylabel("Amplitude (normalized)")
 
-    plt.savefig(os.path.join(output_dir, f"{filename_prefix}.png"), bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, f"{filename_prefix}.pdf"), bbox_inches='tight')
     plt.close()
 
 
@@ -314,12 +313,12 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
 
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
-    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M",)
+    parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/MCGSegmenter_s",)
     parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/val")
-    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/UNet_1D_15M/evaluation_results")
+    parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/MCGSegmenter_s/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--sequence_length", type=int, default=1500)
+    parser.add_argument("--sequence_length", type=int, default=1250)
     args = parser.parse_args()
 
     # Create output directory

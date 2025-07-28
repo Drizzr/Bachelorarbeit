@@ -190,14 +190,12 @@ if __name__ == "__main__":
             data_dir="MCG_segmentation/Datasets/val", # Adjust path if needed
             overlap=400,
             sequence_length=500,
-            augmentation_prob=1.0, # Set to 1.0 to guarantee augmentations for visualization
+            augmentation_prob=0.8, # Set to 1.0 to guarantee augmentations for visualization
             # Original augmentations
-            sinusoidal_noise_mag=0.05,
+            sinusoidal_noise_mag=0.04,
             gaussian_noise_std=0.04,
             baseline_wander_mag=0.1,
-            # New augmentations
-            amplitude_scale_range=(0.8, 1.2), # Enable amplitude scaling
-            time_shift_ratio=0.1, # Enable time shifting by up to 10%
+
         )
 
         if len(test_dataset) == 0:
@@ -219,35 +217,28 @@ if __name__ == "__main__":
             time_axis = np.arange(signal_single.shape[0])
 
             # Create plot
-            fig, ax = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+            fig, ax = plt.subplots(figsize=(12, 4), dpi=150)
             fig.suptitle(f"Example 1D Output from ECGFullDataset (Seq Length: {test_dataset.sequence_length})", fontsize=14)
 
-            # Plot 1: Processed Signal with Labels
-            ax[0].plot(time_axis, signal_single, color='black', linewidth=1.0, label='Processed Signal')
+            # Plot: Processed Signal with Labels
+            ax.plot(time_axis, signal_single, color='black', linewidth=1.0, label='Processed Signal')
             for t in range(signal_single.shape[0]):
                 color = TEST_CLASS_COLORS.get(labels_single[t], 'magenta')
-                ax[0].scatter(t, signal_single[t], color=color, s=15, zorder=3)
+                ax.scatter(t, signal_single[t], color=color, s=15, zorder=3)
 
-            ax[0].set_ylabel("Amplitude (Normalized)")
-            ax[0].set_title("Augmented & Normalized Signal with Ground Truth Labels")
-            ax[0].grid(True, linestyle=':', alpha=0.7)
+            ax.set_ylabel("Amplitude (Normalized)")
+            ax.set_title("Augmented & Normalized Signal with Ground Truth Labels")
+            ax.grid(True, linestyle=':', alpha=0.7)
+
             legend_elements = [Line2D([0], [0], color='black', lw=1, label='Signal')]
-            
             for lbl, col in TEST_CLASS_COLORS.items():
                 legend_elements.append(Line2D([0], [0], marker='o', color='w', label=f'Label {lbl}',
-                                    markerfacecolor=col, markersize=8))
-            ax[0].legend(handles=legend_elements, loc='upper right', fontsize='small')
+                                            markerfacecolor=col, markersize=8))
 
-            # Plot 2: Labels
-            ax[1].plot(time_axis, labels_single, drawstyle='steps-post', label='Label Sequence', color='darkorange')
-            ax[1].set_xlabel("Time Step (Sample Index)")
-            ax[1].set_ylabel("Label Index")
-            ax[1].set_title("Ground Truth Label Sequence")
-            ax[1].grid(True, linestyle=':', alpha=0.7)
-            ax[1].legend(loc='upper right', fontsize='small')
-            ax[1].set_yticks(np.unique(labels_single))
+            ax.legend(handles=legend_elements, loc='upper right', fontsize='small')
+            ax.set_xlabel("Time Step (Sample Index)")
 
-            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            plt.tight_layout(rect=[0, 0.03, 1, 0.90])
             plt.show()
 
     except FileNotFoundError as e: 
