@@ -17,21 +17,35 @@ from sklearn.metrics import auc, confusion_matrix, f1_score, roc_curve
 # Global Configuration and Styling
 # =============================================================================
 
+# =============================================================================
+# Global Configuration and Styling
+# =============================================================================
+
 def setup_matplotlib_for_latex():
     """Configures Matplotlib to use LaTeX for rendering text in plots."""
     try:
+        # --- Updated settings for better visibility ---
         plt.rcParams.update({
+            # Font settings
             "text.usetex": True,
             "font.family": "serif",
             "font.serif": ["Computer Modern Roman"],
-            "axes.labelsize": 12,
-            "font.size": 12,
-            "legend.fontsize": 10,
-            "xtick.labelsize": 10,
-            "ytick.labelsize": 10,
+            "font.size": 14,                # Base font size
+            "axes.labelsize": 15,           # X and Y axis labels
+            "axes.titlesize": 16,           # Plot title
+            "xtick.labelsize": 14,          # X-axis tick labels
+            "ytick.labelsize": 14,          # Y-axis tick labels
+            "legend.fontsize": 14,          # Legend font size
+
+            # Line and marker settings
+            "lines.linewidth": 2.0,         # Thicker plot lines
+            "lines.markersize": 8,          # Larger markers
+            "axes.linewidth": 1.5,          # Thicker axis lines for emphasis
+
+            # LaTeX specific
             "text.latex.preamble": r"\usepackage{gensymb}"
         })
-        print("Matplotlib configured to use LaTeX for plotting.")
+        print("Matplotlib configured to use LaTeX for plotting (with enhanced visibility settings).")
     except Exception as e:
         print(f"Could not configure LaTeX for plots, falling back to default. Error: {e}")
         plt.rcParams.update(plt.rcParamsDefault)
@@ -327,9 +341,7 @@ def perform_t_test(data1_nom, data2_nom, data1_unc, data2_unc, name, hypothesis,
             print(f"Hypothesis: {hypothesis}, Nominal T-stat: {nom_t:.4f}, P-val: {nom_p:.4f}, Significant: {nom_sig}")
             df_freedom = len(data1_clean) + len(data2_clean) - 2
             if df_freedom > 0 and save_plots_prefix:
-                # --- THIS IS THE CORRECTED PART ---
                 if hypothesis == "data1_greater":
-                    # For > and <, it's good practice to also put them in math mode for correct spacing
                     title_hyp = fr"{labels[0]} $>$ {labels[1]}"
                     cond = lambda x: x > nom_t
                     area_label = fr'p-value (t > {nom_t:.2f})'
@@ -338,7 +350,6 @@ def perform_t_test(data1_nom, data2_nom, data1_unc, data2_unc, name, hypothesis,
                     cond = lambda x: x < nom_t
                     area_label = fr'p-value (t < {nom_t:.2f})'
                 else: # 'not_equal'
-                    # Wrap the \neq symbol in dollar signs for math mode
                     title_hyp = fr"{labels[0]} $\neq$ {labels[1]}"
                     cond = lambda x: (x > abs(nom_t)) | (x < -abs(nom_t))
                     area_label = fr'p-value ($|t|$ > {abs(nom_t):.2f})'
@@ -631,10 +642,19 @@ if overall_individual_analysis_records:
 # --- 4. Aggregated Projections Analysis ---
 print("\n\n--- AGGREGATED PROJECTION ANALYSIS ---")
 sensor_grid = [["F1", "OX", "OO", "OQ"], ["YQ", "NL", "OY", "OW"], ["OT", "F2", "F0", "C1"], ["EY", "YP", "OR", "EZ"]]
+
+# ============================ FIX IS HERE ============================
+# The definition for "BottomLeft" was incorrect. It was using the same
+# column slice as "BottomRight", causing them to analyze identical data.
+# Corrected "BottomLeft" to use slice(0, 2) for columns.
 subsquare_definitions = {
-    "TopLeft": (slice(0, 2), slice(0, 2)), "TopRight": (slice(0, 2), slice(2, 4)),
-    "BottomLeft": (slice(2, 4), slice(2, 4)), "BottomRight": (slice(2, 4), slice(2, 4))
+    "TopLeft": (slice(0, 2), slice(0, 2)), 
+    "TopRight": (slice(0, 2), slice(2, 4)),
+    "BottomLeft": (slice(2, 4), slice(0, 2)), # Corrected from slice(2, 4)
+    "BottomRight": (slice(2, 4), slice(2, 4))
 }
+# =====================================================================
+
 subsquares = {}
 for name, (row_slice, col_slice) in subsquare_definitions.items():
     subsquares[name] = [sensor_grid[r][c] for r in range(row_slice.start, row_slice.stop) for c in range(col_slice.start, col_slice.stop)]

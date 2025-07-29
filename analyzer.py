@@ -762,7 +762,7 @@ class Analyzer:
         
         # Create multiple realizations by varying segment boundaries
         areas = []
-        t_distances = []
+        distances = []
         compactnesses = []
         angles = []
         
@@ -799,9 +799,9 @@ class Analyzer:
                 # T-distance (max distance from origin)
                 magnitudes = c1_sample**2 + c2_sample**2
                 t_max_idx = np.argmax(magnitudes)
-                t_distance = np.linalg.norm([c1_sample[t_max_idx] - c1_sample[0], 
+                distance = np.linalg.norm([c1_sample[t_max_idx] - c1_sample[0], 
                                         c2_sample[t_max_idx] - c2_sample[0]])
-                t_distances.append(t_distance)
+                distances.append(distance)
                 
                 # Compactness
                 perimeter = np.sum(np.linalg.norm(
@@ -821,18 +821,18 @@ class Analyzer:
 
         if len(areas) > 0:
             area_unc = ufloat(np.mean(areas), np.std(areas))
-            t_dist_unc = ufloat(np.mean(t_distances), np.std(t_distances))
+            distance_unc = ufloat(np.mean(distances), np.std(distances))
             compact_unc = ufloat(np.mean(compactnesses), np.std(compactnesses))
             angle_unc = ufloat(np.mean(angles), np.std(angles))
         else:
             area_unc = ufloat(0, 0)
-            t_dist_unc = ufloat(0, 0)
+            distance_unc = ufloat(0, 0)
             compact_unc = ufloat(0, 0)
             angle_unc = ufloat(0, 0)
         
         return {
             "Area": area_unc,
-            "T-Dist": t_dist_unc,
+            "Distance": distance_unc,
             "Compact": compact_unc,
             "Angle": angle_unc
         }
@@ -875,8 +875,8 @@ class Analyzer:
 
 
     def visualize_heart_vector(self, original_data, segment_start_global, segment_end_global, proj_name, 
-                            title_suffix="", ax=None, show=True, save_path=None, 
-                            uncertainty_ms=100, n_realizations=100, display_legend=True):
+                                title_suffix="", ax=None, show=True, save_path=None, 
+                                uncertainty_ms=100, n_realizations=100, display_legend=True):
         """
         Visualize a 2D projection of the heart vector with metrics and uncertainty bars.
         
@@ -916,6 +916,7 @@ class Analyzer:
         ValueError
             If input data is invalid or segment indices are out of bounds.
         """
+
         # Input validation
         if original_data is None or len(original_data) < 2:
             raise ValueError("original_data must contain at least 2 components")
@@ -932,17 +933,17 @@ class Analyzer:
 
         # Determine if this is a standalone plot
         standalone_plot = ax is None
-        
+            
         # Create figure and axes if needed
         if standalone_plot:
             fig, ax = plt.subplots(figsize=(7, 7), dpi=100)
 
-        # Choose plot color based on whether it's standalone (grayscale) or embedded (color)
+        # Choose plot color
         if standalone_plot:
             grayscale_map = {
-                "xy-Projection": '#2F2F2F',    # Dark gray
-                "xz-Projection": '#5F5F5F',    # Medium gray
-                "yz-Projection": "#FFFFFF"     # Medium-dark gray
+                "xy-Projection": '#2F2F2F',
+                "xz-Projection": '#5F5F5F',
+                "yz-Projection": "#FFFFFF"
             }
             plot_color = grayscale_map.get(proj_name, '#4F4F4F')
             arrow_color = '#000000'
@@ -962,7 +963,7 @@ class Analyzer:
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('gray')
         ax.spines['bottom'].set_color('gray')
-        ax.tick_params(axis='both', which='major', labelsize=10, colors='gray')
+        ax.tick_params(axis='both', which='major', labelsize=14, colors='gray')  # ⬅ bigger ticks
         ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
         ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
         ax.set_aspect('equal', adjustable='box')
@@ -979,7 +980,7 @@ class Analyzer:
             logging.error(f"Error calculating uncertain metrics for {proj_name}: {e}")
             uncertain_metrics = {}
 
-        # Format metrics text with proper error handling
+        # Format metrics text
         if len(component1) <= 2:
             metrics_text = "Metrics N/A\n(Insufficient data)"
         elif not uncertain_metrics:
@@ -988,7 +989,7 @@ class Analyzer:
             try:
                 metrics_text = (
                     f'Area: ${uncertain_metrics["Area"].n:.3f} \\pm {uncertain_metrics["Area"].s:.3f}$ $pT^2$\n'
-                    f'T-Dist: ${uncertain_metrics["T-Dist"].n:.2f} \\pm {uncertain_metrics["T-Dist"].s:.2f}$ $pT$\n'
+                    f'Distance: ${uncertain_metrics["Distance"].n:.2f} \\pm {uncertain_metrics["Distance"].s:.2f}$ $pT$\n'
                     f'Compact: ${uncertain_metrics["Compact"].n:.4f} \\pm {uncertain_metrics["Compact"].s:.4f}$ $pT$\n'
                     f'Angle: ${uncertain_metrics["Angle"].n:.1f} \\pm {uncertain_metrics["Angle"].s:.1f} ^\circ$'
                 )
@@ -996,36 +997,33 @@ class Analyzer:
                 logging.warning(f"Error formatting uncertain metrics for {proj_name}: {e}")
                 metrics_text = "Metrics Error\n(Formatting failed)"
 
+        # Larger metrics text box
         if display_legend:
             ax.text(0.05, 0.95, metrics_text, 
                     transform=ax.transAxes, 
-                    fontsize=9, 
-                    fontweight='bold', 
+                    fontsize=14, fontweight='bold',  # ⬅ bigger metrics text
                     color='black',
                     verticalalignment='top', 
-                    bbox=dict(facecolor='white', 
-                            edgecolor='gray', 
-                            alpha=0.8, 
-                            boxstyle='round,pad=0.3'))
+                    bbox=dict(facecolor='white', edgecolor='gray', alpha=0.8, boxstyle='round,pad=0.3'))
 
-        # Configure axes limits to be symmetric
+        # Symmetric limits
         current_xlim = ax.get_xlim()
         current_ylim = ax.get_ylim()
         max_limit = max(np.max(np.abs(current_xlim)), np.max(np.abs(current_ylim))) * 1.1
         ax.set_xlim(-max_limit, max_limit)
         ax.set_ylim(-max_limit, max_limit)
 
-        # Set appropriate axis labels
+        # Axis labels (bigger font)
         label_map = {
             "xy-Projection": ('$B_x$ [$pT$]', '$B_y$ [$pT$]'),
             "xz-Projection": ('$B_x$ [$pT$]', '$B_z$ [$pT$]'),
             "yz-Projection": ('$B_y$ [$pT$]', '$B_z$ [$pT$]')
         }
         xlabel, ylabel = label_map.get(proj_name, ('Component 1', 'Component 2'))
-        ax.set_xlabel(xlabel, fontsize=12)
-        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_xlabel(xlabel, fontsize=16)  # ⬅ bigger x label
+        ax.set_ylabel(ylabel, fontsize=16)  # ⬅ bigger y label
 
-        # Format tick labels for clean appearance
+        # Format tick labels
         threshold = 1e-3 * max_limit
         x_ticks = ax.get_xticks()
         y_ticks = ax.get_yticks()
@@ -1036,17 +1034,15 @@ class Analyzer:
         ax.set_yticks(y_ticks)
         ax.set_yticklabels(y_labels)
 
-        # Add legend
-        ax.legend(fontsize=10, loc='lower right', frameon=True, 
-                facecolor='white', edgecolor='gray', framealpha=0.8)
+        # Legend with larger font
+        ax.legend(fontsize=14, loc='lower right', frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
 
-        # Handle standalone plot finalization
+        # Standalone plot title (bigger font)
         if standalone_plot:
             title = f"Heart Vector Projection: {proj_name}"
             if title_suffix:
                 title += f" - {title_suffix}"
-            
-            plt.suptitle(title, fontsize=16, fontweight='bold')
+            plt.suptitle(title, fontsize=18, fontweight='bold')  # ⬅ bigger title
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             
             if save_path:
@@ -1058,10 +1054,8 @@ class Analyzer:
             
             if show:
                 plt.show()
-            
-            plt.close(fig)  # Close the figure to free memory
+            plt.close(fig)
 
-        # Log metrics information
         logging.info(f"Uncertain metrics for {proj_name}: {metrics_text}")
 
         return ax, uncertain_metrics

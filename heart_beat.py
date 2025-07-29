@@ -119,7 +119,6 @@ def load_patient_data(patient_id: str, run_id: str | None) -> tuple | None:
     
     # Dynamically get model class from the analyzer module
     # Assuming 'analyzer' module has UNet1D defined.
-    # If not, adjust the import `from MCG_segmentation.model.model import ...`
     model_class = getattr(analyzer, CONFIG["model_class_name"])
     
     analysis_instance = Analyzer(
@@ -243,7 +242,7 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
             elif 'y' in valid_components and 'z' in valid_components:
                 proj_name = "yz-Projection"
                 sensor_data = np.array([valid_components['y'], valid_components['z']])
-                # Set background color for yz projection plots
+                # Set background color for yz projection plots in the grid view
                 for fig_ax in figs.values():
                     fig_ax[1][row_idx, col_idx].set_facecolor("#DCDCDC")
             else:
@@ -258,12 +257,26 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
                 "st": (qrs_end + 1, t_start, "ST")
             }
             
+            # --- MODIFICATION START: Define paths for saving individual plots ---
+            sensor_base_path = os.path.join(CONFIG["results_base_dir"], f"{quspin_id}_{proj_name[:2]}")
+            patient_run_path = os.path.join(sensor_base_path, "Patients", f"{patient_id}_{run_id}")
+            # --- MODIFICATION END ---
+
             metrics_all_segments = {}
             for seg_key, (start, end, seg_name) in segments_info.items():
+                
+                # --- MODIFICATION START: Create directories and define save path ---
+                segment_plot_dir = os.path.join(patient_run_path, f"{seg_name}_heart_vector")
+                os.makedirs(segment_plot_dir, exist_ok=True)
+                individual_plot_save_path = os.path.join(segment_plot_dir, f"{quspin_id}_{proj_name[:2]}.pdf")
+                # --- MODIFICATION END ---
+                
                 _, metrics = analysis.visualize_heart_vector(
                     original_data=sensor_data, segment_start_global=start, segment_end_global=end,
                     proj_name=proj_name, title_suffix=fr"{seg_name} Segment - {quspin_id}",
-                    show=False, uncertainty_ms=40
+                    show=False, 
+                    save_path=individual_plot_save_path, # Pass the save path
+                    uncertainty_ms=40
                 )
                 metrics_all_segments[seg_key] = metrics
 
@@ -280,7 +293,6 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
                 ax.set_ylim(-lim, lim)
 
             # --- Save Results to CSV ---
-            sensor_base_path = os.path.join(CONFIG["results_base_dir"], f"{quspin_id}_{proj_name[:2]}")
             output_file = os.path.join(sensor_base_path, "result.csv")
             os.makedirs(sensor_base_path, exist_ok=True)
             
@@ -303,7 +315,7 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
     # --- Finalize and Save Grid Plots ---
     for seg_key, (fig, _) in figs.items():
         title = fr"{seg_key.upper()} Segment Heart Vector Projections - {patient_id}_{run_id}"
-        fig.suptitle(title, fontsize=16)
+        fig.suptitle(title, fontsize=24, y=0.98)
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])
         save_path = os.path.join(CONFIG["overall_plots_dir"], f"{seg_key.upper()}_heart_vectors_{patient_id}_{run_id}.pdf")
         fig.savefig(save_path, dpi=200, bbox_inches='tight')
