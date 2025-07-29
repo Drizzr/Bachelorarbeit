@@ -1,1113 +1,670 @@
 # =============================================================================
 # Library Imports
 # =============================================================================
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import t, ttest_ind, norm
-import seaborn as sns
-import pandas as pd
-from sklearn.metrics import roc_curve, auc, f1_score, confusion_matrix
+import glob
 import json
 import os
-import glob
+from typing import Dict, List, Tuple
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from scipy.stats import t, ttest_ind
+from sklearn.metrics import auc, confusion_matrix, f1_score, roc_curve
 
 # =============================================================================
 # Global Configuration and Styling
 # =============================================================================
 
-# Apply a clean, white grid style to all Seaborn plots.
+def setup_matplotlib_for_latex():
+    """Configures Matplotlib to use LaTeX for rendering text in plots."""
+    try:
+        plt.rcParams.update({
+            "text.usetex": True,
+            "font.family": "serif",
+            "font.serif": ["Computer Modern Roman"],
+            "axes.labelsize": 12,
+            "font.size": 12,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+            "text.latex.preamble": r"\usepackage{gensymb}"
+        })
+        print("Matplotlib configured to use LaTeX for plotting.")
+    except Exception as e:
+        print(f"Could not configure LaTeX for plots, falling back to default. Error: {e}")
+        plt.rcParams.update(plt.rcParamsDefault)
+
+# Apply plotting styles
 sns.set(style="whitegrid")
+setup_matplotlib_for_latex()
 
-# Define base output directories for storing results.
+# --- Directories ---
 RESULTS_BASE_DIR = "Results"
-# Directory for plots summarizing all data (e.g., demographics, aggregated analyses).
 OVERALL_PLOTS_DIR = os.path.join(RESULTS_BASE_DIR, "Overall_Generated_Plots")
-# Directory for tables/CSVs summarizing all data.
 OVERALL_TABLES_DIR = os.path.join(RESULTS_BASE_DIR, "Overall_Generated_Tables")
-
-# Create the output directories if they do not already exist.
 os.makedirs(OVERALL_PLOTS_DIR, exist_ok=True)
 os.makedirs(OVERALL_TABLES_DIR, exist_ok=True)
 
-# Number of Monte Carlo iterations for uncertainty analysis.
-# A higher number (e.g., 1000) provides more robust results but takes longer.
+# --- Analysis Parameters ---
 N_MC_ITERATIONS = 500
-# Confidence level for calculating confidence intervals from MC simulations.
 CONFIDENCE_LEVEL = 0.95
 
-# Define the feature columns associated with different ECG wave segments.
-t_cols = ["t_Area", "t_T-Dist", "t_Compact", "t_Angle"]
-qrs_cols = ["qrs_Area", "qrs_T-Dist", "qrs_Compact", "qrs_Angle"]
-st_cols = ["st_Area", "st_T-Dist", "st_Compact", "st_Angle"]
-segment_cols_map = {"T": t_cols, "QRS": qrs_cols, "ST": st_cols}
-
-# Short names for features, used for looping and labeling.
+# --- Feature Definitions ---
+segment_cols_map = {
+    "T": ["t_Area", "t_T-Dist", "t_Compact", "t_Angle"],
+    "QRS": ["qrs_Area", "qrs_T-Dist", "qrs_Compact", "qrs_Angle"],
+    "ST": ["st_Area", "st_T-Dist", "st_Compact", "st_Angle"]
+}
 features_to_analyze_short = ["Area", "T-Dist", "Compact", "Angle"]
 
-# Configuration for statistical analysis of each feature.
-# Defines the hypothesis for the t-test and whether to remove outliers.
-# 'data2_greater': Healthy > ACM (e.g., area is expected to be larger in healthy patients).
-# 'not_equal': Two-tailed test where the direction is not pre-specified.
+# --- Feature-Specific Analysis Configuration ---
 feature_analysis_config = {
-    "default": {"hypothesis": "not_equal", "remove_outliers": False},
-    "t_Area": {"hypothesis": "not_equal", "remove_outliers": True},
-    "t_Compact": {"hypothesis": "not_equal", "remove_outliers": False},
-    "t_T-Dist": {"hypothesis": "not_equal", "remove_outliers": True},
-    "qrs_Area": {"hypothesis": "not_equal", "remove_outliers": True},
-    "qrs_Compact": {"hypothesis": "not_equal", "remove_outliers": True},
-    "qrs_T-Dist": {"hypothesis": "not_equal", "remove_outliers": True},
-    "st_Area": {"hypothesis": "not_equal", "remove_outliers": True},
-    "st_Compact": {"hypothesis": "not_equal", "remove_outliers": True},
-    "st_T-Dist": {"hypothesis": "not_equal", "remove_outliers": True},
-    "t_Angle": {"hypothesis": "not_equal", "remove_outliers": False},
-    "qrs_Angle": {"hypothesis": "not_equal", "remove_outliers": False},
-    "st_Angle": {"hypothesis": "not_equal", "remove_outliers": False},
+    "default": {"hypothesis": "not_equal", "remove_outliers": False, "units": r"pT", "show_outliers_in_plot": True},
+    "t_Area": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT$^2$", "show_outliers_in_plot": True},
+    "t_Compact": {"hypothesis": "not_equal", "remove_outliers": False, "units": r"pT$^2$", "show_outliers_in_plot": True},
+    "t_T-Dist": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT", "show_outliers_in_plot": True},
+    "qrs_Area": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT$^2$", "show_outliers_in_plot": True},
+    "qrs_Compact": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT$^2$", "show_outliers_in_plot": True},
+    "qrs_T-Dist": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT", "show_outliers_in_plot": True},
+    "st_Area": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT$^2$", "show_outliers_in_plot": True},
+    "st_Compact": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT$^2$", "show_outliers_in_plot": True},
+    "st_T-Dist": {"hypothesis": "not_equal", "remove_outliers": True, "units": r"pT", "show_outliers_in_plot": True},
+    "t_Angle": {"hypothesis": "not_equal", "remove_outliers": False, "units": r"$\degree$", "show_outliers_in_plot": True},
+    "qrs_Angle": {"hypothesis": "not_equal", "remove_outliers": False, "units": r"$\degree$", "show_outliers_in_plot": True},
+    "st_Angle": {"hypothesis": "not_equal", "remove_outliers": False, "units": r"$\degree$", "show_outliers_in_plot": True},
 }
-
 
 # =============================================================================
 # Demographics Data Loading and Preparation
 # =============================================================================
-
-# Load patient metadata from the setup JSON file.
 with open("Data/setup.json") as f:
     patient_meta_data = json.load(f)
 
-# Process the raw metadata into a structured list of records.
 demographic_records = []
 for pid, p_data in patient_meta_data.items():
     ACM_status_patient = None
-    # Extract ACM status from the first available run for the patient.
     if p_data.get("runs"):
         first_run_id = next(iter(p_data["runs"]))
         ACM_status_patient = p_data["runs"][first_run_id].get("ACM")
 
-    # Create a dictionary for the patient's demographic information.
+    # Expanded height and age processing
+    height_val = p_data.get("height")
+    if height_val not in [None, ""]:
+        height = float(height_val)
+    else:
+        height = None
+        
+    age_val = p_data.get("age")
+    if age_val not in [None, ""]:
+        age = int(age_val)
+    else:
+        age = None
+
     record = {
-        "patient": pid,
-        "gender": p_data.get("gender", "unknown") or "unknown", # Handle None or empty strings
-        "height": float(p_data.get("height")) if p_data.get("height") not in [None, ""] else None,
-        "age": int(p_data.get("age")) if p_data.get("age") not in [None, ""] else None,
-        "ACM": ACM_status_patient
+        "patient": pid, "gender": p_data.get("gender", "unknown") or "unknown",
+        "height": height, "age": age, "ACM": ACM_status_patient
     }
     demographic_records.append(record)
 
-# Convert the list of records into a pandas DataFrame.
 df_demographics = pd.DataFrame(demographic_records)
-
-# Remove patients where ACM status could not be determined.
 df_demographics.dropna(subset=['ACM'], inplace=True)
-
-# Define a consistent B&W palette for gender across all plots.
 gender_palette_global = {"male": "#555555", "female": "#AAAAAA"}
-
 
 # =============================================================================
 # Demographics Analysis and Plotting Functions
 # =============================================================================
-
-def plot_gender_distribution(data, title, save_path=None):
-    """
-    Generates and saves a bar plot showing the gender distribution.
-
-    Args:
-        data (pd.DataFrame): DataFrame containing a 'gender' column.
-        title (str): The title for the plot.
-        save_path (str, optional): Path to save the plot image. If None, shows the plot.
-    """
-    # Count occurrences of each gender, ensuring all categories are present.
+def plot_gender_distribution(data: pd.DataFrame, title: str, save_path: str = None):
+    """Generates and saves a bar plot of gender distribution."""
     counts = data["gender"].value_counts().reindex(["male", "female"]).fillna(0)
-
-    # Create the figure and axes for the plot.
     plt.figure(figsize=(7, 5))
-    # Generate the bar plot using the B&W palette and add black edges for clarity.
     palette = [gender_palette_global.get(g, "#cccccc") for g in counts.index]
     ax = sns.barplot(x=counts.index, y=counts.values, palette=palette, edgecolor='black')
 
-    # Set plot titles and labels.
     plt.title(title)
-    plt.ylabel("Number of Patients")
-    plt.xlabel("Gender")
+    plt.ylabel(r"Number of Patients")
+    plt.xlabel(r"Gender")
 
-    # Add text labels on top of each bar to show the count.
     for i, v in enumerate(counts.values):
         ax.text(i, v + max(counts.values, default=0) * 0.03, str(int(v)),
                 ha='center', va='bottom', fontweight='bold', fontsize=11)
 
-    # Adjust y-axis limits for better visualization and apply tight layout.
     plt.ylim(0, max(counts.values, default=1) * 1.20)
     plt.tight_layout()
-
-    # Save or display the plot.
     if save_path:
         plt.savefig(save_path, bbox_inches='tight')
         plt.close()
     else:
         plt.show()
 
-# --- Plotting Gender Distributions ---
-print("\n--- GENDER DISTRIBUTION ---")
-plot_gender_distribution(
-    df_demographics,
-    "Gender Distribution (All Patients)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_all.pdf")
-)
-plot_gender_distribution(
-    df_demographics[df_demographics["ACM"] == True],
-    "Gender Distribution (ACM)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_ACM.pdf")
-)
-plot_gender_distribution(
-    df_demographics[df_demographics["ACM"] == False],
-    "Gender Distribution (Healthy)",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_healthy.pdf")
-)
-
-
-def plot_hist_and_stats(data, column, title, color, save_path=None):
-    """
-    Calculates summary statistics, prints them, and plots a histogram for a given column.
-
-    Args:
-        data (pd.DataFrame): DataFrame containing the data.
-        column (str): The column to analyze (e.g., 'age', 'height').
-        title (str): The title for the plot.
-        color (str): The color for the histogram (will be converted to grayscale).
-        save_path (str, optional): Path to save the plot. If None, shows the plot.
-
-    Returns:
-        dict: A dictionary of calculated statistics (mean, std, count, median).
-    """
-    # Remove missing values for the specified column.
+def plot_hist_and_stats(data: pd.DataFrame, column: str, title: str, color: str, save_path: str = None) -> Dict:
+    """Calculates stats and plots a histogram for a given column."""
     valid_data = data[column].dropna()
-    # Initialize stats dictionary.
     stats = {"mean": np.nan, "std": np.nan, "count": len(valid_data), "median": np.nan}
 
     if not valid_data.empty:
-        # Calculate statistics.
-        stats["mean"] = valid_data.mean()
-        stats["std"] = valid_data.std()
-        stats["median"] = valid_data.median()
+        stats.update({"mean": valid_data.mean(), "std": valid_data.std(), "median": valid_data.median()})
         print(f"{title}: Mean = {stats['mean']:.2f}, Median = {stats['median']:.2f}, "
               f"Std = {stats['std']:.2f}, N = {stats['count']}")
-
-        # Create the plot.
         plt.figure(figsize=(8, 5))
-        sns.histplot(valid_data, kde=True, color=color, bins=10) # `color` is now a shade of gray from the call.
-
-        # Add vertical lines for mean and standard deviation using black/gray and different linestyles.
-        plt.axvline(stats['mean'], color='black', linestyle='--', label=f'Mean = {stats["mean"]:.2f}')
+        sns.histplot(valid_data, kde=True, color=color, bins=10)
+        plt.axvline(stats['mean'], color='black', linestyle='--', label=fr'Mean = {stats["mean"]:.2f}')
         if not np.isnan(stats['std']):
-            plt.axvline(stats['mean'] + stats['std'], color='dimgray', linestyle=':', label=f'+1 SD = {stats["mean"] + stats["std"]:.2f}')
-            plt.axvline(stats['mean'] - stats['std'], color='dimgray', linestyle=':', label=f'-1 SD = {stats["mean"] - stats["std"]:.2f}')
-
-        # Set plot titles, labels, and legend.
+            plt.axvline(stats['mean'] + stats['std'], color='dimgray', linestyle=':', label=fr'+1 SD = {stats["mean"] + stats["std"]:.2f}')
+            plt.axvline(stats['mean'] - stats['std'], color='dimgray', linestyle=':', label=fr'-1 SD = {stats["mean"] - stats["std"]:.2f}')
         plt.title(title)
         plt.xlabel(column.capitalize())
-        plt.ylabel("Frequency")
+        plt.ylabel(r"Frequency")
         plt.legend()
         plt.tight_layout()
-
-        # Save or display the plot.
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
             plt.close()
-        else:
-            plt.show()
     else:
         print(f"{title}: No valid data.")
-
     return stats
 
-# --- Plotting Age and Height Distributions ---
-demographics_summary_stats = {}
-print("\n--- AGE & HEIGHT (All Patients) ---")
-# Use shades of gray for the histogram color argument
-demographics_summary_stats["age_all"] = plot_hist_and_stats(
-    df_demographics, "age", "Age Distribution (All)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_all.pdf")
-)
-demographics_summary_stats["height_all"] = plot_hist_and_stats(
-    df_demographics, "height", "Height Distribution (All)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_all.pdf")
-)
+# =============================================================================
+# Core Statistical & Plotting Helper Functions
+# =============================================================================
 
-print("\n--- AGE & HEIGHT (ACM Positive) ---")
-demographics_summary_stats["age_ACM"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ACM"] == True], "age", "Age Distribution (ACM)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_ACM.pdf")
-)
-demographics_summary_stats["height_ACM"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ACM"] == True], "height", "Height Distribution (ACM)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_ACM.pdf")
-)
+def remove_outliers_iqr(data: np.ndarray) -> np.ndarray:
+    """Removes outliers from a 1D array using the IQR method."""
+    if data.size == 0:
+        return data
+    q1, q3 = np.percentile(data, [25, 75])
+    iqr = q3 - q1
+    lower_bound, upper_bound = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    return data[(data >= lower_bound) & (data <= upper_bound)]
 
-print("\n--- AGE & HEIGHT (ACM Negative) ---")
-demographics_summary_stats["age_healthy"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ACM"] == False], "age", "Age Distribution (Healthy)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_age_healthy.pdf")
-)
-demographics_summary_stats["height_healthy"] = plot_hist_and_stats(
-    df_demographics[df_demographics["ACM"] == False], "height", "Height Distribution (Healthy)", "darkgray",
-    save_path=os.path.join(OVERALL_PLOTS_DIR, "demographics_height_healthy.pdf")
-)
+def _plot_t_distribution(t_stat: float, df: int, p_value_area_cond, p_value_area_label: str, title: str, save_path: str):
+    """Helper to plot the t-distribution with a shaded p-value area."""
+    plt.figure(figsize=(10, 6))
+    x_t = np.linspace(-4, 4, 1000)
+    y_t = t.pdf(x_t, df)
+    plt.plot(x_t, y_t, label=r"t-distribution", color='black')
+    plt.fill_between(x_t, 0, y_t, where=p_value_area_cond(x_t), color='lightgray', alpha=0.8, label=p_value_area_label)
+    plt.axvline(x=t_stat, color='black', linestyle='--', label=fr't-statistic: {t_stat:.2f}')
+    plt.xlabel(r"t-value")
+    plt.ylabel(r"Probability Density")
+    plt.title(title)
+    plt.legend()
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
 
-# Save the collected demographic stats to a JSON file.
-summary_path = os.path.join(OVERALL_TABLES_DIR, "demographics_summary.json")
-with open(summary_path, "w") as f:
-    json.dump(demographics_summary_stats, f, indent=4)
-print(f"\nDemographics summary stats saved to {summary_path}")
+def _plot_feature_boxplot(data_raw: Tuple[np.ndarray, np.ndarray], data_cleaned: Tuple[np.ndarray, np.ndarray],
+                        labels: Tuple[str, str], title: str, y_label: str, mc_medians: Tuple[List[float], List[float]],
+                        threshold: float, show_outliers: bool, save_path: str):
+    """Helper to plot the feature boxplot with MC medians and data points."""
+    fig, ax = plt.subplots(figsize=(8, 6))
+    x_labels = [fr"{labels[i]} (N={len(d)})" for i, d in enumerate(data_cleaned)]
 
+    sns.boxplot(data=list(data_raw), ax=ax, palette=["#DDDDDD", "#777777"], boxprops=dict(edgecolor='k'),
+                medianprops=dict(color='k'), whiskerprops=dict(color='dimgray'), capprops=dict(color='k'),
+                showfliers=show_outliers)
+
+    for i, group_data in enumerate(data_cleaned):
+        if len(group_data) > 0:
+            sns.stripplot(y=group_data, x=[i] * len(group_data), ax=ax, color='black', size=4, alpha=0.5, jitter=0.1)
+
+    ax.scatter([], [], color='black', alpha=0.5, s=30, label=r'Individual Data Points')
+
+    if mc_medians and all(mc_medians):
+        low_p, high_p = (1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100
+        for i, mc_data in enumerate(mc_medians):
+            mean_med = np.mean(mc_data)
+            low_ci, high_ci = np.percentile(mc_data, [low_p, high_p])
+            y_err = [[mean_med - low_ci], [high_ci - mean_med]]
+            
+            if i == 0:
+                label = fr'MC Median ({CONFIDENCE_LEVEL*100:.0f}\% CI)'
+            else:
+                label = None
+                
+            ax.errorbar(x=i, y=mean_med, yerr=y_err, fmt='X', color='black', ecolor='black',
+                        elinewidth=2, capsize=8, capthick=2, markersize=6, label=label)
+
+    if threshold is not None and not np.isnan(threshold):
+        ax.axhline(y=threshold, color='black', linestyle='-.', label=fr'Optimal Threshold: {threshold:.2f}')
+
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(x_labels)
+    ax.set_ylabel(y_label)
+    ax.set_title(title)
+    handles, legend_labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(legend_labels, handles))
+    ax.legend(by_label.values(), by_label.keys(), loc='best')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+def _plot_mc_distribution(data: List[float], nominal_val: float, name: str, title: str, save_path: str):
+    """Helper to plot the distribution of a metric from Monte Carlo simulations."""
+    if not data: return
+    plt.figure(figsize=(8, 5))
+    sns.histplot(data, kde=True, bins=30, color='darkgray')
+    plt.title(title)
+    plt.xlabel(name)
+    if not np.isnan(nominal_val):
+        plt.axvline(nominal_val, color='black', linestyle='--', label=fr'Nominal ({nominal_val:.3f})')
+    mean_val = np.mean(data)
+    plt.axvline(mean_val, color='dimgray', linestyle=':', label=fr'Mean ({mean_val:.3f})')
+    plt.legend()
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+
+def _plot_roc_curve(y_true: np.ndarray, y_scores: np.ndarray, save_path: str):
+    """Helper to plot an ROC curve."""
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    roc_auc = auc(fpr, tpr)
+    opt_idx = np.argmax(tpr - fpr) if len(tpr) > 0 else 0
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='black', lw=2, label=fr'ROC (AUC={roc_auc:.2f})')
+    if len(fpr) > opt_idx:
+        plt.plot(fpr[opt_idx], tpr[opt_idx], 'ko', markersize=8, label=r'Optimal Threshold')
+    plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
+    plt.xlabel(r'False Positive Rate')
+    plt.ylabel(r'True Positive Rate')
+    plt.title(r'ROC Curve')
+    plt.legend(loc='lower right')
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+
+def _plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, display_labels: List[str], save_path: str):
+    """Helper to plot a normalized confusion matrix."""
+    cm = confusion_matrix(y_true, y_pred)
+    cm_sum_rows = cm.sum(axis=1)[:, np.newaxis]
+    cm_perc = np.zeros_like(cm, dtype=float)
+    np.divide(cm.astype('float'), cm_sum_rows, out=cm_perc, where=cm_sum_rows != 0)
+    cm_perc *= 100
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm_perc, annot=True, fmt=".2f", cmap="Greys", cbar=False,
+                linecolor='black', linewidths=0.5,
+                xticklabels=display_labels, yticklabels=display_labels)
+    plt.title(r"Confusion Matrix (\%)")
+    plt.xlabel(r"Predicted Label")
+    plt.ylabel(r"True Label")
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
 
 # =============================================================================
 # Core Statistical Analysis Functions
 # =============================================================================
 
-def remove_outliers_iqr(data):
-    """
-    Removes outliers from a 1D array using the Interquartile Range (IQR) method.
-
-    Args:
-        data (array-like): The input data.
-
-    Returns:
-        np.ndarray: Data with outliers removed.
-    """
-    data_arr = np.asarray(data)
-    if data_arr.size == 0:
-        return data_arr
-
-    # Calculate the first (Q1) and third (Q3) quartiles.
-    q1, q3 = np.percentile(data_arr, [25, 75])
-    # Calculate the Interquartile Range (IQR).
-    iqr = q3 - q1
-    # Define the lower and upper bounds for outlier detection.
-    lower_bound = q1 - 1.5 * iqr
-    upper_bound = q3 + 1.5 * iqr
-    # Return the data within the non-outlier range.
-    return data_arr[(data_arr >= lower_bound) & (data_arr <= upper_bound)]
-
-
-def _perform_single_t_test_run(data1_sample, data2_sample, hypothesis, labels):
-    """
-    Helper function to perform a single Welch's t-test for one MC iteration.
-
-    Args:
-        data1_sample (np.ndarray): Sample data for group 1.
-        data2_sample (np.ndarray): Sample data for group 2.
-        hypothesis (str): The hypothesis ('data1_greater', 'data2_greater', 'not_equal').
-        labels (tuple): Names of the two groups.
-
-    Returns:
-        tuple: (t-statistic, p-value, is_significant).
-    """
-    # Ensure there is enough data in both samples to perform a test.
-    if len(data1_sample) < 2 or len(data2_sample) < 2:
+def _perform_single_t_test_run(data1: np.ndarray, data2: np.ndarray, hypothesis: str) -> Tuple[float, float, bool]:
+    """Helper for a single Welch's t-test run in an MC loop."""
+    if len(data1) < 2 or len(data2) < 2:
         return np.nan, np.nan, False
-
-    # Perform Welch's t-test (assumes unequal variances).
-    t_stat, p_val_two_tailed = ttest_ind(data1_sample, data2_sample, equal_var=False, nan_policy='omit')
-
+    t_stat, p_val_two_tailed = ttest_ind(data1, data2, equal_var=False, nan_policy='omit')
     if np.isnan(t_stat) or np.isnan(p_val_two_tailed):
         return np.nan, np.nan, False
 
-    # Calculate one-tailed p-value from the two-tailed result based on the hypothesis.
     if hypothesis == "data1_greater":
         p_value = p_val_two_tailed / 2 if t_stat > 0 else 1 - (p_val_two_tailed / 2)
     elif hypothesis == "data2_greater":
         p_value = p_val_two_tailed / 2 if t_stat < 0 else 1 - (p_val_two_tailed / 2)
-    else:  # 'not_equal'
+    else:
         p_value = p_val_two_tailed
-
     return t_stat, p_value, p_value < 0.05
 
-
-def perform_t_test(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None, name="",
-                   hypothesis="data1_greater", threshold=None, labels=("Group 1", "Group 2"),
-                   remove_outliers=False, save_plots_prefix=None):
-    """
-    Performs a t-test on nominal data and optionally a Monte Carlo simulation if uncertainties are provided.
-    Generates plots for the t-distribution and violin plots with MC median error bars.
-
-    Args:
-        data1_nominal, data2_nominal (array-like): Nominal data for group 1 and 2.
-        data1_unc, data2_unc (array-like, optional): Uncertainties for group 1 and 2.
-        name (str): Name of the feature being tested, for titles.
-        hypothesis (str): The hypothesis type.
-        threshold (float, optional): An optimal threshold to display on the plot.
-        labels (tuple): Names for the two groups.
-        remove_outliers (bool): If True, remove outliers using IQR method.
-        save_plots_prefix (str, optional): Prefix for saving plot files.
-
-    Returns:
-        tuple: Contains results for (t-stat, p-value, significance). Each result is a
-               tuple of (mean, ci_lower, ci_upper). For nominal-only, CIs are NaN.
-    """
-    data1_nom_arr = np.asarray(data1_nominal)
-    data2_nom_arr = np.asarray(data2_nominal)
-
-    # Clean data for plotting and nominal analysis by optionally removing outliers.
+def perform_t_test(data1_nom, data2_nom, data1_unc, data2_unc, name, hypothesis, threshold, labels,
+                   remove_outliers, show_outliers_in_plot, save_plots_prefix, y_label):
+    """Performs t-test on nominal data and optional MC simulation."""
+    data1_nom_arr, data2_nom_arr = np.asarray(data1_nom), np.asarray(data2_nom)
     if remove_outliers:
-        data1_plot_clean = remove_outliers_iqr(data1_nom_arr)
-        data2_plot_clean = remove_outliers_iqr(data2_nom_arr)
+        data1_clean = remove_outliers_iqr(data1_nom_arr)
+        data2_clean = remove_outliers_iqr(data2_nom_arr)
     else:
-        data1_plot_clean = data1_nom_arr
-        data2_plot_clean = data2_nom_arr
+        data1_clean = data1_nom_arr
+        data2_clean = data2_nom_arr
 
-    print(f"T-Test for {name} (Nominal Values): Orig D1:{len(data1_nom_arr)}, D2:{len(data2_nom_arr)}. "
-          f"Clean D1:{len(data1_plot_clean)}, D2:{len(data2_plot_clean)}")
-
-    # --- Nominal T-Test ---
-    nominal_t_stat, nominal_p_value, nominal_significant = np.nan, np.nan, False
-    group1_plot_label, group2_plot_label = labels[0], labels[1]
-    hypothesis_text_for_plot = f"{labels[0]} ≠ {labels[1]}" # Default for 'not_equal'
-
-    if len(data1_plot_clean) >= 2 and len(data2_plot_clean) >= 2:
-        nominal_t_stat, nominal_p_val_two_tailed = ttest_ind(
-            data1_plot_clean, data2_plot_clean, equal_var=False, nan_policy='omit'
-        )
-        if not (np.isnan(nominal_t_stat) or np.isnan(nominal_p_val_two_tailed)):
-            # Adjust p-value and labels based on the one-tailed hypothesis.
-            if hypothesis == "data1_greater":
-                group1_plot_label = f'{labels[0]} (Higher)'
-                group2_plot_label = f'{labels[1]} (Lower)'
-                nominal_p_value = nominal_p_val_two_tailed / 2 if nominal_t_stat > 0 else 1 - (nominal_p_val_two_tailed / 2)
-                hypothesis_text_for_plot = f"{labels[0]} > {labels[1]}"
-            elif hypothesis == "data2_greater":
-                group1_plot_label = f'{labels[0]} (Lower)'
-                group2_plot_label = f'{labels[1]} (Higher)'
-                nominal_p_value = nominal_p_val_two_tailed / 2 if nominal_t_stat < 0 else 1 - (nominal_p_val_two_tailed / 2)
-                hypothesis_text_for_plot = f"{labels[0]} < {labels[1]}"
-            else:  # 'not_equal'
-                nominal_p_value = nominal_p_val_two_tailed
-
-            nominal_significant = nominal_p_value < 0.05
-            print(f"Hypothesis: {hypothesis_text_for_plot.replace(labels[0],'data1').replace(labels[1],'data2')}, T-statistic: {nominal_t_stat:.4f}")
-            if hypothesis == "not_equal":
-                print(f"Two-tailed p-value: {nominal_p_value:.4f}")
-            else:
-                print(f"One-tailed p-value: {nominal_p_value:.4f}")
-                print(f"Two-tailed p-value: {nominal_p_val_two_tailed:.4f}")
-            print(f"Result is statistically {'significant' if nominal_significant else 'not significant'} (p-value = {nominal_p_value:.4f})")
-
-            # --- Plot t-Distribution ---
-            df_freedom = len(data1_plot_clean) + len(data2_plot_clean) - 2
-            if df_freedom > 0:
-                plt.figure(figsize=(10, 6))
-                x_t = np.linspace(-4, 4, 1000)
-                y_t = t.pdf(x_t, df_freedom)
-                plt.plot(x_t, y_t, label="t-distribution", color='black')
-
-                # Define conditions for shading the p-value area.
+    print(f"T-Test for {name} (Nominal): N1={len(data1_clean)}, N2={len(data2_clean)}")
+    nom_t, nom_p, nom_sig = np.nan, np.nan, False
+    if len(data1_clean) >= 2 and len(data2_clean) >= 2:
+        nom_t, nom_p, nom_sig = _perform_single_t_test_run(data1_clean, data2_clean, hypothesis)
+        if not np.isnan(nom_p):
+            print(f"Hypothesis: {hypothesis}, Nominal T-stat: {nom_t:.4f}, P-val: {nom_p:.4f}, Significant: {nom_sig}")
+            df_freedom = len(data1_clean) + len(data2_clean) - 2
+            if df_freedom > 0 and save_plots_prefix:
+                # --- THIS IS THE CORRECTED PART ---
                 if hypothesis == "data1_greater":
-                    fill_cond = x_t > nominal_t_stat
-                    fill_label = f'p-value Area (t > {nominal_t_stat:.2f})'
+                    # For > and <, it's good practice to also put them in math mode for correct spacing
+                    title_hyp = fr"{labels[0]} $>$ {labels[1]}"
+                    cond = lambda x: x > nom_t
+                    area_label = fr'p-value (t > {nom_t:.2f})'
                 elif hypothesis == "data2_greater":
-                    fill_cond = x_t < nominal_t_stat
-                    fill_label = f'p-value Area (t < {nominal_t_stat:.2f})'
+                    title_hyp = fr"{labels[0]} $<$ {labels[1]}"
+                    cond = lambda x: x < nom_t
+                    area_label = fr'p-value (t < {nom_t:.2f})'
                 else: # 'not_equal'
-                    fill_cond = (x_t > abs(nominal_t_stat)) | (x_t < -abs(nominal_t_stat))
-                    fill_label = f'p-value Area (|t| > {abs(nominal_t_stat):.2f})'
+                    # Wrap the \neq symbol in dollar signs for math mode
+                    title_hyp = fr"{labels[0]} $\neq$ {labels[1]}"
+                    cond = lambda x: (x > abs(nom_t)) | (x < -abs(nom_t))
+                    area_label = fr'p-value ($|t|$ > {abs(nom_t):.2f})'
+                
+                _plot_t_distribution(nom_t, df_freedom, cond, area_label, fr"t-Distribution (Hyp: {title_hyp})", f"{save_plots_prefix}_tdist.pdf")
 
-                plt.fill_between(x_t, 0, y_t, where=fill_cond, color='lightgray', alpha=0.8, label=fill_label)
-                plt.axvline(x=nominal_t_stat, color='black', linestyle='--', label=f't-statistic: {nominal_t_stat:.2f}')
-                plt.xlabel("t-value")
-                plt.ylabel("Probability Density")
-                plt.title(f"t-Distribution with Shaded p-value Area ({hypothesis_text_for_plot.replace(labels[0],'data1').replace(labels[1],'data2')})")
-                plt.legend()
-                if save_plots_prefix:
-                    plt.savefig(f"{save_plots_prefix}_tdist.pdf", bbox_inches='tight')
-                    plt.close()
-                else:
-                    plt.show()
-        else:
-            print("Nominal t-test resulted in NaN.")
-    else:
-        print("Not enough data for nominal t-test after cleaning.")
-
-    # --- Monte Carlo Simulation ---
-    mc_t_stats, mc_p_values, mc_medians_g1, mc_medians_g2 = [], [], [], []
-    if data1_unc is not None and data2_unc is not None and N_MC_ITERATIONS > 0:
-        print(f"\nPerforming MC ({N_MC_ITERATIONS} iter) for t-test of {name}...")
-        data1_unc_arr = np.asarray(data1_unc)
-        data2_unc_arr = np.asarray(data2_unc)
-        for i in range(N_MC_ITERATIONS):
-            if i % (N_MC_ITERATIONS // 10) == 0 and i > 0:
-                print(f"MC iter {i}...")
-
-            # Generate random samples based on nominal values and uncertainties.
-            d1_s = np.random.normal(data1_nom_arr, data1_unc_arr)
-            d2_s = np.random.normal(data2_nom_arr, data2_unc_arr)
+    mc_t_stats, mc_p_values, mc_medians1, mc_medians2 = [], [], [], []
+    has_unc = data1_unc is not None and data2_unc is not None
+    if has_unc and N_MC_ITERATIONS > 0:
+        print(f"Performing MC ({N_MC_ITERATIONS} iter) for t-test of {name}...")
+        for _ in range(N_MC_ITERATIONS):
+            d1_s = np.random.normal(data1_nom_arr, np.asarray(data1_unc))
+            d2_s = np.random.normal(data2_nom_arr, np.asarray(data2_unc))
             d1_sc = remove_outliers_iqr(d1_s) if remove_outliers else d1_s
             d2_sc = remove_outliers_iqr(d2_s) if remove_outliers else d2_s
-            
-            # Store medians for visualization
-            if len(d1_sc) > 0: mc_medians_g1.append(np.median(d1_sc))
-            if len(d2_sc) > 0: mc_medians_g2.append(np.median(d2_sc))
-
-            t_s_mc, p_v_mc, _ = _perform_single_t_test_run(d1_sc, d2_sc, hypothesis, labels)
-
+            if len(d1_sc) > 0: mc_medians1.append(np.median(d1_sc))
+            if len(d2_sc) > 0: mc_medians2.append(np.median(d2_sc))
+            t_s_mc, p_v_mc, _ = _perform_single_t_test_run(d1_sc, d2_sc, hypothesis)
             if not np.isnan(p_v_mc):
                 mc_t_stats.append(t_s_mc)
                 mc_p_values.append(p_v_mc)
 
-    
-    # --- Plot Box Plot with Nominal Data Points and MC Median Error Bars ---
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    # Data container for plotting
-    plot_data_bp = [
-        data1_nom_arr if len(data1_nom_arr) > 0 else np.array([]),
-        data2_nom_arr if len(data2_nom_arr) > 0 else np.array([])
-    ]
-
-    group_labels = [group1_plot_label, group2_plot_label]
-    x_labels = [f"{group_labels[i]} (N={len(plot_data_bp[i])})" for i in range(2)]
-
-    # Box plot for nominal data distribution
-    sns.boxplot(data=plot_data_bp, ax=ax,
-                palette=["#DDDDDD", "#777777"],
-                boxprops=dict(edgecolor='k'),
-                medianprops=dict(color='k'),
-                whiskerprops=dict(color='dimgray'),
-                capprops=dict(color='k'),
-                showfliers=True)
-    
-    plot_data_bp_clean = [remove_outliers_iqr(d) if remove_outliers else d for d in plot_data_bp]
-
-    # Overlay individual data points using stripplot
-    for i, group_data in enumerate(plot_data_bp_clean):
-        if len(group_data) > 0:
-            sns.stripplot(y=group_data, x=[i] * len(group_data), ax=ax,
-                        color='black', size=4, alpha=0.5, jitter=0.1)
-
-    # Add dummy scatter point for legend
-    scatter_handle = ax.scatter([], [], color='black', alpha=0.5, s=30, label='Individual Data Points')
-
-    # Plot MC medians with confidence intervals
-    if mc_medians_g1 and mc_medians_g2:
-        low_p = (1 - CONFIDENCE_LEVEL) / 2 * 100
-        high_p = (1 + CONFIDENCE_LEVEL) / 2 * 100
-
-        def plot_mc_median(x, mc_data, label=None):
-            mean_med = np.mean(mc_data)
-            low_ci, high_ci = np.percentile(mc_data, [low_p, high_p])
-            y_err = [[mean_med - low_ci], [high_ci - mean_med]]
-            ax.errorbar(
-                x=x, y=mean_med, yerr=y_err,
-                fmt='X',                        # bold marker
-                color='black',
-                ecolor='black',              # distinguish error bar color
-                elinewidth=2,                  # thicker error lines
-                capsize=8,                     # larger cap on error bar
-                capthick=2,                    # make cap thicker
-                markersize=6,                 # larger marker
-                label=label
-            )
-
-
-        plot_mc_median(0, mc_medians_g1, label=f'MC Median ({CONFIDENCE_LEVEL*100:.0f}% CI)')
-        plot_mc_median(1, mc_medians_g2)
-
-    # Add threshold line if applicable
-    if threshold is not None and not np.isnan(threshold):
-        ax.axhline(y=threshold, color='black', linestyle='-.', label=f'Optimal Threshold: {threshold:.2f}')
-
-    # Label and format axes
-    ax.set_xticks([0, 1])
-    ax.set_xticklabels(x_labels)
-    ax.set_ylabel("Value")
-    ax.set_title(f"Box Plot of Nominal Data with MC Medians for {name}")
-
-    # Clean and deduplicate legend
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys(), loc='best')
-
-    # Save or display
-    plt.tight_layout()
     if save_plots_prefix:
-        plt.savefig(f"{save_plots_prefix}_boxplot.pdf", dpi=300)
-        plt.close()
-    else:
-        plt.show()
-
-    # --- Process and Return MC Results ---
-    if mc_p_values:
-        p_low, p_high = np.percentile(mc_p_values, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
-        t_low, t_high = np.percentile(mc_t_stats, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
-        m_p, med_p = np.mean(mc_p_values), np.median(mc_p_values)
-        m_t, med_t = np.mean(mc_t_stats), np.median(mc_t_stats)
-        print(f"\nMC T-Test: Mean P-val: {m_p:.4f} (Med:{med_p:.4f}) CI:[{p_low:.4f},{p_high:.4f}]. "
-            f"Mean T-stat: {m_t:.4f} (Med:{med_t:.4f}) CI:[{t_low:.4f},{t_high:.4f}]")
-        
-        # Format p-values: use scientific notation if < 0.001
-        def format_pval(p):
-            return f"{p:.3f}" if p >= 0.001 else f"{p:.1e}"
-
-        # --- Plot P-value Distribution ---
-        if save_plots_prefix:
-            plt.figure(figsize=(8, 5))
-            sns.histplot(mc_p_values, kde=True, bins=30, color='darkgray')
-            plt.title(f"MC Distribution of P-values for {name}")
-            plt.xlabel("P-value")
-            
-
-            plt.axvline(nominal_p_value, color='black', linestyle='--',
-                        label=f'Nominal P ({format_pval(nominal_p_value)})')
-            plt.axvline(m_p, color='dimgray', linestyle=':',
-                        label=f'Mean P ({format_pval(m_p)})')
-
-            plt.legend()
-            plt.savefig(f"{save_plots_prefix}_p_value_mc_dist.pdf", bbox_inches='tight')
-            plt.close()
-
-        return (m_t, t_low, t_high), (m_p, p_low, p_high), (m_p < 0.05)
-    else: # MC was not run or failed
-        # Fallback to nominal results if MC fails.
-        return (nominal_t_stat, np.nan, np.nan), (nominal_p_value, np.nan, np.nan), nominal_significant
-    
-
-
-def _determine_single_optimal_threshold_run(data1_sample, data2_sample, hypothesis, labels):
-    """
-    Helper to find the optimal classification threshold for one MC iteration.
-
-    Args:
-        data1_sample (np.ndarray): Sample data for group 1.
-        data2_sample (np.ndarray): Sample data for group 2.
-        hypothesis (str): The hypothesis defining which group has higher values.
-        labels (tuple): Names of the two groups.
-
-    Returns:
-        tuple: (optimal_threshold, sensitivity, specificity, f1_score, roc_auc).
-    """
-    if len(data1_sample) == 0 or len(data2_sample) == 0:
-        return np.nan, np.nan, np.nan, np.nan, np.nan
-
-    # y_scores are the feature values. y_true are the binary class labels (0 or 1).
-    y_scores = np.concatenate((data1_sample, data2_sample))
-
-    # Assign true labels. Class 1 is the group expected to have higher values.
-    if hypothesis == "data1_greater":
-        y_true = np.concatenate((np.ones(len(data1_sample)), np.zeros(len(data2_sample))))
-    elif hypothesis == "data2_greater":
-        y_true = np.concatenate((np.zeros(len(data1_sample)), np.ones(len(data2_sample))))
-    else:  # 'not_equal', determine direction from sample means.
-        mean1 = np.mean(data1_sample) if len(data1_sample) > 0 else -np.inf
-        mean2 = np.mean(data2_sample) if len(data2_sample) > 0 else -np.inf
-        if mean1 > mean2:
-            y_true = np.concatenate((np.ones(len(data1_sample)), np.zeros(len(data2_sample))))
+        if hypothesis == "data1_greater":
+            plot_labels = (f'{labels[0]} (Higher)', f'{labels[1]} (Lower)')
+        elif hypothesis == "data2_greater":
+            plot_labels = (f'{labels[0]} (Lower)', f'{labels[1]} (Higher)')
         else:
-            y_true = np.concatenate((np.zeros(len(data1_sample)), np.ones(len(data2_sample))))
+            plot_labels = labels
+        _plot_feature_boxplot(data_raw=(data1_nom_arr, data2_nom_arr), data_cleaned=(data1_clean, data2_clean),
+                              labels=plot_labels, title=fr"Box Plot for {name}", y_label=y_label,
+                              mc_medians=(mc_medians1, mc_medians2), threshold=threshold,
+                              show_outliers=show_outliers_in_plot, save_path=f"{save_plots_prefix}_boxplot.pdf")
+        if mc_p_values:
+            _plot_mc_distribution(mc_p_values, nom_p, r"P-value", fr"MC Distribution of P-values for {name}", f"{save_plots_prefix}_p_value_mc_dist.pdf")
 
-    # Calculate ROC curve and AUC.
+    if mc_p_values:
+        p_low, p_high = np.percentile(mc_p_values, [(1-CONFIDENCE_LEVEL)/2*100, (1+CONFIDENCE_LEVEL)/2*100])
+        t_low, t_high = np.percentile(mc_t_stats, [(1-CONFIDENCE_LEVEL)/2*100, (1+CONFIDENCE_LEVEL)/2*100])
+        mean_p, mean_t = np.mean(mc_p_values), np.mean(mc_t_stats)
+        print(f"MC T-Test: Mean P-val: {mean_p:.4f} CI:[{p_low:.4f},{p_high:.4f}]. Mean T-stat: {mean_t:.4f} CI:[{t_low:.4f},{t_high:.4f}]")
+        return (mean_t, t_low, t_high), (mean_p, p_low, p_high), (mean_p < 0.05)
+    
+    return (nom_t, np.nan, np.nan), (nom_p, np.nan, np.nan), nom_sig
+
+def _determine_single_optimal_threshold_run(data1, data2, hypothesis):
+    """Helper for a single ROC analysis run in an MC loop."""
+    if len(data1) == 0 or len(data2) == 0:
+        return (np.nan,) * 5
+        
+    y_scores = np.concatenate((data1, data2))
+    if hypothesis == "data1_greater":
+        y_true = np.concatenate((np.ones(len(data1)), np.zeros(len(data2))))
+    elif hypothesis == "data2_greater":
+        y_true = np.concatenate((np.zeros(len(data1)), np.ones(len(data2))))
+    else:
+        if np.mean(data1) > np.mean(data2):
+            y_true = np.concatenate((np.ones(len(data1)), np.zeros(len(data2))))
+        else:
+            y_true = np.concatenate((np.zeros(len(data1)), np.ones(len(data2))))
+
     fpr, tpr, thresh_roc = roc_curve(y_true, y_scores)
     roc_auc = auc(fpr, tpr)
-
-    if len(thresh_roc) == 0 or len(tpr) == 0 or len(fpr) == 0:
+    if len(thresh_roc) == 0:
         return np.nan, np.nan, np.nan, np.nan, roc_auc
 
-    # Find optimal threshold using Youden's J-statistic (maximizes tpr - fpr).
     opt_idx = np.argmax(tpr - fpr)
     opt_thresh = thresh_roc[opt_idx]
-
-    # Calculate metrics at the optimal threshold.
     y_pred = (y_scores >= opt_thresh).astype(int)
     f1 = f1_score(y_true, y_pred, zero_division=0)
-    sensitivity = np.sum((y_pred == 1) & (y_true == 1)) / np.sum(y_true == 1) if np.sum(y_true == 1) > 0 else 0.0
-    specificity = np.sum((y_pred == 0) & (y_true == 0)) / np.sum(y_true == 0) if np.sum(y_true == 0) > 0 else 0.0
-
+    
+    if np.sum(y_true == 1) > 0:
+        sensitivity = np.sum((y_pred == 1) & (y_true == 1)) / np.sum(y_true == 1)
+    else:
+        sensitivity = 0.0
+    
+    if np.sum(y_true == 0) > 0:
+        specificity = np.sum((y_pred == 0) & (y_true == 0)) / np.sum(y_true == 0)
+    else:
+        specificity = 0.0
+        
     return opt_thresh, sensitivity, specificity, f1, roc_auc
 
-def determine_optimal_threshold(data1_nominal, data2_nominal, data1_unc=None, data2_unc=None,
-                                hypothesis="data2_greater", labels=("Class 0", "Class 1"),
-                                remove_outliers=False, save_plots_prefix=None):
-    """
-    Determines optimal classification threshold and metrics (AUC, F1, etc.),
-    with optional Monte Carlo simulation if uncertainties are provided.
-    Generates ROC curve and confusion matrix plots.
-
-    Args:
-        data1_nominal, data2_nominal (array-like): Nominal data for group 1 and 2.
-        data1_unc, data2_unc (array-like, optional): Uncertainties for group 1 and 2.
-        hypothesis (str): The hypothesis type.
-        labels (tuple): Names for the two groups (Class 0, Class 1).
-        remove_outliers (bool): If True, remove outliers using IQR method.
-        save_plots_prefix (str, optional): Prefix for saving plot files.
-
-    Returns:
-        dict: A dictionary of classification metrics, each a tuple of (mean, ci_lower, ci_upper).
-    """
-    data1_nom_arr = np.asarray(data1_nominal)
-    data2_nom_arr = np.asarray(data2_nominal)
-    print(f"Optimal Threshold for {labels[0]} vs {labels[1]} (Nominal Values): d1:{len(data1_nom_arr)}, d2:{len(data2_nom_arr)}")
-
-    # Clean data for plotting and nominal analysis.
-    d1_plot_c = remove_outliers_iqr(data1_nom_arr) if remove_outliers else data1_nom_arr
-    d2_plot_c = remove_outliers_iqr(data2_nom_arr) if remove_outliers else data2_nom_arr
-    print(f"Cleaned d1:{len(d1_plot_c)}, d2:{len(d2_plot_c)}")
-
-    # --- Nominal ROC Analysis ---
-    nom_opt_t, nom_sens, nom_spec, nom_f1, nom_auc = (np.nan,) * 5
-    cm_disp_labels_plot = list(labels) # Default for data2_greater and some not_equal
-
-    if not (len(d1_plot_c) == 0 or len(d2_plot_c) == 0):
-        nom_opt_t, nom_sens, nom_spec, nom_f1, nom_auc = _determine_single_optimal_threshold_run(d1_plot_c, d2_plot_c, hypothesis, labels)
-
-        if not np.isnan(nom_opt_t):
-            # The positive class is the one with higher values. For plotting, this is Class 1.
-            # If data1 is higher, we need to swap the labels for the confusion matrix.
-            if hypothesis == "data1_greater":
-                cm_disp_labels_plot = [labels[1], labels[0]]
-            elif hypothesis == "not_equal":
-                m1 = np.mean(d1_plot_c) if len(d1_plot_c) > 0 else -np.inf
-                m2 = np.mean(d2_plot_c) if len(d2_plot_c) > 0 else -np.inf
-                if m1 > m2:
-                    cm_disp_labels_plot = [labels[1], labels[0]]
-                    print("Auto-detected direction: data1 has a higher mean (becomes class 1)")
-                else:
-                    print("Auto-detected direction: data2 has a higher mean (becomes class 1)")
-
-            print(f"Optimal Thresh:{nom_opt_t:.4f}, F1:{nom_f1:.2f}, Sens:{nom_sens:.2f}, Spec:{nom_spec:.2f}, AUC:{nom_auc:.2f}")
-
-            # Prepare data for plotting ROC and CM.
-            y_s_plot = np.concatenate((d1_plot_c, d2_plot_c))
-            if hypothesis == "data1_greater":
-                y_t_plot = np.concatenate((np.ones(len(d1_plot_c)), np.zeros(len(d2_plot_c))))
-            elif hypothesis == "data2_greater":
-                y_t_plot = np.concatenate((np.zeros(len(d1_plot_c)), np.ones(len(d2_plot_c))))
-            else: # not_equal
-                m1 = np.mean(d1_plot_c) if len(d1_plot_c) > 0 else -np.inf
-                m2 = np.mean(d2_plot_c) if len(d2_plot_c) > 0 else -np.inf
-                y_t_plot = np.concatenate((np.ones(len(d1_plot_c)), np.zeros(len(d2_plot_c)))) if m1 > m2 else \
-                           np.concatenate((np.zeros(len(d1_plot_c)), np.ones(len(d2_plot_c))))
-
-            # --- Plot ROC Curve ---
-            fpr_p, tpr_p, _ = roc_curve(y_t_plot, y_s_plot)
-            opt_idx_p = np.argmax(tpr_p - fpr_p) if len(tpr_p) > 0 else 0
-
-            plt.figure(figsize=(8, 6))
-            plt.plot(fpr_p, tpr_p, color='black', lw=2, label=f'ROC (AUC={nom_auc:.2f})')
-            if len(fpr_p) > opt_idx_p:
-                plt.plot(fpr_p[opt_idx_p], tpr_p[opt_idx_p], 'ko', markersize=8, label='Optimal Threshold')
-            plt.plot([0, 1], [0, 1], color='gray', linestyle='--')
-            plt.xlabel('False Positive Rate')
-            plt.ylabel('True Positive Rate')
-            plt.title('ROC Curve')
-            plt.legend(loc='lower right')
-            if save_plots_prefix:
-                plt.savefig(f"{save_plots_prefix}_roc.pdf", bbox_inches='tight')
-                plt.close()
-            else:
-                plt.show()
-
-            # --- Plot Confusion Matrix ---
-            y_pred_p = (y_s_plot >= nom_opt_t).astype(int)
-            cm_p = confusion_matrix(y_t_plot, y_pred_p)
-            # Normalize to percentages.
-            cm_sum_rows = cm_p.sum(axis=1)[:, np.newaxis]
-            cm_perc_p = np.zeros_like(cm_p, dtype=float)
-            np.divide(cm_p.astype('float'), cm_sum_rows, out=cm_perc_p, where=cm_sum_rows != 0)
-            cm_perc_p *= 100
-
-            plt.figure(figsize=(6, 5))
-            # Use a grayscale colormap for the heatmap
-            sns.heatmap(cm_perc_p, annot=True, fmt=".2f", cmap="Greys", cbar=False,
-                        linecolor='black', linewidths=0.5,
-                        xticklabels=cm_disp_labels_plot, yticklabels=cm_disp_labels_plot)
-            plt.title("Confusion Matrix (%)")
-            plt.xlabel("Predicted Label")
-            plt.ylabel("True Label")
-            if save_plots_prefix:
-                plt.savefig(f"{save_plots_prefix}_cm.pdf", bbox_inches='tight')
-                plt.close()
-            else:
-                plt.show()
-        else:
-            print("Nominal ROC analysis failed (e.g., could not determine threshold).")
+def determine_optimal_threshold(data1_nom, data2_nom, data1_unc, data2_unc, hypothesis, labels, remove_outliers, save_plots_prefix):
+    """Determines optimal classification threshold and metrics with optional MC."""
+    d1_nom, d2_nom = np.asarray(data1_nom), np.asarray(data2_nom)
+    if remove_outliers:
+        d1_clean = remove_outliers_iqr(d1_nom)
+        d2_clean = remove_outliers_iqr(d2_nom)
     else:
-        print("Not enough data for nominal ROC analysis.")
+        d1_clean = d1_nom
+        d2_clean = d2_nom
 
-    # --- Monte Carlo Simulation for ROC metrics ---
-    if data1_unc is not None and data2_unc is not None and N_MC_ITERATIONS > 0:
-        print(f"\nPerforming MC ({N_MC_ITERATIONS} iter) for ROC of {labels[0]} vs {labels[1]}...")
-        mc_thresholds, mc_sens, mc_spec, mc_f1s, mc_aucs = [], [], [], [], []
-        d1_u_arr, d2_u_arr = np.asarray(data1_unc), np.asarray(data2_unc)
+    print(f"Optimal Threshold for {labels[0]} vs {labels[1]} (Nominal): N1={len(d1_clean)}, N2={len(d2_clean)}")
+    
+    nom_res = (np.nan,) * 5
+    if len(d1_clean) > 0 and len(d2_clean) > 0:
+        nom_res = _determine_single_optimal_threshold_run(d1_clean, d2_clean, hypothesis)
+        print(f"Nominal Thresh:{nom_res[0]:.4f}, F1:{nom_res[3]:.2f}, Sens:{nom_res[1]:.2f}, Spec:{nom_res[2]:.2f}, AUC:{nom_res[4]:.2f}")
+        if save_plots_prefix and not np.isnan(nom_res[0]):
+            y_s_plot = np.concatenate((d1_clean, d2_clean))
+            
+            is_data1_greater = (hypothesis == "data1_greater") or \
+                               (hypothesis == "not_equal" and np.mean(d1_clean) > np.mean(d2_clean))
+            
+            if is_data1_greater:
+                y_t_plot = np.concatenate((np.ones(len(d1_clean)), np.zeros(len(d2_clean))))
+                cm_labels = [labels[1], labels[0]]
+            else:
+                y_t_plot = np.concatenate((np.zeros(len(d1_clean)), np.ones(len(d2_clean))))
+                cm_labels = list(labels)
+                
+            y_pred_plot = (y_s_plot >= nom_res[0]).astype(int)
+            _plot_roc_curve(y_t_plot, y_s_plot, f"{save_plots_prefix}_roc.pdf")
+            _plot_confusion_matrix(y_t_plot, y_pred_plot, cm_labels, f"{save_plots_prefix}_cm.pdf")
 
-        for i in range(N_MC_ITERATIONS):
-            if i % (N_MC_ITERATIONS // 10) == 0 and i > 0:
-                print(f"MC iter {i}...")
-            # Generate random samples.
-            d1_s = np.random.normal(data1_nom_arr, d1_u_arr)
-            d2_s = np.random.normal(data2_nom_arr, d2_u_arr)
-            d1_sc = remove_outliers_iqr(d1_s) if remove_outliers else d1_s
-            d2_sc = remove_outliers_iqr(d2_s) if remove_outliers else d2_s
-            # Run analysis on the sample.
-            res = _determine_single_optimal_threshold_run(d1_sc, d2_sc, hypothesis, labels)
+    mc_results = {k: [] for k in ["Threshold", "Sensitivity", "Specificity", "F1-Score", "AUC"]}
+    has_unc = data1_unc is not None and data2_unc is not None
+    if has_unc and N_MC_ITERATIONS > 0:
+        print(f"Performing MC ({N_MC_ITERATIONS} iter) for ROC of {labels[0]} vs {labels[1]}...")
+        for _ in range(N_MC_ITERATIONS):
+            d1_s, d2_s = np.random.normal(d1_nom, np.asarray(data1_unc)), np.random.normal(d2_nom, np.asarray(data2_unc))
+            if remove_outliers:
+                d1_sc, d2_sc = remove_outliers_iqr(d1_s), remove_outliers_iqr(d2_s)
+            else:
+                d1_sc, d2_sc = d1_s, d2_s
+            res = _determine_single_optimal_threshold_run(d1_sc, d2_sc, hypothesis)
             if not np.isnan(res[0]):
-                mc_thresholds.append(res[0])
-                mc_sens.append(res[1])
-                mc_spec.append(res[2])
-                mc_f1s.append(res[3])
-                mc_aucs.append(res[4])
+                for i, key in enumerate(mc_results.keys()):
+                    mc_results[key].append(res[i])
 
-        results_mc = {}
-        mc_metrics_to_process = [
-            ("Threshold", mc_thresholds, nom_opt_t), ("F1-Score", mc_f1s, nom_f1),
-            ("Sensitivity", mc_sens, nom_sens), ("Specificity", mc_spec, nom_spec),
-            ("AUC", mc_aucs, nom_auc)
-        ]
-        # Only plot distributions for a subset of key metrics to avoid clutter.
-        mc_metrics_to_plot = [("Threshold", mc_thresholds, nom_opt_t), ("F1-Score", mc_f1s, nom_f1)]
-
-        if mc_thresholds: # Check if any valid MC runs occurred.
-            for name, data_list, _ in mc_metrics_to_process:
-                mean_val = np.mean(data_list) if data_list else np.nan
-                median_val = np.median(data_list) if data_list else np.nan
-                low_ci, high_ci = (np.percentile(data_list, [(1-CONFIDENCE_LEVEL)/2*100, (1+CONFIDENCE_LEVEL)/2*100])
-                                   if data_list else (np.nan, np.nan))
-                results_mc[name] = (mean_val, low_ci, high_ci)
-                print(f"  MC Mean {name}:{mean_val:.4f} (Med:{median_val:.4f}) CI:[{low_ci:.4f},{high_ci:.4f}]")
-
-            for name, data_list, nom_val in mc_metrics_to_plot:
-                 if save_plots_prefix and data_list:
-                    plt.figure(figsize=(8, 5))
-                    sns.histplot(data_list, kde=True, bins=30, color='darkgray')
-                    plt.title(f"MC Distribution of {name}")
-                    plt.xlabel(name)
-                    if not np.isnan(nom_val):
-                        plt.axvline(nom_val, color='black', linestyle='--', label=f'Nominal ({nom_val:.3f})')
-                    mean_plot = np.mean(data_list)
-                    plt.axvline(mean_plot, color='dimgray', linestyle=':', label=f'Mean ({mean_plot:.3f})')
-                    plt.legend()
-                    save_name = f"{save_plots_prefix}_{name.lower().replace('-', '_')}_mc_dist.pdf"
-                    plt.savefig(save_name, bbox_inches='tight')
-                    plt.close()
-            return results_mc
+    final_results = {}
+    for name, data_list, nom_val in zip(mc_results.keys(), mc_results.values(), nom_res):
+        if data_list:
+            mean_val = np.mean(data_list)
+            low_ci, high_ci = np.percentile(data_list, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
+            final_results[name] = (mean_val, low_ci, high_ci)
+            print(f"  MC Mean {name}:{mean_val:.4f} CI:[{low_ci:.4f},{high_ci:.4f}]")
         else:
-            print("MC ROC analysis yielded no valid results.")
-
-    # Fallback to nominal results if MC failed or was not run.
-    fallback_results = {
-        "Threshold": (nom_opt_t, np.nan, np.nan), "Sensitivity": (nom_sens, np.nan, np.nan),
-        "Specificity": (nom_spec, np.nan, np.nan), "F1-Score": (nom_f1, np.nan, np.nan),
-        "AUC": (nom_auc, np.nan, np.nan)
-    }
-    return fallback_results
-
+            final_results[name] = (nom_val, np.nan, np.nan)
+    
+    if save_plots_prefix:
+        for name in ["Threshold", "F1-Score"]:
+            _plot_mc_distribution(mc_results[name], final_results[name][0], name, fr"MC Distribution of {name.replace('-', ' ')}", f"{save_plots_prefix}_{name.lower().replace('-', '_')}_mc_dist.pdf")
+    return final_results
 
 # =============================================================================
-# Main Analysis Execution: Individual Sensors
+# Main Analysis Execution Logic
 # =============================================================================
 
-# Create a mapping from (patient_id, run_id) to ACM status for easy lookup.
-ACM_map = {
-    (pid, run_id): run_data["ACM"]
-    for pid, p_data in patient_meta_data.items()
-    for run_id, run_data in p_data.get("runs", {}).items()
-}
+def run_full_feature_analysis(df_analysis: pd.DataFrame, analysis_name: str, clean_plot_name: str,
+                             output_plots_dir: str, output_tables_dir: str) -> List[Dict]:
+    """Runs the complete statistical analysis for a given dataframe of features."""
+    os.makedirs(output_plots_dir, exist_ok=True)
+    os.makedirs(output_tables_dir, exist_ok=True)
+    analysis_records = []
+    
+    for seg_lbl in segment_cols_map.keys():
+        for feat_short_n in features_to_analyze_short:
+            nom_col = f"{seg_lbl.lower()}_{feat_short_n}"
+            unc_col = f"{nom_col}_unc"
+            if nom_col not in df_analysis.columns:
+                continue
 
-# Find all 'result.csv' files within subdirectories of the base results directory.
-result_files_pattern = os.path.join(RESULTS_BASE_DIR, "*", "result.csv")
-result_files = glob.glob(result_files_pattern)
+            has_unc = unc_col in df_analysis.columns
+            if not has_unc:
+                print(f"Warning: {unc_col} not found in {analysis_name}. No MC will be run.")
+            print(f"\n-- Feature: {seg_lbl} {feat_short_n} in {clean_plot_name}, Has Uncertainty: {has_unc} --")
+
+            nom_series = pd.to_numeric(df_analysis[nom_col], errors='coerce')
+            valid_idx = nom_series.notna()
+            
+            if has_unc:
+                unc_series = pd.to_numeric(df_analysis.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
+            else:
+                unc_series = pd.Series(0.0, index=nom_series[valid_idx].index)
+
+            nom_v, unc_v, acm_l = nom_series[valid_idx].values, unc_series.values, df_analysis.loc[valid_idx, "ACM"].values
+            pos_nom, neg_nom = nom_v[acm_l], nom_v[~acm_l]
+            
+            if has_unc:
+                pos_unc, neg_unc = unc_v[acm_l], unc_v[~acm_l]
+            else:
+                pos_unc, neg_unc = None, None
+
+            if len(pos_nom) < 1 or len(neg_nom) < 1:
+                print(f"Skipping {nom_col} for {analysis_name}: Insufficient data.")
+                continue
+
+            cfg = feature_analysis_config.get(nom_col, feature_analysis_config["default"])
+            plot_pref = os.path.join(output_plots_dir, f"{analysis_name}_{seg_lbl}_{feat_short_n}")
+
+            # Note: Group 1 = Healthy, Group 2 = ACM for consistency
+            roc_res = determine_optimal_threshold(neg_nom, pos_nom, data1_unc=neg_unc, data2_unc=pos_unc,
+                hypothesis=cfg["hypothesis"], labels=("Healthy", "ACM"), remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref)
+
+            ttest_res = perform_t_test(neg_nom, pos_nom, data1_unc=neg_unc, data2_unc=pos_unc,
+                name=fr"{seg_lbl} {feat_short_n} ({clean_plot_name})", hypothesis=cfg["hypothesis"],
+                threshold=roc_res["Threshold"][0], labels=("Healthy", "ACM"), remove_outliers=cfg["remove_outliers"],
+                show_outliers_in_plot=cfg.get("show_outliers_in_plot", True),
+                save_plots_prefix=plot_pref, y_label=f"{feat_short_n} in {cfg['units']}")
+            
+            clean_pos_nom = remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom
+            clean_neg_nom = remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom
+            is_acm_greater = (cfg["hypothesis"] == "data2_greater") or \
+                             (cfg["hypothesis"] == "not_equal" and np.mean(clean_pos_nom) > np.mean(clean_neg_nom))
+            
+            if is_acm_greater:
+                pos_class = "ACM"
+            else:
+                pos_class = "Healthy"
+            
+            rec = {"source": analysis_name, "segment": seg_lbl, "feature": feat_short_n, "column_name": nom_col,
+                   "hypothesis_tested": cfg["hypothesis"], "outliers_removed": cfg["remove_outliers"],
+                   "mc_iterations": N_MC_ITERATIONS if has_unc else 0,
+                   "significant_ttest (mean_p<0.05)": ttest_res[2],
+                   "roc_positive_class_for_metrics": pos_class,
+                   "n_ACM_initial": len(pos_nom), "n_healthy_initial": len(neg_nom)}
+            
+            all_metrics = {"p_value": ttest_res[1], "t_stat": ttest_res[0], **roc_res}
+            for key, (mean, ci_low, ci_high) in all_metrics.items():
+                key_clean = key.lower().replace('-', '_')
+                rec.update({f"{key_clean}_mean": mean, f"{key_clean}_ci_lower": ci_low, f"{key_clean}_ci_upper": ci_high})
+            analysis_records.append(rec)
+    
+    if analysis_records:
+        df_summary = pd.DataFrame(analysis_records)
+        summary_path = os.path.join(output_tables_dir, f"{analysis_name}_analysis_summary_mc.csv")
+        df_summary.to_csv(summary_path, index=False)
+        print(f"\nSummary for {analysis_name} saved to {summary_path}")
+    return analysis_records
+
+# =============================================================================
+# Script Execution Starts Here
+# =============================================================================
+
+# --- 1. Demographics Analysis ---
+print("\n--- GENDER DISTRIBUTION ---")
+plot_gender_distribution(df_demographics, r"Gender Distribution (All Patients)", os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_all.pdf"))
+plot_gender_distribution(df_demographics[df_demographics["ACM"] == True], r"Gender Distribution (ACM)", os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_ACM.pdf"))
+plot_gender_distribution(df_demographics[df_demographics["ACM"] == False], r"Gender Distribution (Healthy)", os.path.join(OVERALL_PLOTS_DIR, "demographics_gender_healthy.pdf"))
+
+print("\n--- AGE & HEIGHT DISTRIBUTIONS ---")
+demographics_summary_stats = {}
+groups = {"All": df_demographics, "ACM": df_demographics[df_demographics["ACM"]], "Healthy": df_demographics[~df_demographics["ACM"]]}
+for group_name, df_group in groups.items():
+    for col in ["age", "height"]:
+        demographics_summary_stats[f"{col}_{group_name.lower()}"] = plot_hist_and_stats(
+            df_group, col, fr"{col.capitalize()} Distribution ({group_name})", "darkgray",
+            os.path.join(OVERALL_PLOTS_DIR, f"demographics_{col}_{group_name.lower()}.pdf"))
+summary_path = os.path.join(OVERALL_TABLES_DIR, "demographics_summary.json")
+with open(summary_path, "w") as f: json.dump(demographics_summary_stats, f, indent=4)
+print(f"\nDemographics summary saved to {summary_path}")
+
+# --- 2. Data Loading for Core Analysis ---
+ACM_map = {(pid, str(run_id)): run_data["ACM"] for pid, p_data in patient_meta_data.items() for run_id, run_data in p_data.get("runs", {}).items()}
+result_files = glob.glob(os.path.join(RESULTS_BASE_DIR, "*", "result.csv"))
 if not result_files:
-    print(f"Warning: No 'result.csv' files found matching pattern: {result_files_pattern}")
-
-# Load and prepare data from each result file.
+    print(f"Warning: No 'result.csv' files found in subdirectories of {RESULTS_BASE_DIR}")
 all_sensor_data_dfs = {}
-sensor_file_paths = {}
 for f_path in result_files:
-    # The sensor/projection name is the name of the parent directory.
-    sensor_projection_name = os.path.basename(os.path.dirname(f_path))
+    sensor_name = os.path.basename(os.path.dirname(f_path))
     try:
-        df_sensor = pd.read_csv(f_path)
-        if 'run' in df_sensor.columns:
-            df_sensor['run'] = df_sensor['run'].astype(str)
-
-        # Map the ACM status to each row using the patient and run IDs.
-        df_sensor["ACM"] = df_sensor.apply(
-            lambda row: ACM_map.get((row["patient"], row["run"]), None), axis=1
-        )
-
-        if df_sensor["ACM"].isna().sum() > 0:
-            print(f"Warning: {sensor_projection_name} - {df_sensor['ACM'].isna().sum()} rows missing ACM status!")
-
-        # Clean data by dropping rows without an ACM label.
+        df_sensor = pd.read_csv(f_path, dtype={'run': str})
+        df_sensor["ACM"] = df_sensor.apply(lambda row: ACM_map.get((row["patient"], row["run"])), axis=1)
         df_sensor.dropna(subset=["ACM"], inplace=True)
         df_sensor["ACM"] = df_sensor["ACM"].astype(bool)
-
         if not df_sensor.empty:
-            all_sensor_data_dfs[sensor_projection_name] = df_sensor
-            sensor_file_paths[sensor_projection_name] = f_path
-            print(f"Loaded {sensor_projection_name}: {len(df_sensor)} records.")
-        else:
-            print(f"Warning: {sensor_projection_name} - No data after ACM mapping and NA removal.")
+            all_sensor_data_dfs[sensor_name] = df_sensor
+            print(f"Loaded {sensor_name}: {len(df_sensor)} records.")
     except Exception as e:
         print(f"Error loading {f_path}: {e}")
 
-# --- Loop Through Each Loaded Sensor Dataset for Analysis ---
+# --- 3. Individual Sensor Analysis ---
+print("\n\n--- INDIVIDUAL SENSOR ANALYSIS ---")
 overall_individual_analysis_records = []
-for sensor_name, df_sensor_iter in all_sensor_data_dfs.items():
+for sensor_name, df_sensor in all_sensor_data_dfs.items():
     print(f"\n--- Analyzing Sensor: {sensor_name} ---")
-    # Set up output directories for this specific sensor's results.
-    s_base_dir = os.path.dirname(sensor_file_paths[sensor_name])
+    s_base_dir = os.path.dirname(glob.glob(os.path.join(RESULTS_BASE_DIR, sensor_name, "result.csv"))[0])
     s_plots_dir = os.path.join(s_base_dir, "Generated_Plots_MC")
     s_tables_dir = os.path.join(s_base_dir, "Generated_Tables_MC")
-    os.makedirs(s_plots_dir, exist_ok=True)
-    os.makedirs(s_tables_dir, exist_ok=True)
+    clean_name = sensor_name.replace("_", " ").upper()
+    sensor_records = run_full_feature_analysis(df_sensor, sensor_name, clean_name, s_plots_dir, s_tables_dir)
+    overall_individual_analysis_records.extend(sensor_records)
 
-    current_sensor_records = []
-    # Iterate through each segment (T, QRS, ST) and feature (Area, Compact, etc.).
-    for seg_lbl, _ in segment_cols_map.items():
-        for feat_short_n in features_to_analyze_short:
-            # Construct column names for nominal value and its uncertainty.
-            nom_col = f"{seg_lbl.lower()}_{feat_short_n}"
-            unc_col = f"{seg_lbl.lower()}_{feat_short_n}_unc"
-
-            if nom_col not in df_sensor_iter.columns:
-                continue
-
-            # Check if uncertainty data is available for Monte Carlo simulation.
-            has_unc = unc_col in df_sensor_iter.columns
-            if not has_unc:
-                print(f"Warning: {unc_col} not found for {nom_col} in {sensor_name}. No MC will be run for this feature.")
-            print(f"\n-- Feature: {seg_lbl} {feat_short_n} ({nom_col}), Has Uncertainty: {has_unc} --")
-
-            # Prepare data series, ensuring correct types and handling missing values.
-            nom_series = pd.to_numeric(df_sensor_iter[nom_col], errors='coerce')
-            valid_idx = nom_series.notna()
-            unc_series = (pd.to_numeric(df_sensor_iter.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
-                          if has_unc else pd.Series(0.0, index=nom_series[valid_idx].index))
-
-            # Split data into ACM (positive) and Healthy (negative) groups.
-            nom_v, unc_v, ACM_l = nom_series[valid_idx].values, unc_series.values, df_sensor_iter.loc[valid_idx, "ACM"].values
-            pos_nom, neg_nom = nom_v[ACM_l == True], nom_v[ACM_l == False]
-            pos_unc, neg_unc = (unc_v[ACM_l == True], unc_v[ACM_l == False]) if has_unc else (None, None)
-
-            if len(pos_nom) < 1 or len(neg_nom) < 1:
-                print(f"Skipping {nom_col} for {sensor_name}: Insufficient nominal data in one or both groups.")
-                continue
-
-            # Get the specific analysis configuration for this feature.
-            cfg = feature_analysis_config.get(nom_col, feature_analysis_config["default"])
-            plot_pref = os.path.join(s_plots_dir, f"{sensor_name}_{seg_lbl}_{feat_short_n}")
-
-            # Run ROC analysis to find the optimal threshold.
-            roc_res_mc = determine_optimal_threshold(
-                pos_nom, neg_nom, data1_unc=pos_unc, data2_unc=neg_unc,
-                hypothesis=cfg["hypothesis"], labels=("ACM", "Healthy"),
-                remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref
-            )
-            # Use the nominal threshold from ROC for the t-test boxplot.
-            nom_thresh_plot = roc_res_mc["Threshold"][0]
-
-            # Run t-test analysis.
-            ttest_res_mc = perform_t_test(
-                pos_nom, neg_nom, data1_unc=pos_unc, data2_unc=neg_unc,
-                name=f"{seg_lbl} {feat_short_n}", hypothesis=cfg["hypothesis"],
-                threshold=nom_thresh_plot, labels=("ACM", "Healthy"),
-                remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref
-            )
-            
-            # Determine which group was treated as the "positive" class for metrics like sensitivity.
-            if cfg["hypothesis"] == "data1_greater":
-                pos_class = "ACM" # ACM is data1
-            elif cfg["hypothesis"] == "data2_greater":
-                pos_class = "Healthy" # Healthy is data2
-            else: # not_equal
-                pos_mean = np.mean(remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom)
-                neg_mean = np.mean(remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom)
-                pos_class = "ACM" if pos_mean > neg_mean else "Healthy"
-
-            # Compile all results into a single record.
-            rec = {
-                "source": sensor_name, "segment": seg_lbl, "feature": feat_short_n, "column_name": nom_col,
-                "hypothesis_tested": cfg["hypothesis"], "outliers_removed": cfg["remove_outliers"],
-                "mc_iterations": N_MC_ITERATIONS if has_unc else 0,
-                "p_value_mean": ttest_res_mc[1][0], "p_value_ci_lower": ttest_res_mc[1][1], "p_value_ci_upper": ttest_res_mc[1][2],
-                "t_stat_mean": ttest_res_mc[0][0], "t_stat_ci_lower": ttest_res_mc[0][1], "t_stat_ci_upper": ttest_res_mc[0][2],
-                "significant_ttest (mean_p<0.05)": ttest_res_mc[2],
-                "opt_threshold_mean": roc_res_mc["Threshold"][0], "opt_threshold_ci_lower": roc_res_mc["Threshold"][1], "opt_threshold_ci_upper": roc_res_mc["Threshold"][2],
-                "roc_auc_mean": roc_res_mc["AUC"][0], "roc_auc_ci_lower": roc_res_mc["AUC"][1], "roc_auc_ci_upper": roc_res_mc["AUC"][2],
-                "roc_positive_class_for_metrics": pos_class,
-                "sensitivity_mean": roc_res_mc["Sensitivity"][0], "sensitivity_ci_lower": roc_res_mc["Sensitivity"][1], "sensitivity_ci_upper": roc_res_mc["Sensitivity"][2],
-                "specificity_mean": roc_res_mc["Specificity"][0], "specificity_ci_lower": roc_res_mc["Specificity"][1], "specificity_ci_upper": roc_res_mc["Specificity"][2],
-                "f1_score_mean": roc_res_mc["F1-Score"][0], "f1_score_ci_lower": roc_res_mc["F1-Score"][1], "f1_score_ci_upper": roc_res_mc["F1-Score"][2],
-                "n_ACM_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
-                "plot_nominal_tdist_path": f"{plot_pref}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref}_boxplot.pdf",
-                "plot_nominal_roc_path": f"{plot_pref}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref}_cm.pdf",
-                "plot_mc_pvalue_dist_path": f"{plot_pref}_p_value_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_threshold_dist_path": f"{plot_pref}_threshold_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None,
-                "plot_mc_f1_dist_path": f"{plot_pref}_f1_score_mc_dist.pdf" if has_unc and N_MC_ITERATIONS > 0 else None
-            }
-            current_sensor_records.append(rec)
-            overall_individual_analysis_records.append(rec)
-
-    # Save the summary table for the current sensor.
-    if current_sensor_records:
-        df_sum = pd.DataFrame(current_sensor_records)
-        sum_path = os.path.join(s_tables_dir, f"{sensor_name}_analysis_summary_mc.csv")
-        df_sum.to_csv(sum_path, index=False)
-        print(f"\nMC summary for {sensor_name} saved to {sum_path}")
-
-# Save the overall summary table for all individual sensor analyses.
 if overall_individual_analysis_records:
-    df_overall_sum = pd.DataFrame(overall_individual_analysis_records)
-    overall_sum_path = os.path.join(OVERALL_TABLES_DIR, "all_sensors_features_summary_mc.csv")
-    df_overall_sum.to_csv(overall_sum_path, index=False)
-    print(f"\nOverall MC summary for all individual features saved to {overall_sum_path}")
-else:
-    print("\nNo individual sensor MC analysis was recorded.")
+    pd.DataFrame(overall_individual_analysis_records).to_csv(os.path.join(OVERALL_TABLES_DIR, "all_sensors_features_summary_mc.csv"), index=False)
+    print(f"\nOverall summary for all individual features saved.")
 
-
-# =============================================================================
-# Main Analysis Execution: Aggregated Projections
-# =============================================================================
-
-print("\n\n--- AGGREGATED ANALYSIS ---")
-
-# Define the 4x4 sensor grid layout to identify subsquares.
-sensor_grid = [
-    ["F1", "OX", "OO", "OQ"],
-    ["YQ", "NL", "OY", "OW"],
-    ["OT", "F2", "F0", "C1"],
-    ["EY", "YP", "OR", "EZ"]
-]
-
-# Define the four 2x2 subsquares by grouping their sensor IDs.
-subsquares = {
-    "TopLeft": [sensor_grid[0][0], sensor_grid[0][1], sensor_grid[1][0], sensor_grid[1][1]],
-    "TopRight": [sensor_grid[0][2], sensor_grid[0][3], sensor_grid[1][2], sensor_grid[1][3]],
-    "BottomLeft": [sensor_grid[2][0], sensor_grid[2][1], sensor_grid[3][0], sensor_grid[3][1]],
-    "BottomRight": [sensor_grid[2][2], sensor_grid[2][3], sensor_grid[3][2], sensor_grid[3][3]]
+# --- 4. Aggregated Projections Analysis ---
+print("\n\n--- AGGREGATED PROJECTION ANALYSIS ---")
+sensor_grid = [["F1", "OX", "OO", "OQ"], ["YQ", "NL", "OY", "OW"], ["OT", "F2", "F0", "C1"], ["EY", "YP", "OR", "EZ"]]
+subsquare_definitions = {
+    "TopLeft": (slice(0, 2), slice(0, 2)), "TopRight": (slice(0, 2), slice(2, 4)),
+    "BottomLeft": (slice(2, 4), slice(2, 4)), "BottomRight": (slice(2, 4), slice(2, 4))
 }
+subsquares = {}
+for name, (row_slice, col_slice) in subsquare_definitions.items():
+    subsquares[name] = [sensor_grid[r][c] for r in range(row_slice.start, row_slice.stop) for c in range(col_slice.start, col_slice.stop)]
 
-# Define the projections to be analyzed for each subsquare.
+SUBSQUARE_PLOT_NAMES = {"TopLeft": "Top-Left", "TopRight": "Top-Right", "BottomLeft": "Bottom-Left", "BottomRight": "Bottom-Right"}
 projections_to_analyze = ["xy", "yz"]
-
-# This list will store the records for the final summary CSV.
 agg_analysis_records = []
 
-# Loop through each defined subsquare.
 for subsquare_name, sensor_ids in subsquares.items():
-    # For each subsquare, loop through the projection types (xy, yz).
     for projection in projections_to_analyze:
+        agg_name = f"aggregated_{subsquare_name}_{projection}"
+        plot_name = SUBSQUARE_PLOT_NAMES.get(subsquare_name, subsquare_name)
+        clean_name = f"Aggregated {plot_name} Quadrant {projection.upper()}"
         
-        # Construct the name for this specific aggregation task (e.g., "aggregated_TopLeft_xy").
-        aggregation_name = f"aggregated_{subsquare_name}_{projection}"
-        
-        # Create a clean, human-readable name for plots and logs (e.g., "Aggregated TopLeft XY").
-        clean_aggregation_name = f"Aggregated {subsquare_name} {projection.upper()}"
-
-        # Collect the dataframes for the sensors in the current subsquare and for the current projection.
-        dfs_to_aggregate = []
-        for sensor_id in sensor_ids:
-            # The key in `all_sensor_data_dfs` is composed of the sensor ID and projection (e.g., "F1_xy").
-            sensor_data_key = f"{sensor_id}_{projection}"
-            if sensor_data_key in all_sensor_data_dfs:
-                dfs_to_aggregate.append(all_sensor_data_dfs[sensor_data_key])
-
-        # If no dataframes were found for this aggregation group, skip it.
+        dfs_to_aggregate = [all_sensor_data_dfs[f"{sid}_{projection}"] for sid in sensor_ids if f"{sid}_{projection}" in all_sensor_data_dfs]
         if not dfs_to_aggregate:
-            print(f"No data found for {clean_aggregation_name}. Skipping.")
+            print(f"No data for {clean_name}. Skipping.")
             continue
-
-        # Concatenate all found dataframes into a single dataframe for analysis.
+            
         df_agg = pd.concat(dfs_to_aggregate, ignore_index=True)
-        print(f"\n--- Analyzing {clean_aggregation_name} Data ({len(df_agg)} records) ---")
+        print(f"\n--- Analyzing {clean_name} ({len(df_agg)} records) ---")
 
-        # Create a dedicated directory for the aggregated plots.
         agg_plots_dir = os.path.join(OVERALL_PLOTS_DIR, "Aggregated_Plots_MC")
-        os.makedirs(agg_plots_dir, exist_ok=True)
+        agg_tables_dir = os.path.join(OVERALL_TABLES_DIR, "Aggregated_Tables_MC")
+        
+        agg_records = run_full_feature_analysis(df_agg, agg_name, clean_name, agg_plots_dir, agg_tables_dir)
+        agg_analysis_records.extend(agg_records)
 
-        # This loop performs the statistical analysis for each feature on the aggregated data.
-        for seg_lbl, _ in segment_cols_map.items():
-            for feat_short_n in features_to_analyze_short:
-                nom_col = f"{seg_lbl.lower()}_{feat_short_n}"
-                unc_col = f"{seg_lbl.lower()}_{feat_short_n}_unc"
-                if nom_col not in df_agg.columns:
-                    continue
-
-                has_unc_agg = unc_col in df_agg.columns
-                if not has_unc_agg:
-                    print(f"Warning: {unc_col} not found for {nom_col} in {aggregation_name}. No MC will be run.")
-                print(f"\n-- Aggregated Feature: {seg_lbl} {feat_short_n} ({nom_col}), Has Uncertainty: {has_unc_agg} --")
-
-                # Prepare data series from the aggregated dataframe.
-                nom_series = pd.to_numeric(df_agg[nom_col], errors='coerce')
-                valid_idx = nom_series.notna()
-                unc_series = (pd.to_numeric(df_agg.loc[valid_idx, unc_col], errors='coerce').fillna(0).clip(lower=0)
-                              if has_unc_agg else pd.Series(0.0, index=nom_series[valid_idx].index))
-
-                # Split data into ACM and Healthy groups.
-                nom_v, unc_v, ACM_l = nom_series[valid_idx].values, unc_series.values, df_agg.loc[valid_idx, "ACM"].values
-                pos_nom, neg_nom = nom_v[ACM_l == True], nom_v[ACM_l == False]
-                pos_unc_agg, neg_unc_agg = (unc_v[ACM_l == True], unc_v[ACM_l == False]) if has_unc_agg else (None, None)
-
-                if len(pos_nom) < 1 or len(neg_nom) < 1:
-                    print(f"Skipping {nom_col} for {aggregation_name}: Insufficient data.")
-                    continue
-
-                cfg = feature_analysis_config.get(nom_col, feature_analysis_config["default"])
-                plot_pref_agg = os.path.join(agg_plots_dir, f"{aggregation_name}_{seg_lbl}_{feat_short_n}")
-
-                # Run ROC and t-test analyses on the aggregated data.
-                roc_res_mc_agg = determine_optimal_threshold(
-                    pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
-                    hypothesis=cfg["hypothesis"], labels=("ACM", "Healthy"),
-                    remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
-                )
-                nom_thresh_plot_agg = roc_res_mc_agg["Threshold"][0]
-
-                # Use the clean name for the plot title.
-                plot_title_name = f"{seg_lbl} {feat_short_n} ({clean_aggregation_name})"
-                ttest_res_mc_agg = perform_t_test(
-                    pos_nom, neg_nom, data1_unc=pos_unc_agg, data2_unc=neg_unc_agg,
-                    name=plot_title_name, hypothesis=cfg["hypothesis"],
-                    threshold=nom_thresh_plot_agg, labels=("ACM", "Healthy"),
-                    remove_outliers=cfg["remove_outliers"], save_plots_prefix=plot_pref_agg
-                )
-                
-                # Determine the positive class for metrics.
-                if cfg["hypothesis"] == "data1_greater":
-                    pos_class = "ACM"
-                elif cfg["hypothesis"] == "data2_greater":
-                    pos_class = "Healthy"
-                else: # not_equal
-                    pos_mean = np.mean(remove_outliers_iqr(pos_nom) if cfg["remove_outliers"] else pos_nom)
-                    neg_mean = np.mean(remove_outliers_iqr(neg_nom) if cfg["remove_outliers"] else neg_nom)
-                    pos_class = "ACM" if pos_mean > neg_mean else "Healthy"
-
-                # Compile results into a record for the aggregated analysis.
-                agg_analysis_records.append({
-                    "source": aggregation_name, "segment": seg_lbl, "feature": feat_short_n, "column_name": nom_col,
-                    "hypothesis_tested": cfg["hypothesis"], "outliers_removed": cfg["remove_outliers"],
-                    "mc_iterations": N_MC_ITERATIONS if has_unc_agg else 0,
-                    "p_value_mean": ttest_res_mc_agg[1][0], "p_value_ci_lower": ttest_res_mc_agg[1][1], "p_value_ci_upper": ttest_res_mc_agg[1][2],
-                    "t_stat_mean": ttest_res_mc_agg[0][0], "t_stat_ci_lower": ttest_res_mc_agg[0][1], "t_stat_ci_upper": ttest_res_mc_agg[0][2],
-                    "significant_ttest (mean_p<0.05)": ttest_res_mc_agg[2],
-                    "opt_threshold_mean": roc_res_mc_agg["Threshold"][0], "opt_threshold_ci_lower": roc_res_mc_agg["Threshold"][1], "opt_threshold_ci_upper": roc_res_mc_agg["Threshold"][2],
-                    "roc_auc_mean": roc_res_mc_agg["AUC"][0], "roc_auc_ci_lower": roc_res_mc_agg["AUC"][1], "roc_auc_ci_upper": roc_res_mc_agg["AUC"][2],
-                    "roc_positive_class_for_metrics": pos_class,
-                    "sensitivity_mean": roc_res_mc_agg["Sensitivity"][0], "sensitivity_ci_lower": roc_res_mc_agg["Sensitivity"][1], "sensitivity_ci_upper": roc_res_mc_agg["Sensitivity"][2],
-                    "specificity_mean": roc_res_mc_agg["Specificity"][0], "specificity_ci_lower": roc_res_mc_agg["Specificity"][1], "specificity_ci_upper": roc_res_mc_agg["Specificity"][2],
-                    "f1_score_mean": roc_res_mc_agg["F1-Score"][0], "f1_score_ci_lower": roc_res_mc_agg["F1-Score"][1], "f1_score_ci_upper": roc_res_mc_agg["F1-Score"][2],
-                    "n_ACM_initial": len(pos_nom), "n_healthy_initial": len(neg_nom),
-                    "plot_nominal_tdist_path": f"{plot_pref_agg}_tdist.pdf", "plot_nominal_boxplot_path": f"{plot_pref_agg}_boxplot.pdf",
-                    "plot_nominal_roc_path": f"{plot_pref_agg}_roc.pdf", "plot_nominal_cm_path": f"{plot_pref_agg}_cm.pdf",
-                    "plot_mc_pvalue_dist_path": f"{plot_pref_agg}_p_value_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
-                    "plot_mc_threshold_dist_path": f"{plot_pref_agg}_threshold_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None,
-                    "plot_mc_f1_dist_path": f"{plot_pref_agg}_f1_score_mc_dist.pdf" if has_unc_agg and N_MC_ITERATIONS > 0 else None
-                })
-
-# Save the summary table for the aggregated analysis.
 if agg_analysis_records:
-    df_agg_sum = pd.DataFrame(agg_analysis_records)
-    sum_path_agg = os.path.join(OVERALL_TABLES_DIR, "aggregated_projection_summary_mc.csv")
-    df_agg_sum.to_csv(sum_path_agg, index=False)
-    print(f"\nAggregated MC summary saved to {sum_path_agg}")
-else:
-    print("\nNo aggregated MC analysis was recorded.")
+    pd.DataFrame(agg_analysis_records).to_csv(os.path.join(OVERALL_TABLES_DIR, "aggregated_projection_summary_mc.csv"), index=False)
+    print(f"\nAggregated analysis summary saved.")
 
 print("\n\n--- SCRIPT FINISHED ---")
