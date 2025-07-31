@@ -314,7 +314,7 @@ def evaluate(model, dataloader, device, num_classes, output_dir, sequence_length
 def main():
     parser = argparse.ArgumentParser("Evaluate ECG Segmenter")
     parser.add_argument("--load_dir", type=str, default="MCG_segmentation/trained_models/DENS_Model",)
-    parser.add_argument("--data_dir_eval", type=str, default="MCG_segmentation/Datasets/base/ludb/processed")
+    parser.add_argument("--data_dir_test", type=str, default="MCG_segmentation/Datasets/base/ludb/processed")
     parser.add_argument("--output_dir", type=str, default="MCG_segmentation/trained_models/DENS_Model/evaluation_results")
     parser.add_argument("--eval_batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -329,7 +329,7 @@ def main():
     print(f"Model loaded from {args.load_dir}")
 
     # Load evaluation dataset
-    eval_dataset = ECGFullDataset(args.data_dir_eval, sequence_length=args.sequence_length, augmentation_prob=0.00, baseline_wander_mag=0.0, gaussian_noise_std=0.00, overlap=0)
+    eval_dataset = ECGFullDataset(args.data_dir_test, sequence_length=args.sequence_length, augmentation_prob=0.00, baseline_wander_mag=0.0, gaussian_noise_std=0.00, overlap=0)
     eval_dataloader = DataLoader(
         eval_dataset,
         batch_size=args.eval_batch_size,

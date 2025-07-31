@@ -14,8 +14,8 @@ def create_directory(directory):
     os.makedirs(directory, exist_ok=True)
     
 
-def split_files_for_training(processed_path, train_dir, val_dir, test_dir=None, val_ratio=0.20, random_seed=42, exclude_records=None, is_qtdb=False):
-    """Splits CSV files into train, val, and test directories based on specified logic."""
+def split_files_for_training(processed_path, train_dir, test_dir, unused_dir=None, test_ratio=0.20, random_seed=42, exclude_records=None, is_qtdb=False):
+    """Splits CSV files into train, test, and unused directories based on specified logic."""
     random.seed(random_seed)
 
     all_files = [f for f in os.listdir(processed_path) if f.endswith('.csv') and not f.startswith('.')]
@@ -27,35 +27,35 @@ def split_files_for_training(processed_path, train_dir, val_dir, test_dir=None, 
     record_names = sorted(list(set([f.split('_')[0] for f in all_files if '_' in f])))
     
     if not record_names:
-        LOGGER.warning(f"No valid record names found in {processed_path}")
+        LOGGER.warning(f"No unusedid record names found in {processed_path}")
         return
 
     if exclude_records is None:
         exclude_records = []
     
-    # Separate test records from the main pool
-    test_records = [record for record in record_names if record in exclude_records]
-    train_val_records = [record for record in record_names if record not in exclude_records]
-    
-    LOGGER.info(f"Total records: {len(record_names)}, Test records: {len(test_records)}, Train/Val records: {len(train_val_records)}")
+    # Separate unused records from the main pool
+    unused_records = [record for record in record_names if record in exclude_records]
+    train_test_records = [record for record in record_names if record not in exclude_records]
 
-    train_records, val_records = [], []
+    LOGGER.info(f"Total records: {len(record_names)}, unused records: {len(unused_records)}, Train/Test records: {len(train_test_records)}")
+
+    train_records, test_records = [], []
 
     if is_qtdb:
         # All non-excluded QTDB records go to training
-        train_records = train_val_records
+        train_records = train_test_records
     else:
-        # For LUDB, split the train/val records
-        random.shuffle(train_val_records)
-        val_count = int(len(train_val_records) * val_ratio)
-        val_records = train_val_records[:val_count]
-        train_records = train_val_records[val_count:]
+        # For LUDB, split the train/test records
+        random.shuffle(train_test_records)
+        test_count = int(len(train_test_records) * test_ratio)
+        test_records = train_test_records[:test_count]
+        train_records = train_test_records[test_count:]
 
     # Create directories
     create_directory(train_dir)
-    create_directory(val_dir)
-    if test_dir:
-        create_directory(test_dir)
+    create_directory(test_dir)
+    if unused_dir:
+        create_directory(unused_dir)
 
     # Function to move files for a list of records to a target directory
     def move_files(records, target_dir):
@@ -75,15 +75,15 @@ def split_files_for_training(processed_path, train_dir, val_dir, test_dir=None, 
 
     # Move files to respective directories
     train_files_moved = move_files(train_records, train_dir)
-    val_files_moved = move_files(val_records, val_dir)
-    test_files_moved = 0
-    if test_dir:
-        test_files_moved = move_files(test_records, test_dir)
+    test_files_moved = move_files(test_records, test_dir)
+    unused_files_moved = 0
+    if unused_dir:
+        unused_files_moved = move_files(unused_records, unused_dir)
 
     LOGGER.info(f"Split complete for {os.path.basename(processed_path)}: "
                 f"{len(train_records)} train records ({train_files_moved} files), "
-                f"{len(val_records)} val records ({val_files_moved} files), "
-                f"{len(test_records)} test records ({test_files_moved} files)")
+                f"{len(test_records)} test records ({test_files_moved} files), "
+                f"{len(unused_records)} unused records ({unused_files_moved} files)")
 
 
 def main():
@@ -93,10 +93,10 @@ def main():
     
     # Define output directories
     train_dir = os.path.join(DATA_DIR, "train")
-    val_dir = os.path.join(DATA_DIR, "val")
     test_dir = os.path.join(DATA_DIR, "test")
+    unused_dir = os.path.join(DATA_DIR, "unused")
 
-    # Manually excluded QTDB records for the test set
+    # Manually excluded QTDB records for the unused set
     qtdb_exclude_records = [
         "sel102", "sel104", "sel221", "sel232", "sel310", "sel35", "sel36", "sel37",
     ]
@@ -107,8 +107,8 @@ def main():
         split_files_for_training(
             processed_path=qtdb_processed,
             train_dir=train_dir,
-            val_dir=val_dir,
             test_dir=test_dir,
+            unused_dir=unused_dir,
             exclude_records=qtdb_exclude_records,
             is_qtdb=True # Flag to handle QTDB logic
         )
@@ -121,9 +121,9 @@ def main():
         split_files_for_training(
             processed_path=ludb_processed,
             train_dir=train_dir,
-            val_dir=val_dir,
-            test_dir=test_dir, # LUDB has no test files, but directory might be needed
-            val_ratio=0.4,
+            test_dir=test_dir,
+            unused_dir=unused_dir, # LUDB has no unused files, but directory might be needed
+            test_ratio=0.4,
             random_seed=123,
             is_qtdb=False # Flag to handle LUDB logic
         )
