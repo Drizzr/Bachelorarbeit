@@ -710,9 +710,8 @@ ax, uncertain_metrics = analyzer.visualize_heart_vector(
 
 **Example Output**:
 <p align="center">
-  <img width="600" alt="Heart Vector Projection" src="https://github.com/user-attachments/assets/9031bff5-2ac0-4468-b4e3-19ae5dccc498">
+  <img width="600" alt="Heart Vector Projection" src="https://github.com/user-attachments/assets/54a0428e-67ac-40ef-8b21-edd517d095fa">
 </p>
-
 
 #### `visualize_heart_vectors`
 Plots the XY, XZ, and YZ heart vector projections for a specified segment in a single figure, with each projection including its own uncertainty metrics.
@@ -997,7 +996,7 @@ A typical set of output plots for a single feature analysis includes the followi
 
 | Box Plot with MC Uncertainty | ROC Curve Analysis | Confusion Matrix |
 |:-----------------------------:|:------------------:|:----------------:|
-| ![Box Plot of T-Wave Area]([https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc](https://github.com/user-attachments/files/21529303/F0_yz_T_Area_boxplot.pdf)) | ![P-Value Distribution]([https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d](https://github.com/user-attachments/files/21529306/F0_yz_T_Area_p_value_mc_dist.pdf)) | ![F1 score distribution](https://github.com/user-attachments/files/21529305/F0_yz_T_Area_f1_score_mc_dist.pdf) |
+| ![Box Plot of T-Wave Area](https://github.com/user-attachments/assets/1c438666-9b1a-4953-a179-4a2e183809c5) | ![P-Value Distribution](https://github.com/user-attachments/assets/0b1cdf4c-d018-4409-82cb-4754009310ad) | ![F1 score distribution](https://github.com/user-attachments/assets/4249b7f0-39ad-4e21-95b7-6c8ae2c84239) |
 
 
 ## Troubleshooting
