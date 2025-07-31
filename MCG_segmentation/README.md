@@ -672,7 +672,7 @@ The following table presents the delineation performance of the proposed UNet mo
 - **Model Efficiency**: The `Unet-1D-900k` model performs only marginally worse than its 15M-parameter counterpart and other much larger models from the literature. This demonstrates its high efficiency and suitability for deployment on resource-constrained infrastructure.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/files/21531479/ecg_segment_random_batch_49.pdf](https://github.com/user-attachments/assets/ff19d4ae-fd3d-4c3c-ad24-52ad376f738e" alt="ECG Segmentation Performance" width="85%">
+  <img  width="85%" src="https://github.com/user-attachments/assets/f071c2bf-fa0d-498e-bcbe-e0b318f436e5">
   <br>
   <em>Example segmentation performance of the U-Net-1D-15M on a random sample from the validation dataset. The model correctly identifies the P-wave, QRS complex, and an inverted T-wave, demonstrating its robustness to pathological signals.</em>
 </div>
@@ -681,9 +681,6 @@ The following table presents the delineation performance of the proposed UNet mo
   <br>
   <em>Segmentation of a noisy single-channel MCG signal using the trained U-Net-1D-15M model. Despite the rather high noise level, the model successfully delineates the P-wave, QRS complex, and T-wave.</em>
 </div>
-
-
-
 
 
 ## 9. Possible Applications to Magnetocardiography and ECG
