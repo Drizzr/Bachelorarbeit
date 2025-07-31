@@ -994,7 +994,7 @@ After running `heart_beat.py` for all subjects, this script performs a highly co
 
 A typical set of output plots for a single feature analysis includes the following:
 
-| Box Plot with MC Uncertainty | ROC Curve Analysis | Confusion Matrix |
+| Box Plot with MC Uncertainty | P-Value Distribution | F1-Score Distribution |
 |:-----------------------------:|:------------------:|:----------------:|
 | ![Box Plot of T-Wave Area](https://github.com/user-attachments/assets/1c438666-9b1a-4953-a179-4a2e183809c5) | ![P-Value Distribution](https://github.com/user-attachments/assets/0b1cdf4c-d018-4409-82cb-4754009310ad) | ![F1 score distribution](https://github.com/user-attachments/assets/4249b7f0-39ad-4e21-95b7-6c8ae2c84239) |
 
