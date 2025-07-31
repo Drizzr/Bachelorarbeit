@@ -375,9 +375,8 @@ filtered, components, best_idx, mask = analyzer.ICA_filter(data, heart_beat_scor
 
 **Example Output**:
 <p align="center">
-  <img width="900" alt="ICA Filter Plot" src="https://github.com/user-attachments/assets/85a9f730-a2a9-4f71-9c9f-c671ef00f704">
+  <img width="900" alt="ICA Filter Plot" src="https://github.com/user-attachments/assets/33241fc1-28f2-4d5d-b532-dc42f9c57a05">
 </p>
-
 
 ```
 Channel Selection Results:
@@ -434,8 +433,9 @@ labels, confidences = analyzer.segment_entire_run(data, window_size=2000, overla
 **Example Output**:
 (ploted with the `plot_segmented_signal` function)
 <p align="center">
-  <img width="900" alt="Segmented Signal" src="https://github.com/user-attachments/assets/9e5616e0-f852-4573-b0b9-dbcb8bd8fd66">
+  <img width="900" alt="Segmented Signal" src="https://github.com/user-attachments/assets/2d8c1c91-3ac7-4eed-8a61-2f47c674091c">
 </p>
+
 
 #### `find_cleanest_channel`
 Identifies the channel with the clearest signal based on segmentation confidence and physiological plausibility.
@@ -710,7 +710,7 @@ ax, uncertain_metrics = analyzer.visualize_heart_vector(
 
 **Example Output**:
 <p align="center">
-  <img width="600" alt="Heart Vector Projection" src="https://github.com/user-attachments/assets/3bc59e5a-985f-4596-96c8-b524208e5a7d">
+  <img width="600" alt="Heart Vector Projection" src="https://github.com/user-attachments/assets/9031bff5-2ac0-4468-b4e3-19ae5dccc498">
 </p>
 
 
@@ -997,7 +997,8 @@ A typical set of output plots for a single feature analysis includes the followi
 
 | Box Plot with MC Uncertainty | ROC Curve Analysis | Confusion Matrix |
 |:-----------------------------:|:------------------:|:----------------:|
-| ![Box Plot of T-Wave Area](https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc) | ![ROC Curve for T-Wave Area](https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d) | ![Confusion Matrix at Optimal Threshold](https://github.com/user-attachments/assets/4c8afc26-c580-44c1-9eef-b47815e44221) |
+| ![Box Plot of T-Wave Area]([https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc](https://github.com/user-attachments/files/21529303/F0_yz_T_Area_boxplot.pdf)) | ![P-Value Distribution]([https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d](https://github.com/user-attachments/files/21529306/F0_yz_T_Area_p_value_mc_dist.pdf)) | ![F1 score distribution](https://github.com/user-attachments/files/21529305/F0_yz_T_Area_f1_score_mc_dist.pdf) |
+
 
 ## Troubleshooting
 
