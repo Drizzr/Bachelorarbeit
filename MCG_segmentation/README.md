@@ -609,7 +609,7 @@ The script loads the best model checkpoint, prepares the validation dataset (wit
   <table border="0" cellspacing="0" cellpadding="0">
     <tr>
       <td align="center">
-        <img src="https://github.com/user-attachments/assets/4456af3f-e38d-4b2b-bf39-6f1ceca0a47a" alt="accuracy" width="95%">
+        <img src="https://github.com/user-attachments/assets/d6798fcb-8b49-4010-999c-a9bca29abb13" alt="accuracy" width="95%">
       </td>
       <td align="center">
         <img src="https://github.com/user-attachments/assets/dce211c5-c293-4279-ace8-9f79d56025d6" alt="lr_scheduler" width="95%">
@@ -617,7 +617,7 @@ The script loads the best model checkpoint, prepares the validation dataset (wit
     </tr>
   </table>
   <br>
-  <em><b>(a)</b> Training and validation accuracy curves over 100 epochs. As shown, the peak testing performance is reached around epoch 28. <b>(b)</b> The cosine annealing learning rate schedule, decaying from 10<sup>-3</sup> to 10<sup>-5</sup>.</em>
+  <em><b>(a)</b> Training and testing accuracy curves over 100 epochs. As shown, the peak testing performance is reached around epoch 28. <b>(b)</b> The cosine annealing learning rate schedule, decaying from 10<sup>-3</sup> to 10<sup>-5</sup>.</em>
 </div>
 
 
