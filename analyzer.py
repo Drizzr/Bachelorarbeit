@@ -943,7 +943,7 @@ class Analyzer:
             grayscale_map = {
                 "xy-Projection": '#2F2F2F',
                 "xz-Projection": '#5F5F5F',
-                "yz-Projection": "#FFFFFF"
+                "yz-Projection": "#989797"
             }
             plot_color = grayscale_map.get(proj_name, '#4F4F4F')
             arrow_color = '#000000'

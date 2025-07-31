@@ -6,7 +6,6 @@
     - [Methods](#methods)
     - [Measurements](#measurements)
     - [Statistical Analysis](#statistical-analysis)
-    - [Ethics Committee Approval](#ethics-committee-approval)
 - [Installation and Setup](#installation-and-setup)
   - [Dependencies](#dependencies)
   - [MCG Segmentation Package](#mcg-segmentation-package)
@@ -37,10 +36,10 @@
   - [Visualization](#visualization)
     - [plot_sensor_matrix](#plot_sensor_matrix)
     - [plot_lsd_multichannel](#plot_lsd_multichannel)
-    - [plot_heart_vector_projection](#plot_heart_vector_projection)
-    - [plot_all_heart_vector_projections](#plot_all_heart_vector_projections)
+    - [visualize_heart_vector](#visualize_heart_vector)
+    - [visualize_heart_vectors](#visualize_heart_vectors)
     - [plot_segmented_signal](#plot_segmented_signal)
-    - [plot_segmented_signal_with_editing](#plot_segmented_signal_with_editing)
+    - [plot_segments_with_editing](#plot_segments_with_editing)
     - [butterfly_plot](#butterfly_plot)
     - [create_heat_map_animation](#create_heat_map_animation)
 - [The Analysis Pipeline in Practice](#the-analysis-pipeline-in-practice)
@@ -50,27 +49,26 @@
 - [Troubleshooting](#troubleshooting)
 - [Notes](#notes)
 
-  
 ## Overview
 
 This repository contains a comprehensive Python pipeline for processing, analyzing, and visualizing Magnetocardiography (MCG) data. The primary goal of this project is to leverage high-precision MCG recordings from optically pumped magnetometers (OPMs) to investigate potential biomarkers for Arrhythmogenic Cardiomyopathy (ACM). The pipeline is designed to distinguish between ACM patients and healthy controls by extracting and statistically evaluating geometric features of the heart's magnetic field vector.
 
-he project is structured around three main components:
+The project is structured around three main components:
 
 1.  **`analyzer.py`**: A powerful and versatile Python class that serves as the core engine for all data handling. It provides functionalities for loading TDMS files, advanced signal processing (filtering, ICA), deep learning-based cardiac segmentation, and calculation of heart vector metrics with uncertainty propagation.
-2.  **`heart_beat.py`**: An automated script that executes the end-to-end analysis pipeline for a given patient. It handles data loading based on a central setup file, applies preprocessing and filtering, performs window-averaging, facilitates manual segmentation refinement, calculates key vector metrics (Area, T-Distance, Compactness), and saves the results.
-3.  **`statistical_analysis.py`**: A script designed to consume the outputs of `heart_beat.py`. It performs demographic analysis, conducts statistical comparisons (Welch's t-test, ROC analysis) between the ACM and healthy cohorts, and uses Monte Carlo simulations to incorporate measurement uncertainties into the final statistical results.
+2.  **`heart_beat.py`**: An automated script that executes the end-to-end analysis pipeline for a given patient. It handles data loading based on a central setup file, applies preprocessing and filtering, performs window-averaging, facilitates manual segmentation refinement, calculates key vector metrics (Area, Distance, Compactness, Angle), and saves the results.
+3.  **`statistical_analysis.py`**: A script designed to consume the outputs of `heart_beat.py`. It performs demographic analysis, conducts statistical comparisons (Welch's t-test, ROC analysis) between the ACM and healthy cohorts, and uses Monte Carlo simulations to incorporate measurement uncertainties into the final statistical results. It supports both individual sensor analysis and aggregated analysis over sensor grid regions.
 
 This pipeline was developed for the study "Magnetocardiography for diagnosing arrhythmogenic cardiomyopathy", providing a tool for researchers to explore non-invasive cardiac screening methods.
 
 ### Key Features
 - **End-to-End Workflow**: From raw TDMS data to final statistical significance plots.
-- **Advanced Signal Processing**: Includes robust filtering (bandpass, bandstop, Savitzky-Golay) and Independent Component Analysis (ICA) for artifact removal, guided by a physiological plausibility score.
-- **AI-Powered Segmentation**: Utilizes a pre-trained neural network to segment cardiac cycles, with an option for manual correction via an interactive UI.
-- **Heart Vector Analysis**: Computes 2D projections of the magnetic heart vector and quantifies their geometry using metrics like Enclosed Area, T-Distance, and Compactness.
-- **Uncertainty Quantification**: Implements Monte Carlo simulations to model timing uncertainties in segment boundaries and propagate them to the final metrics.
-- **Statistical Evaluation**: Provides tools to assess the diagnostic performance of extracted features, including t-tests, ROC/AUC analysis, and confusion matrices.
-- **Configurable & Extensible**: The entire pipeline is controlled via a central `setup.json` file, making it easy to manage different patients, runs, and analysis parameters.
+- **Advanced Signal Processing**: Includes robust filtering (bandpass, bandstop, Savitzky-Golay) and Independent Component Analysis (ICA) for artifact removal, guided by a physiological plausibility score and an interactive thresholding UI.
+- **AI-Powered Segmentation**: Utilizes a pre-trained neural network (e.g., `UNet1D`, `MCGSegmenter`) to segment cardiac cycles, with an option for manual correction via an interactive UI.
+- **Heart Vector Analysis**: Computes 2D projections of the magnetic heart vector and quantifies their geometry using metrics like Enclosed Area, Distance, Compactness, and Angle.
+- **Uncertainty Quantification**: Implements Monte Carlo simulations using the `uncertainties` library to model timing uncertainties in segment boundaries and propagate them to the final metrics and statistical tests.
+- **Comprehensive Statistical Evaluation**: Provides tools to assess the diagnostic performance of extracted features, including t-tests, ROC/AUC analysis, and confusion matrices. Analysis can be run on individual sensors or aggregated over regions of the sensor grid.
+- **Highly Configurable & Extensible**: The entire pipeline is controlled via a central `setup.json` file and configuration dictionaries within the main scripts, making it easy to manage patients, runs, analysis parameters, and model selection.
 
 ## Scientific Context & Methodology
 ### Background
@@ -79,29 +77,28 @@ Arrhythmogenic cardiomyopathy is associated with a mechanical or electrical dysf
 ### Methods
 Magnetocardiography was used to monitor potential changes in the magnetic field of the heart. The recordings were made using an innovative optically pumped system and a person-sized magnetic shield established at German Heart Center and TUM University, Munich, Germany. MCG is a non-invasive method that detects the cardiac magnetic field generated by electrical currents in the heart. MCG data were preprocessed using a digital bandpass filter (1–95 Hz) to preserve relevant cardiac frequencies, and a bandstop filter to attenuate 50 Hz powerline interference and its harmonics. Baseline drift and DC offset were removed via third-order polynomial detrending.
 
-A lightweight neural network segmented the MCG signal into four waveform classes: no wave, P wave, QRS complex, and T wave. Based on the predicted segment durations, a heartbeat plausibility score was computed by comparing the relative segment lengths to physiologically expected ranges. This score guided artifact removal through Independent Component Analysis (ICA). Specifically, ICA was applied separately to each magnetic field component, using the respective sensor channels as input. Output components showing high similarity to valid heartbeat morphology—based on the plausibility score—were retained, whereas components with low cardiac relevance were discarded.
+A lightweight neural network segmented the MCG signal into four waveform classes: no wave, P wave, QRS complex, and T wave. Based on the predicted segment durations, a heartbeat plausibility score was computed by comparing the relative segment lengths to physiologically expected ranges. This score guided artifact removal through Independent Component Analysis (ICA). Specifically, ICA was applied separately to each magnetic field component, using the respective sensor channels as input. Output components showing high similarity to valid heartbeat morphology—based on the plausibility score—were retained, whereas components with low cardiac relevance were discarded using an interactive UI for threshold selection.
 
 ### Measurements
-For QRS detection, the single cleanest channel—selected from all sensors and their two to three orthogonal components—was used. QRS complexes were identified within this channel over intervals spanning at least four heartbeats. Subsequently, average waveform segments centered around the detected QRS peaks were computed using a windowed averaging approach to enhance signal-to-noise ratio and suppress statistical fluctuations. All analyses were based on these average waveforms. Boundaries of the P wave, QRS complex, ST segment, and T wave were initially estimated by the neural network and subsequently refined manually. A timing uncertainty of ±40 milliseconds was assumed for each segment boundary and modeled as Gaussian-distributed.
+For QRS detection, the single cleanest channel—selected from all sensors and their two to three orthogonal components—was used. QRS complexes were identified within this channel over intervals spanning at least four heartbeats. Subsequently, average waveform segments centered around the detected QRS peaks were computed using a windowed averaging approach to enhance signal-to-noise ratio and suppress statistical fluctuations. All analyses were based on these average waveforms. Boundaries of the P wave, QRS complex, ST segment, and T wave were initially estimated by the neural network and subsequently refined manually using a dedicated graphical interface. A timing uncertainty of ±40 milliseconds was assumed for each segment boundary and modeled as Gaussian-distributed.
 
 Three key cardiac segments were analyzed:
-*   **QRS complex**: from the peak of the Q wave to the peak of the R wave
-*   **ST segment**: from the end of the QRS complex to the start of the T wave
-*   **T wave**: from the start to the end of the T wave
+*   **QRS complex**: from the beginning of the QRS complex to its end.
+*   **ST segment**: from the end of the QRS complex to the start of the T wave.
+*   **T wave**: from the start to the end of the T wave.
 
 For each segment and each of the 16 sensors, we computed the magnetic heart vector, defined as the two-dimensional projection of the time-varying magnetic field vector during the respective segment. To characterize the geometry and dynamics of this vector trajectory, we computed the following metrics:
 
 *   **Enclosed Area**: Represents the spatial extent of the vector loop, calculated using the shoelace formula: `Area = ½ × |Σ (xᵢ · yᵢ₊₁ – yᵢ · xᵢ₊₁)|`.
-*   **T-Distance**: Quantifies the maximum displacement of the magnetic heart vector from its starting point during the segment: `T-distance = ||[(x_max – x₀)² + (y_max – y₀)²]||`.
+*   **Distance**: Quantifies the displacement of the magnetic heart vector from its starting point to the point of maximum magnitude during the segment: `Distance = ||P(t_max_magnitude) - P(t_start)||`.
 *   **Compactness**: A dimensionless metric that quantifies the circularity of the vector loop: `Compactness = (4 × π × Area) / Perimeter²`.
+*   **Angle**: The angle of the average heart vector for the segment, calculated as `atan2(mean(By), mean(Bx))`.
 
 To account for timing uncertainty in the segment definitions, a Monte Carlo simulation was conducted. In each iteration, segment boundaries were randomly perturbed within the assumed Gaussian distribution, and all metrics were recomputed to estimate uncertainty bounds.
 
 ### Statistical Analysis
-Statistical comparisons were performed between ARVC patients and healthy controls. Outliers were removed using the IQR method. Group differences were assessed using Welch’s two-sample t-test (p < 0.05). Diagnostic performance was evaluated using receiver operating characteristic (ROC) curve analysis, with optimal thresholds determined by maximizing Youden’s index. Measurement uncertainty was incorporated via a Monte Carlo simulation with N=500 iterations.
+Statistical comparisons were performed between ACM patients and healthy controls. Outliers were optionally removed using the IQR method, configurable for each feature. Group differences were assessed using Welch’s two-sample t-test (p < 0.05). Diagnostic performance was evaluated using receiver operating characteristic (ROC) curve analysis, with optimal thresholds determined by maximizing Youden’s index. Measurement uncertainty was incorporated via a Monte Carlo simulation with N=500 iterations, providing confidence intervals for p-values, AUC, and other statistical outputs.
 
-### Ethics Committee Approval
-The study was reviewed and approved by the ethics committee of the University Hospital TU Munich (2023-607-S-NP). All patients provided their written informed consent.
 
 ## Installation and Setup
 
@@ -122,7 +119,10 @@ The Project has the following structure:
 │   │   └── ...
 │   └── ...
 ├── MCG_segmentation/          # Package for the cardiac segmentation model.
-│   ├── README.md              # Detailed documentation for the segmentation model.
+│   ├── trained_models/        # Directory containing trained model checkpoints
+│   │   └── UNet_1D_15M/       # Example model directory
+│   │       ├── checkpoints/
+│   │       └── config.json
 │   └── ...
 ├── analyzer.py                # The core Analyzer class.
 ├── heart_beat.py              # Main script to run the analysis on a patient.
@@ -131,28 +131,22 @@ The Project has the following structure:
 └── README.md                  # This documentation file.
 ```
 
-
 ### Dependencies
 The `Analyzer` class requires several Python libraries. Install them by running:
 
 ```bash
 pip install -r requirements.txt
 ```
-
-(Note that all of this code was developed and tested using python 3.11.2 64-bit. Newer versions should work as well, although you might have to use different version of the libaries listed in the requirements.txt file)
+(Note that all of this code was developed and tested using python 3.11.2 64-bit. Newer versions should work as well, although you might have to use different version of the libraries listed in the requirements.txt file)
 
 Required libraries include:
-- `numpy`, `scipy`, `matplotlib`, `torch`, `sklearn`, `nptdms`, `logging`, `ffmpeg-python` (for animations).
+- `numpy`, `scipy`, `matplotlib`, `torch`, `sklearn`, `nptdms`, `logging`, `ffmpeg-python` (for animations), `uncertainties`.
 
 ### MCG Segmentation Package
-The `ECGSegmenter` model, used for cardiac segmentation, must be available in a local package named `MCG_segmentation`. 
-
-Ensure `MCG_segmentation` is in your `PYTHONPATH` or the working directory. If unavailable, segmentation-related methods (`segment_entire_run`, `find_cleanest_channel`, `detect_qrs_complex_peaks_*`, `ICA_filter` with heartbeat scoring) will log warnings and may not function. For a more detailed documentation see here: [MCG_segmentation/README.md](https://github.com/Drizzr/Bachelorarbeit/blob/main/MCG_segmentation/README.md)
-
-
+The cardiac segmentation model (e.g., `UNet1D`, `MCGSegmenter`) must be available in a local package named `MCG_segmentation`. Ensure it is in your `PYTHONPATH` or the working directory. If unavailable, segmentation-related methods will fail.
 
 ### Model Checkpoints
-The default model checkpoint path is `MCG_segmentation/MCGSegmentator_s/checkpoints/best`. Specify a custom path using the `model_checkpoint_dir` parameter during `Analyzer` initialization.
+The model checkpoint path is configurable in `heart_beat.py`. A typical path is `MCG_segmentation/trained_models/UNet_1D_15M`. The `Analyzer` class expects this directory to contain a `config.json` file and a `checkpoints/best/model.pth` file.
 
 ### FFmpeg
 For `create_heat_map_animation`, ensure `ffmpeg` is installed and accessible in the system’s PATH.
@@ -160,42 +154,40 @@ For `create_heat_map_animation`, ensure `ffmpeg` is installed and accessible in 
 ## Analyzer Class
 
 ### Core Concept: 250 Hz Internal Sampling Rate
-All processing, including segmentation and QRS detection, operates at a fixed **250 Hz** internal sampling rate (`INTERNAL_SAMPLING_RATE`). The `prepare_data` method resamples input data from its original sampling rate to 250 Hz, ensuring compatibility with the pre-trained `ECGSegmenter` model.
+All internal processing, including segmentation and QRS detection, operates at a fixed **250 Hz** sampling rate (`INTERNAL_SAMPLING_RATE`). The `prepare_data` method is responsible for resampling input data from its original sampling rate to 250 Hz.
 
 ### Initialization
 ```python
-from analyzer import Analyzer
+from analyzer import Analyzer, UNet1D
 
 analyzer = Analyzer(
     filename="path/to/primary_data.tdms",
-    add_filename="path/to/additional_data.tdms",  # Optional
+    add_filename="path/to/additional_data.tdms",
     log_file_path="path/to/sensor_log.txt",
-    sensor_channels_to_exclude={'run_key1': ['SensorA_x', 'SensorB_y']},
-    scaling=2.7 / 1000,
-    num_ch=48,
-    model_checkpoint_dir="path/to/MCG_segmentation/MCGSegmentator_s/checkpoints/best",
+    sensor_channels_to_exclude={'run_key1': ['SensorA_x']},
+    model_checkpoint_dir="MCG_segmentation/trained_models/UNet_1D_15M",
     model_class=UNet1D
 )
 ```
 
 #### Parameters
-| Parameter                  | Type   | Default                  | Description                                                                 |
-|----------------------------|--------|--------------------------|-----------------------------------------------------------------------------|
-| `filename`                 | `str`  | —                        | Path to primary TDMS file.                                                  |
-| `add_filename`             | `str`  | `None`                   | Path to additional TDMS file for alignment and concatenation.               |
-| `log_file_path`            | `str`  | —                        | Path to QZFM sensor log file (contains sensor mappings and orientations).   |
-| `sensor_channels_to_exclude` | `dict` | `None`                  | Dict of run keys to lists of channel names to exclude (supports wildcards). |
-| `scaling`                  | `float`| `2.7 / 1000`             | Scaling factor for TDMS data.                                               |
-| `num_ch`                   | `int`  | `48`                     | Expected number of channels after combining data.                          |
-| `model_checkpoint_dir`     | `str`  | See above                | Path to `ECGSegmenter` model checkpoints.                                   |
-|`model_class`|`torch.nn.Module`| `ECGSegmenter`| The Python class of the segmentation model to be loaded (e.g., UNet1D).|
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `filename` | `str` | — | Path to primary TDMS file. |
+| `add_filename` | `str` | `""` | Path to additional TDMS file for alignment and concatenation. |
+| `log_file_path` | `str` | — | Path to QZFM sensor log file (contains mappings and orientations). |
+| `sensor_channels_to_exclude` | `dict` | `None` | Dict of run keys to lists of channel names to exclude. |
+| `scaling` | `float` | `2.7 / 1000` | Scaling factor for TDMS data. |
+| `num_ch` | `int` | `48` | Expected number of channels. |
+| `model_checkpoint_dir` | `str` | `MCG.../MCGsegmenter_s` | Path to the directory containing model checkpoints and `config.json`. |
+|`model_class`|`torch.nn.Module`| `MCGSegmenter`| The Python class of the segmentation model to load (e.g., `UNet1D`, `MCGSegmenter`). |
 
 #### Key Attributes
-- `data`/`add_data`: Dictionaries storing TDMS data (keys: run names, values: NumPy arrays).
+- `data`/`add_data`: Dictionaries storing TDMS data.
 - `key_list`: List of run keys from the primary TDMS file.
-- `quspin_gen_dict`/`quspin_channel_dict`/`quspin_position_list`: Sensor metadata from the log file.
-- `model`: Loaded `ECGSegmenter` instance (or `None` if unavailable).
-- `DEVICE`: PyTorch device (auto-selects CUDA/CPU/mps for optimal performance).
+- `quspin_..._dict`/`quspin_position_list`: Sensor metadata from the log file.
+- `model`: Loaded segmentation model instance (or `None` if loading fails).
+- `DEVICE`: PyTorch device (auto-selects CUDA/CPU/MPS).
 - `INTERNAL_SAMPLING_RATE`: Fixed at 250 Hz.
 
 ## Input File Formats
@@ -259,7 +251,10 @@ Prepares and aligns multi-channel MCG data, applying resampling, filtering, and 
 - `np.ndarray`: Combined raw signal `(channels, samples)` at 250 Hz.
 
 **Example Output**:
-![Alignment Plot](https://github.com/user-attachments/assets/80065fda-0be1-4fd9-807e-5163a04950e8)
+<p align="center">
+  <img width="900" alt="Alignment Plot" src="https://github.com/user-attachments/assets/80065fda-0be1-4fd9-807e-5163a04950e8">
+</p>
+
 
 #### `align_multi_channel_signal`
 Aligns two multi-channel signals using cross-correlation of their averaged signals.
@@ -379,7 +374,10 @@ filtered, components, best_idx, mask = analyzer.ICA_filter(data, heart_beat_scor
 - `ValueError`: If input is not 2D or 3D.
 
 **Example Output**:
-![ICA Filter Plot](https://github.com/user-attachments/assets/85a9f730-a2a9-4f71-9c9f-c671ef00f704)
+<p align="center">
+  <img width="900" alt="ICA Filter Plot" src="https://github.com/user-attachments/assets/85a9f730-a2a9-4f71-9c9f-c671ef00f704">
+</p>
+
 
 ```
 Channel Selection Results:
@@ -434,7 +432,10 @@ labels, confidences = analyzer.segment_entire_run(data, window_size=2000, overla
 - `Warning`: If window size exceeds model max (2000), clamps to 2000.
 
 **Example Output**:
-![Segmented Signal](https://github.com/user-attachments/assets/9e5616e0-f852-4573-b0b9-dbcb8bd8fd66)
+(ploted with the `plot_segmented_signal` function)
+<p align="center">
+  <img width="900" alt="Segmented Signal" src="https://github.com/user-attachments/assets/9e5616e0-f852-4573-b0b9-dbcb8bd8fd66">
+</p>
 
 #### `find_cleanest_channel`
 Identifies the channel with the clearest signal based on segmentation confidence and physiological plausibility.
@@ -509,7 +510,10 @@ peaks, best_channel, labels, hr, hrv = analyzer.detect_qrs_complex_peaks_cleanes
 - `Warning`: If segmentation data is empty.
 
 **Example Output**:
-![QRS Detection](https://github.com/user-attachments/assets/724c40f4-38d5-4458-822f-3a02c9da62e4)
+<p align="center">
+  <img width="900" alt="QRS Detection" src="https://github.com/user-attachments/assets/724c40f4-38d5-4458-822f-3a02c9da62e4">
+</p>
+
 
 #### `detect_qrs_complex_peaks_all_channels`
 Detects QRS peaks independently for all channels.
@@ -607,7 +611,11 @@ Analyzer.plot_sensor_matrix(data, time, name="Sensor Grid", path="./plots", save
 **Returns**: None.
 
 **Example Output**:
-![Sensor Matrix](https://github.com/user-attachments/assets/2015e780-456a-49ec-b4c0-3eab05510e21)
+
+<p align="center">
+  <img width="700" alt="Leermessung_Noise_Spectrum_Triax_Sensor_LSD" src="https://github.com/user-attachments/assets/2015e780-456a-49ec-b4c0-3eab05510e21">
+</p>
+
 
 #### `plot_lsd_multichannel`
 Plots Linear Spectral Density (LSD) of multi-channel data using Welch’s method.
@@ -624,18 +632,22 @@ Plots Linear Spectral Density (LSD) of multi-channel data using Welch’s method
 analyzer.plot_lsd_multichannel(data, noise_theos, freqs, name="LSD Plot", labels=["Ch1", "Ch2"], channels=[0, 1], path="./plots", save=True)
 ```
 
-![Leermessung_Noise_Spectrum_Triax_Sensor_LSD](https://github.com/user-attachments/assets/d8217a25-4953-4f22-9028-807334be9a24)
+<p align="center">
+  <img width="700" alt="Leermessung_Noise_Spectrum_Triax_Sensor_LSD" src="https://github.com/user-attachments/assets/d8217a25-4953-4f22-9028-807334be9a24">
+</p>
+
+
 
 
 **Parameters**:
 | Parameter    | Type             | Default | Description                                 |
 |--------------|------------------|---------|---------------------------------------------|
 | `data`       | `np.ndarray`     | —       | Input `(channels, samples)` at 250 Hz.      |
-| `noise_theos`| `list` or `np.ndarray` | — | Theoretical noise floors.                    |
-| `name`       | `str`            | —       | Title and filename base.                    |
-| `labels`     | `list of str`    | —       | Channel labels for legend.                   |
-| `channels`   | `list of int`    | —       | Channel indices to plot.                    |
-| `path`       | `str`            | —       | Save directory.                             |
+| `noise_theos`| `list` or `np.ndarray` | `None` | Theoretical noise floors.                    |
+| `name`       | `str`            | `""`      | Title and filename base.                    |
+| `labels`     | `list of str`    | `None`      | Channel labels for legend.                   |
+| `channels`   | `list of int`    |   `None`     | Channel indices to plot.                    |
+| `path`       | `str`            | `""`       | Save directory.                             |
 | `save`       | `bool`           | `False` | Save as PNG.                                |
 
 **Returns**: None.
@@ -644,7 +656,7 @@ analyzer.plot_lsd_multichannel(data, noise_theos, freqs, name="LSD Plot", labels
 - `ValueError`: If input arrays are inconsistent.
 
 
-#### `plot_heart_vector_projection`
+#### `visualize_heart_vector`
 Plots a 2D projection of the heart vector for a given segment and calculates key geometric metrics, incorporating measurement uncertainty.
 
 **Steps**:
@@ -661,7 +673,7 @@ Plots a 2D projection of the heart vector for a given segment and calculates key
 **Usage**:
 ```python
 # Assuming 'sensor_data' is a (2, N) numpy array and segment boundaries are known
-ax, uncertain_metrics = analyzer.plot_heart_vector_projection(
+ax, uncertain_metrics = analyzer.visualize_heart_vector(
     original_data=sensor_data,
     segment_start_global=100,
     segment_end_global=180,
@@ -686,6 +698,7 @@ ax, uncertain_metrics = analyzer.plot_heart_vector_projection(
 | `save_path` | `str` | `None` | File path to save the generated plot. If `None`, the plot is not saved. |
 | `uncertainty_ms` | `int` | `100` | The uncertainty (in milliseconds) of segment boundaries, used for the Monte Carlo simulation. |
 | `n_realizations`| `int` | `100` | The number of Monte Carlo iterations to run for uncertainty estimation. |
+| `display_legend`| `bool` | `True` | Whether to display the legend with metrics. Default is True. |
 
 **Returns**:
 - `tuple`: A tuple `(ax, uncertain_metrics)` where:
@@ -696,11 +709,12 @@ ax, uncertain_metrics = analyzer.plot_heart_vector_projection(
 - `ValueError`: If `original_data` is invalid or segment indices are out of bounds.
 
 **Example Output**:
-![Heart Vector Projection](https://github.com/user-attachments/assets/3bc59e5a-985f-4596-96c8-b524208e5a7d)
+<p align="center">
+  <img width="600" alt="Heart Vector Projection" src="https://github.com/user-attachments/assets/3bc59e5a-985f-4596-96c8-b524208e5a7d">
+</p>
 
 
-
-#### `plot_all_heart_vector_projections`
+#### `visualize_heart_vectors`
 Plots the XY, XZ, and YZ heart vector projections for a specified segment in a single figure, with each projection including its own uncertainty metrics.
 
 **Steps**:
@@ -767,7 +781,11 @@ analyzer.plot_segmented_signal(signal, pred)
 **Returns**: None.
 
 **Example Output**:
-![Segmented Signal](https://github.com/user-attachments/assets/b84801ec-2e0e-4c94-9d95-8b0da44f2fd3)
+<p align="center">
+  <img width="1000" alt="Segmented Signal" src="https://github.com/user-attachments/assets/b84801ec-2e0e-4c94-9d95-8b0da44f2fd3">
+</p>
+
+
 
 
 #### `plot_segmented_signal_with_editing`
@@ -808,7 +826,9 @@ edited_predictions = analyzer.plot_segmented_signal_with_editing(signal, pred)
 
 
 **Example Output**:
-![Segmented Signal](https://github.com/user-attachments/assets/5cb5ecdd-8fd6-42a4-a17c-af545bd4eb76)
+<p align="center">
+  <img width="1000" alt="Segmented Signal" src="https://github.com/user-attachments/assets/5cb5ecdd-8fd6-42a4-a17c-af545bd4eb76">
+</p>
 
 
 
@@ -840,7 +860,9 @@ analyzer.butterfly_plot(data, time, num_ch=48, name="Signal Plot", path="./plots
 **Returns**: None.
 
 **Example Output**:
-![Butterfly Plot](https://github.com/user-attachments/assets/50478143-9f66-44d2-96f3-73c2338fedfb)
+<p align="center">
+  <img width="900" alt="Butterfly Plot" src="https://github.com/user-attachments/assets/50478143-9f66-44d2-96f3-73c2338fedfb">
+</p>
 
 #### `create_heat_map_animation`
 Creates an animated heatmap of sensor data with a time-series trace of the cleanest channel.
@@ -913,41 +935,73 @@ This file is the single source of truth for the entire pipeline. It defines all 
 - **`ICA_filter`**: A list of three float values representing the heartbeat score thresholds for the x, y, and z components during ICA filtering.
 - **`sensors_to_exclude`**: A dictionary to exclude specific sensor channels from a run, preventing them from being processed.
 
+
+
 ### Step 1: Feature Extraction (`heart_beat.py`)
-This script is the main driver for processing a single patient's data. It orchestrates calls to the `Analyzer` class to perform a full analysis chain.
+This script is the main driver for processing a single patient's data. It orchestrates calls to the `Analyzer` class to perform a full analysis chain, incorporating several stages of user interaction for quality control.
 
 **Workflow**:
-1.  **User Input**: Prompts the user to enter a Patient ID (e.g., `P001`) and an optional Run ID (e.g., `S01`).
-2.  **Load Configuration**: Reads `Data/setup.json` to get file paths, analysis intervals, ICA thresholds, and excluded sensors for the selected patient and run.
-3.  **Data Preparation**: Calls `analyzer.prepare_data()` to load, filter, align, and resample the data.
-4.  **ICA Filtering**: Applies `analyzer.ICA_filter()` to the x, y, and z components of the selected data interval.
-5.  **QRS Detection & Averaging**: Uses `analyzer.detect_qrs_complex_peaks_cleanest_channel()` to find R-peaks and `analyzer.avg_window()` to create a high-SNR average heartbeat waveform for all channels.
-6.  **Interactive Segmentation**: **This is a key step.** The script calls `analyzer.plot_segments_with_editing()` on the averaged waveform of the cleanest channel. The user can then manually correct the segment boundaries for P, QRS, and T waves to ensure maximum accuracy.
-7.  **Metric Calculation**: After the user saves their edits, the script uses the finalized segment boundaries to calculate the heart vector metrics (`Area`, `T-Dist`, `Compactness`) for every sensor by calling `analyzer.plot_heart_vector_projection()`. This method internally performs a Monte Carlo simulation to estimate the uncertainty of each metric based on the provided `uncertainty_ms`.
-8.  **Save Results**: The script saves all results. For each sensor, it appends a row of metrics (e.g., `t_Area`, `t_Area_unc`) to a `result.csv` file in the corresponding `Results/{sensor_name}_{projection}/` directory. Heart vector plots for each segment are also saved as PDFs.
+1.  **User Input & Configuration**: The script prompts the user for a Patient ID (e.g., `P001`) and an optional Run ID (e.g., `S01`). It then loads configurations from two sources:
+    - A global `CONFIG` dictionary at the top of the script for file paths and model details.
+    - The central `Data/setup.json` file for patient-specific parameters like analysis intervals, ICA thresholds, and excluded sensors.
+    - The segmentation model (e.g., `UNet1D`) is dynamically loaded based on the configuration.
+
+2.  **Data Preparation**: It calls `analyzer.prepare_data()`, which loads the raw TDMS files, applies a default filter combination at the original sampling rate, aligns the primary and additional data files, crops the signal to the specified interval, and finally resamples the data to the internal 250 Hz processing rate.
+
+3.  **Interactive ICA Filtering**: This is a key interactive step for artifact removal. The script applies `analyzer.ICA_filter()` separately to the x, y, and z components of the data. For each component, it displays an **interactive plot with a slider**, allowing the user to visually inspect the effect of the heartbeat score threshold and choose the optimal value for cleaning the signal before proceeding.
+
+4.  **QRS Detection, Averaging, and Segmentation**:
+    - The script uses `analyzer.detect_qrs_complex_peaks_cleanest_channel()` to find R-peaks in the filtered signal.
+    - It then plots the detected R-peaks on the cleanest channel's signal for immediate visual validation by the user.
+    - Using these peaks, it calls `analyzer.avg_window()` to create a high-SNR, averaged heartbeat waveform for all channels.
+    - **Crucially**, it calls `analyzer.plot_segments_with_editing()` on the averaged waveform. This opens another interactive UI where the user can manually drag segment boundaries and reclassify P, QRS, and T waves to ensure maximum accuracy.
+
+5.  **Metric Calculation, Plotting, and Saving**: After the user saves their segmentation edits, the script executes a comprehensive loop for every sensor in the grid:
+    - It identifies the valid 2D projection for the sensor (e.g., xy, xz, or yz).
+    - It uses the finalized segment boundaries to calculate heart vector metrics (**Area, Distance, Compactness, and Angle**) for the **T, QRS, and ST segments** by calling `analyzer.visualize_heart_vector()`. This method internally runs a Monte Carlo simulation to estimate the uncertainty of each metric.
+    - **Plot Generation**:
+        - It saves a detailed, individual **PDF plot of the heart vector for each segment of each sensor** in a structured directory (e.g., `Results/Q01_xy/Patients/P001_S01/T_heart_vector/`).
+        - It also generates and saves **4x4 grid plots** (one for each segment: T, QRS, ST) that provide a full overview of all sensor projections for the current patient.
+    - **CSV Output**: For each sensor, it appends a single row containing all calculated metrics and their uncertainties (e.g., `t_Area`, `t_Area_unc`, `qrs_Distance`, `qrs_Distance_unc`, etc.) to a `result.csv` file located in the sensor's results directory (e.g., `Results/Q01_xy/`).
+
+
 
 ### Step 2: Statistical Analysis (`statistical_analysis.py`)
-After running `heart_beat.py` for all subjects, this script performs the group-level statistical analysis.
+After running `heart_beat.py` for all subjects, this script performs a highly configurable, multi-level statistical analysis to compare the ACM and healthy cohorts.
 
 **Workflow**:
-1.  **Data Aggregation**: Automatically finds and loads all `result.csv` files from the `Results` directory. It can analyze each sensor individually or aggregate them by projection type (e.g., combine all `_xy` projections).
-2.  **Demographic Analysis**: Reads `Data/setup.json` to generate and save plots of age, height, and gender distributions for the ARVC and healthy cohorts.
-    <img width="717" height="440" alt="image" src="https://github.com/user-attachments/assets/11a517e2-9d35-4622-a5e2-3c2f07a6f985" />
+1.  **Configuration and Data Loading**: The script begins by loading a global `feature_analysis_config` dictionary. This powerful feature allows for fine-grained control over the analysis of each metric, specifying parameters like the t-test hypothesis (`not_equal`, `data1_greater`), whether to remove outliers using the IQR method, and units for plotting. It then automatically finds and loads all `result.csv` files from the `Results` directory, merging them with cohort information from `Data/setup.json`.
 
-3.  **Statistical Comparisons**: For each feature (e.g., T-Wave Area), it performs a comprehensive statistical comparison between the two groups:
-    *   **T-Test Analysis**: It runs `perform_t_test()`, which calculates Welch's t-test to get a p-value. It generates a plot of the t-distribution and a detailed boxplot showing the data distribution.
+2.  **Demographic Analysis**: It first performs a detailed demographic analysis, generating and saving separate plots of age, height, and gender distributions for the "All", "ACM", and "Healthy" groups. This provides a clear overview of the study population.
+
+<p align="center">
+  <img width="600" alt="Demographic analysis plots for age, height, and gender" src="https://github.com/user-attachments/assets/11a517e2-9d35-4622-a5e2-3c2f07a6f985">
+</p>
+
+3.  **Two-Tiered Statistical Analysis**: The script's main analysis is performed in two distinct stages to provide both localized and regional insights:
+    *   **A. Individual Sensor Analysis**: The script iterates through every sensor projection (e.g., `Q01_xy`, `F2_yz`, etc.) and performs a full, independent statistical analysis on each one.
+    *   **B. Aggregated Quadrant Analysis**: In this powerful new step, the script aggregates data from sensors located in four predefined quadrants of the sensor grid (Top-Left, Top-Right, Bottom-Left, Bottom-Right) for each projection type (`xy`, `yz`). It then runs the same full statistical analysis on these aggregated regional datasets.
+
+4.  **Comprehensive Statistical Comparisons**: For each feature (e.g., T-Wave Area) in each analysis run (both individual and aggregated), the script performs a comprehensive comparison between the two groups:
+    *   **T-Test Analysis**: It runs `perform_t_test()`, which calculates Welch's t-test to get a p-value. It generates a plot of the t-distribution and a detailed boxplot that includes individual data points and Monte Carlo-derived confidence intervals for the median.
     *   **ROC Analysis**: It runs `determine_optimal_threshold()` to evaluate diagnostic performance. This function calculates the AUC, F1-score, sensitivity, and specificity, and generates an ROC curve plot and a confusion matrix.
-4.  **Monte Carlo Simulation**: The script's main strength is its use of Monte Carlo simulations. The `_unc` columns in the `result.csv` files are used to run `perform_t_test()` and `determine_optimal_threshold()` hundreds of times on perturbed data. This produces robust confidence intervals for all key statistical outputs (p-value, AUC, optimal threshold, etc.).
-5.  **Save Outputs**: All generated plots and summary tables are saved to the `Results/` directory, organized into `Overall_Generated_Plots`, `Overall_Generated_Tables`, and sensor-specific subdirectories.
 
-![image](https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc)
-![image](https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d)
-![image](https://github.com/user-attachments/assets/4c8afc26-c580-44c1-9eef-b47815e44221)
+5.  **Monte Carlo Simulation for Uncertainty**: A core strength of the script is its robust use of Monte Carlo simulations. The `_unc` columns (e.g., `t_Area_unc`) from the `result.csv` files are used to run the `perform_t_test()` and `determine_optimal_threshold()` functions hundreds of times on data perturbed according to its measurement uncertainty. This produces robust confidence intervals for all key statistical outputs (p-value, AUC, optimal threshold, etc.), providing a rigorous assessment of the findings.
 
+6.  **Saving Outputs**: The script generates a wealth of structured output:
+    *   For individual sensor analyses, all plots and a summary CSV are saved to a `Generated_Plots_MC` and `Generated_Tables_MC` subdirectory within that sensor's result folder.
+    *   For aggregated analyses, plots and tables are saved in the global `Results/Overall_Generated_Plots/` and `Results/Overall_Generated_Tables/` directories.
+    *   Finally, master summary CSV files are created, consolidating the results from all individual and all aggregated analyses.
+
+A typical set of output plots for a single feature analysis includes the following:
+
+| Box Plot with MC Uncertainty | ROC Curve Analysis | Confusion Matrix |
+|:-----------------------------:|:------------------:|:----------------:|
+| ![Box Plot of T-Wave Area](https://github.com/user-attachments/assets/898bc20a-c7db-4f1f-a361-baa14656cadc) | ![ROC Curve for T-Wave Area](https://github.com/user-attachments/assets/6f34e19d-17ee-4f65-a408-5d364264409d) | ![Confusion Matrix at Optimal Threshold](https://github.com/user-attachments/assets/4c8afc26-c580-44c1-9eef-b47815e44221) |
 
 ## Troubleshooting
 
-- **Segmentation Model**: If `ECGSegmenter` or its checkpoints are missing, segmentation features will fail with logged warnings. Verify `MCG_segmentation` package and model paths.
+- **Segmentation Model**: If the model (`MCG_segmentation`, `UNet-1D` etc.) or its checkpoints are missing, segmentation features will fail with logged warnings. 
 - **Sampling Rates**: Ensure `input_sampling_rate` matches the data’s rate in `prepare_data`. All segmentation and QRS detection require 250 Hz input.
 - **Memory Usage**: Long recordings or animations may require significant memory. Use interval selection or chunked processing.
 - **FFmpeg**: Required for `create_heat_map_animation`. Install via `conda install ffmpeg` or system package manager.
@@ -955,7 +1009,7 @@ After running `heart_beat.py` for all subjects, this script performs the group-l
 - **Channel Mapping**: The `__init__` method adjusts channel indices (`abs(val) >= 100`). Modify this logic if your TDMS channel mapping differs.
 
 ## Notes
-- **Performance**: CUDA is automatically selected if available, significantly speeding up segmentation and ICA.
+- **Performance**: CUDA or MPS (Apple Silicon) is automatically selected if available, significantly speeding up segmentation and ICA.
 - **Logging**: Set `logging` level to `DEBUG` for detailed diagnostics or `ERROR` for minimal output.
 - **Extensibility**: Static utility methods (e.g., `bandstop_filter`) can be used independently for custom processing.
 - **Data Integrity**: Validate TDMS and log files before processing to avoid runtime errors.
