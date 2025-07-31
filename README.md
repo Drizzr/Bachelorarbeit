@@ -59,7 +59,7 @@ The project is structured around three main components:
 2.  **`heart_beat.py`**: An automated script that executes the end-to-end analysis pipeline for a given patient. It handles data loading based on a central setup file, applies preprocessing and filtering, performs window-averaging, facilitates manual segmentation refinement, calculates key vector metrics (Area, Distance, Compactness, Angle), and saves the results.
 3.  **`statistical_analysis.py`**: A script designed to consume the outputs of `heart_beat.py`. It performs demographic analysis, conducts statistical comparisons (Welch's t-test, ROC analysis) between the ACM and healthy cohorts, and uses Monte Carlo simulations to incorporate measurement uncertainties into the final statistical results. It supports both individual sensor analysis and aggregated analysis over sensor grid regions.
 
-This pipeline was developed for the study "Magnetocardiography for diagnosing arrhythmogenic cardiomyopathy", providing a tool for researchers to explore non-invasive cardiac screening methods.
+This pipeline was developed for the study **Magnetocardiography to Screen Adults with Arrhythmogenic Cardiomyopathy: A pilot study**, providing a tool for researchers to explore non-invasive cardiac screening methods.
 
 ### Key Features
 - **End-to-End Workflow**: From raw TDMS data to final statistical significance plots.
