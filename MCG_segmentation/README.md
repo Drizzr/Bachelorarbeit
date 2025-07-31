@@ -51,7 +51,7 @@ Built using PyTorch, this framework processes ECG data from the QT Database (QTD
 
 ### 1.1. Key Features
 
-- **Data Sources**: Utilizes the QT Database (QTDB) and the Lobachevsky University Database (LUDB) from PhysioNet [2], providing diverse ECG datasets for training and validation.
+- **Data Sources**: Utilizes the QT Database (QTDB) and the Lobachevsky University Database (LUDB) from PhysioNet [2], providing diverse ECG datasets for training and testing.
 - **Advanced Preprocessing**: Includes scripts to download and parse datasets, harmonize sampling frequencies, and generate artificial T-onsets for the QTDB to handle incomplete annotations. Data is split into dedicated training and test sets.
 - **Robust Data Augmentation**: Enhances model generalization through a pipeline of augmentations including amplitude scaling, time shifting, Gaussian noise, baseline wander, and high-frequency sinusoidal noise to simulate real-world conditions.
 - **Critical Signal Normalization**: Implements a two-step zero-mean and max-absolute scaling process to ensure the model learns features independent of absolute signal amplitude.
@@ -397,7 +397,7 @@ This section describes the training pipeline implemented in `trainer.py` and `tr
 
 ### 6.1. `Trainer` Class
 
-The `Trainer` class, defined in `trainer.py`, orchestrates the training and validation loops for a model, handling metric logging, checkpoint saving, and detailed evaluation of significant point detection for ECG signals.
+The `Trainer` class, defined in `trainer.py`, manages the training and evaluation loops for the model, including metric logging, checkpoint saving, and detailed assessment of significant point detection in ECG signals. In this setup, no separate validation set was used; instead, the test set was monitored during training solely to track performance, without influencing model selection or hyperparameter tuning.
 
 #### 6.1.1. Initialization
 
@@ -443,14 +443,14 @@ Executes the training loop over multiple epochs. For each epoch:
 - Updates the learning rate if a scheduler is provided.
 
 ##### `validate()`
-Evaluates the model on the validation (test) set, computing:
+Evaluates the model on the validation set, computing:
 - Average validation loss (using Focal Loss).
 - Validation accuracy.
 - Macro-averaged F1-score.
 - Detailed classification report with precision, recall, and F1-score per class.
 - Significant point detection metrics for ECG waves (onsets and offsets for P Wave, QRS, and T Wave) with a tolerance of ±150 ms.
 
-The method also prints a detailed classification report and detection metrics, then returns the validation (test) loss, accuracy, and macro F1-score.
+The method also prints a detailed classification report and detection metrics, then returns the validation loss, accuracy, and macro F1-score.
 
 ##### `save_model(is_best=False)`
 Saves the model, optimizer, and scheduler states, along with training parameters, to a checkpoint directory:
@@ -548,7 +548,7 @@ The script initializes datasets, DataLoaders, the model, optimizer, and schedule
 
 ## 7. Evaluation (`evaluate.py`)
 
-The `evaluate.py` script evaluates a trained ECG segmentation model on a validation dataset, computing metrics and generating visualizations to assess performance according to the **AAMI standard**. It supports loading checkpoints, processing ECG data, and producing detailed event-based and sample-wise metrics.
+The `evaluate.py` script evaluates a trained ECG segmentation model on a test dataset, computing metrics and generating visualizations to assess performance according to the **AAMI standard**. It supports loading checkpoints, processing ECG data, and producing detailed event-based and sample-wise metrics.
 
 ### 7.1. Usage Example
 
@@ -595,13 +595,13 @@ Predictions are refined before evaluation:
 
 ### 7.6. Evaluation Process
 
-The script loads the best model checkpoint, prepares the validation dataset (with augmentations disabled), and processes the data in batches. It generates visualizations, computes sample-wise and event-based metrics, and prints the results to the console.
+The script loads the best model checkpoint, prepares the test dataset (with augmentations disabled), and processes the data in batches. It generates visualizations, computes sample-wise and event-based metrics, and prints the results to the console.
 
 ## 8. Training Process and Results
 
 ### 8.1. General Training Setup
 
-- **UNet Models (`-15M`, `-900k`)**: Trained on a combined dataset of all suitable QTDB records and ~60% of LUDB records. Validated on the remaining 40% of LUDB.
+- **UNet Models (`-15M`, `-900k`)**: Trained on a combined dataset of all suitable QTDB records and ~60% of LUDB records. Tested on the remaining 40% of LUDB.
 - **Other Models (`DENS`, `MCG-Segmentator`)**: Trained on the QTDB dataset only and tested on the entire LUDB dataset. This difference in training data diversity should be considered when comparing performance.
 - **Training Parameters**: Models were trained for up to 100 epochs with AdamW [5], cosine annealing LR, and Focal Loss [6]. Input sequences were 500 samples (2 seconds at 250 Hz) with an overlap of 400 samples, and data augmentation was applied with a probability of 80% during training.
 
@@ -623,9 +623,9 @@ The script loads the best model checkpoint, prepares the validation dataset (wit
 
 ### 8.2. Summary of Model Performance
 
-The following table presents the delineation performance of the proposed UNet models against several state-of-the-art algorithms on the LUDB validation set. Performance is measured by Sensitivity (Se), Positive Predictive Value (PPV), F1-Score, and the mean error with standard deviation (m ± σ) in milliseconds.
+The following table presents the delineation performance of the proposed UNet models against several state-of-the-art algorithms on the LUDB test set. Performance is measured by Sensitivity (Se), Positive Predictive Value (PPV), F1-Score, and the mean error with standard deviation (m ± σ) in milliseconds.
 
-**Table: Delineation performance of the proposed models and other state-of-the-art algorithms on the LUDB validation set.**
+**Table: Delineation performance of the proposed models and other state-of-the-art algorithms on the LUDB test set.**
 | Model | Metric | P onset | P offset | QRS onset | QRS offset | T onset | T offset |
 |:--- |:--- |:---:|:---:|:---:|:---:|:---:|:---:|
 | **Kalyakulina et al. [8]** | Se (%) | 98.46 | 98.46 | 99.61 | 99.61 | – | 98.03 |
