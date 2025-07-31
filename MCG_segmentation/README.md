@@ -34,12 +34,7 @@
   - [7.6. Evaluation Process](#76-evaluation-process)
 - [8. Training Process and Results](#8-training-process-and-results)
   - [8.1. General Training Setup](#81-general-training-setup)
-  - [8.2. DENS-Model Results](#82-dens-model-results)
-  - [8.3. MCG-Segmentator_s Results](#83-mcg-segmentator_s-results)
-  - [8.4. MCG-Segmentator_xl Results](#84-mcg-segmentator_xl-results)
-  - [8.5. Unet-1D-15M Results](#85-unet-1d-15m-results)
-  - [8.6. Unet-1D-900k Results](#86-unet-1d-900k-results)
-  - [8.7. Summary of Model Performance](#87-summary-of-model-performance)
+  - [8.2. Summary of Model Performance](#82-summary-of-model-performance)
 - [9. Possible Applications to Magnetocardiography and ECG](#9-possible-applications-to-magnetocardiography-and-ecg)
 - [10. References](#10-references)
 
@@ -592,92 +587,8 @@ The script loads the best model checkpoint, prepares the validation dataset (wit
 - **Other Models (`DENS`, `MCG-Segmentator`)**: Trained on the QTDB dataset only and validated on the entire LUDB dataset. This difference in training data diversity should be considered when comparing performance.
 - **Training Parameters**: Models were trained for up to 100 epochs with AdamW [5], cosine annealing LR, and Focal Loss [6]. Input sequences were 500 samples (2 seconds at 250 Hz) with an overlap of 400 samples, and data augmentation was applied with a probability of 80% during training.
 
-### 8.2. DENS-Model Results
 
-- **Accuracy**: 0.8518 | **Macro F1-Score**: 0.8384
-- **Note**: Trained on QTDB only.
-
-**DENS-Model Training Metrics**<br>
-<table>
-<tr>
-<td align="center" valign="top">
-<img src="./trained_models/DENS_Model/evaluation_results/acc_plot.png" alt="DENS-Model Accuracy" width="500">
-</td>
-<td align="center" valign="top">
-<img src="./trained_models/DENS_Model/evaluation_results/loss_plot.png" alt="DENS-Model Loss" width="500">
-</td>
-</tr>
-</table>
-
-### 8.3. MCG-Segmentator_s Results
-
-- **Accuracy**: 0.8634 | **Macro F1-Score**: 0.8495
-- **Note**: Trained on QTDB only.
-
-**MCG-Segmentator_s Training Metrics**<br>
-<table>
-<tr>
-<td align="center" valign="top">
-<img src="./trained_models/MCGSegmentator_s/evaluation_results/acc_plot.png" alt="MCG-Segmentator_s Training Metric 1" width="500">
-</td>
-<td align="center" valign="top">
-<img src="./trained_models/MCGSegmentator_s/evaluation_results/loss_plot.png" alt="MCGSegmentator_s Training Metric 2" width="500">
-</td>
-</tr>
-</table>
-
-### 8.4. MCG-Segmentator_xl Results
-
-- **Accuracy**: 0.8647 | **Macro F1-Score**: 0.8522
-- **Note**: Trained on QTDB only.
-
-**MCG-Segmentator_xl Training Metrics**<br>
-<table>
-<tr>
-<td align="center" valign="top">
-<img src="./trained_models/MCGSegmentator_xl/evaluation_results/acc_plot.png" alt="MCG-Segmentator_xl Training Metric 1" width="500">
-</td>
-<td align="center" valign="top">
-<img src="./trained_models/MCGSegmentator_xl/evaluation_results/loss_plot.png" alt="MCG-Segmentator_xl Training Metric 2" width="500">
-</td>
-</tr>
-</table>
-
-### 8.5. Unet-1D-15M Results
-
-- **Accuracy**: 0.9068 | **Macro F1-Score**: 0.8927
-- **Note**: Trained on combined QTDB and LUDB.
-
-**Unet-1D-15M Training Metrics**<br>
-<table>
-<tr>
-<td align="center" valign="top">
-<img src="./trained_models/Unet_1D_15M/evaluation_results/acc_plot.png" alt="Unet-1D-15M Training Metric 1" width="500">
-</td>
-<td align="center" valign="top">
-<img src="./trained_models/Unet_1D_15M/evaluation_results/loss_plot.png" alt="Unet-1D-15M Training Metric 2" width="500">
-</td>
-</tr>
-</table>
-
-### 8.6. Unet-1D-900k Results
-
-- **Accuracy**: 0.9039 | **Macro F1-Score**: 0.8900
-- **Note**: Trained on combined QTDB and LUDB.
-
-**Unet-1D-900k Training Metrics**<br>
-<table>
-<tr>
-<td align="center" valign="top">
-<img src="./trained_models/Unet_1D_900k/evaluation_results/acc_plot.png" alt="Unet-1D-900k Training Metric 1" width="500">
-</td>
-<td align="center" valign="top">
-<img src="./trained_models/Unet_1D_900k/evaluation_results/loss_plot.png" alt="Unet-1D-900k Training Metric 2" width="500">
-</td>
-</tr>
-</table>
-
-### 8.7. Summary of Model Performance
+### 8.2. Summary of Model Performance
 
 The following table presents the delineation performance of the proposed UNet models against several state-of-the-art algorithms on the LUDB validation set. Performance is measured by Sensitivity (Se), Positive Predictive Value (PPV), F1-Score, and the mean error with standard deviation (m ± σ) in milliseconds.
 
@@ -721,7 +632,7 @@ The following table presents the delineation performance of the proposed UNet mo
 | | **F1 (%)** | **92.77** | **92.80** | **98.13** | **98.54** | **97.50** | **97.28** |
 | | m±σ (ms) | -5.8±23.6 | 2.3±21.1 | 1.6±10.8 | -3.9±14.7 | -21.3±38.6 | 13.1±31.7 |
 
-#### 8.7.1. Discussion
+#### 8.2.1. Discussion
 
 - **Performance**: The proposed UNet architectures achieve performance comparable to state-of-the-art solutions, even when trained on a less diverse dataset and with significantly shorter input intervals. This is likely attributable to the **Multi-Head Self-Attention** mechanism [3], which effectively captures long-range dependencies in the signal.
 - **P-Wave Detection**: A notable finding is the comparatively lower Positive Predictive Value (PPV) for P-wave detection in the proposed models. This indicates a higher rate of false positive P-wave detections, which is likely a consequence of the training data composition. The inclusion of the QTDB, where nearly every annotated heart cycle contains a P-wave, probably biased the model toward predicting P-waves more frequently. This was a necessary trade-off to improve performance on the primary target data (MCG).
