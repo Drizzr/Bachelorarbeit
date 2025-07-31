@@ -266,6 +266,9 @@ Following the augmentation pipeline, a two-step normalization is applied. This s
     $$ x_{\text{norm}}[t] = \frac{x_{\text{zero}}[t]}{\max_i |x_{\text{zero}}[i]| + \varepsilon} $$
     where $x_{\text{aug}}$ is the augmented signal and $\varepsilon$ is a small constant (e.g., 10⁻⁶) to prevent division by zero.
 
+<img width="1789" height="482" alt="augmentation_result" src="https://github.com/user-attachments/assets/da91c08b-345b-404b-8ccc-1984da9f7444" />
+
+
 ### 4.2. Testing and Visualization
 
 The `data_loader.py` script includes a `__main__` block to verify dataset functionality. When run, it loads a sample, applies the full augmentation and normalization pipeline, and generates a plot showing the final signal and its corresponding ground truth labels. This is useful for visually inspecting the effect of the preprocessing steps.
@@ -295,8 +298,8 @@ This is a large-capacity model designed for high performance.
 - **Parameters**: Approximately 15 million.
 
 **Architecture Diagram**:
+<img width="1879" height="655" alt="UNet" src="https://github.com/user-attachments/assets/6efcd9ba-54be-438d-9627-da8c27e2bcbe" />
 
-![UNet](./trained_models/Unet_1D_15M/evaluation_results/U-Net_architecture.png)
 
 ### 5.3. Unet-1D-900k
 
@@ -321,6 +324,9 @@ The MCG-Segmentator_s is a smaller variant of the `ECGSegmenter` model, designed
 - **Transformer Encoder**: Single layer with 8 attention heads.
 - **Skip Connection**: Combines early convolutional features with LSTM output.
 - **Classifier**: Linear layer to `num_classes`.
+
+**Architecture Diagram**:
+<img width="1357" height="349" alt="Bildschirmfoto 2025-07-31 um 15 28 26" src="https://github.com/user-attachments/assets/a6500515-d7b1-465f-85a0-fced5c35e874" />
 
 **Initialization**:
 
@@ -586,6 +592,10 @@ The script loads the best model checkpoint, prepares the validation dataset (wit
 - **UNet Models (`-15M`, `-900k`)**: Trained on a combined dataset of all suitable QTDB records and ~60% of LUDB records. Validated on the remaining 40% of LUDB.
 - **Other Models (`DENS`, `MCG-Segmentator`)**: Trained on the QTDB dataset only and validated on the entire LUDB dataset. This difference in training data diversity should be considered when comparing performance.
 - **Training Parameters**: Models were trained for up to 100 epochs with AdamW [5], cosine annealing LR, and Focal Loss [6]. Input sequences were 500 samples (2 seconds at 250 Hz) with an overlap of 400 samples, and data augmentation was applied with a probability of 80% during training.
+<img width="893" height="651" alt="lr_scheduler" src="https://github.com/user-attachments/assets/dce211c5-c293-4279-ace8-9f79d56025d6" />
+
+<tr><img width="867" height="651" alt="accuracy" src="https://github.com/user-attachments/assets/4456af3f-e38d-4b2b-bf39-6f1ceca0a47a" />
+
 
 
 ### 8.2. Summary of Model Performance
@@ -638,12 +648,18 @@ The following table presents the delineation performance of the proposed UNet mo
 - **P-Wave Detection**: A notable finding is the comparatively lower Positive Predictive Value (PPV) for P-wave detection in the proposed models. This indicates a higher rate of false positive P-wave detections, which is likely a consequence of the training data composition. The inclusion of the QTDB, where nearly every annotated heart cycle contains a P-wave, probably biased the model toward predicting P-waves more frequently. This was a necessary trade-off to improve performance on the primary target data (MCG).
 - **Model Efficiency**: The `Unet-1D-900k` model performs only marginally worse than its 15M-parameter counterpart and other much larger models from the literature. This demonstrates its high efficiency and suitability for deployment on resource-constrained infrastructure.
 
+[ecg_segment_random_batch_49.pdf](https://github.com/user-attachments/files/21531479/ecg_segment_random_batch_49.pdf)
+<img width="1542" height="841" alt="mcg_performance" src="https://github.com/user-attachments/assets/8e15773b-631a-43b0-8128-89116f7e0a55" />
+
+
+
 ## 9. Possible Applications to Magnetocardiography and ECG
 
 Beyond its primary function as a segmentation tool, the trained U-Net model can be leveraged for several practical downstream applications that enhance cardiac signal analysis.
 
 **Robust Peak Detection**
 The high F1-score of the model's QRS complex detection (>98%) enables a more robust peak detection methodology. By constraining the search for the signal's maximum absolute value (the R-peak) to only those intervals identified as QRS segments, the algorithm's reliability is significantly improved, preventing erroneous detection of noise spikes. This is particularly crucial for accurately timing cardiac events in noisy MCG recordings.
+<img width="1800" height="600" alt="qrs_detection" src="https://github.com/user-attachments/assets/19ac67c6-d7c7-4f57-b141-4a4e920db735" />
 
 **A Novel "Heartbeat Score" for Signal Quality Assessment**
 For multi-channel recordings like MCG, it is beneficial to automatically identify the channel with the cleanest signal. To automate this, a novel "Heartbeat Score" is introduced. This metric quantifies the likelihood that a signal segment represents a plausible cardiac rhythm by assigning a score between 0 and 1, based on two criteria:
