@@ -620,7 +620,7 @@ The script loads the best model checkpoint, prepares the test dataset (with augm
   <table border="0" cellspacing="0" cellpadding="0">
     <tr>
       <td align="center">
-        <img src="https://github.com/user-attachments/assets/d6798fcb-8b49-4010-999c-a9bca29abb13" alt="accuracy" width="95%">
+        <img src="https://github.com/user-attachments/assets/943e5f4a-0d0a-41c2-98b1-42d1544a8daf" alt="accuracy" width="95%">
       </td>
       <td align="center">
         <img src="https://github.com/user-attachments/assets/dce211c5-c293-4279-ace8-9f79d56025d6" alt="lr_scheduler" width="95%">
@@ -684,6 +684,11 @@ The following table presents the delineation performance of the proposed UNet mo
 - **Model Efficiency**: The `Unet-1D-900k` model performs only marginally worse than its 15M-parameter counterpart and other much larger models from the literature. This demonstrates its high efficiency and suitability for deployment on resource-constrained infrastructure.
 
 <div align="center">
+  <img src="https://github.com/user-attachments/assets/e28cfee9-f8db-44f3-9681-8abfa5e51d85" alt="ECG Segmentation Performance" width="85%">
+  <br>
+  <em>Segmentation performance of the U-Net-1D-900k model on a LUDB sample from the test set. This figure illustrates the type of sharp, high-frequency artifacts present in some LUDB recordings, which can pose a challenge for generalizing to MCG signals.</em>
+</div>
+<div align="center">
   <img  width="85%" src="https://github.com/user-attachments/assets/f071c2bf-fa0d-498e-bcbe-e0b318f436e5">
   <br>
   <em>Example segmentation performance of the U-Net-1D-15M on a random sample from the test dataset. The model correctly identifies the P-wave, QRS complex, and an inverted T-wave, demonstrating its robustness to pathological signals.</em>
@@ -693,6 +698,9 @@ The following table presents the delineation performance of the proposed UNet mo
   <br>
   <em>Segmentation of a noisy single-channel MCG signal using the trained U-Net-1D-15M model. Despite the rather high noise level, the model successfully delineates the P-wave, QRS complex, and T-wave.</em>
 </div>
+
+
+
 
 
 ## 9. Possible Applications to Magnetocardiography and ECG
