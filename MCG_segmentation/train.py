@@ -30,7 +30,7 @@ def load_from_checkpoint(args, train_loader, val_loader, device):
         params = json.load(f)
 
     # Define model structure based on args (or potentially loaded args)
-    model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4)
+    model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.5, num_heads=4)
     model.to(device)
 
     # Define optimizer
@@ -84,10 +84,10 @@ def main():
     parser = argparse.ArgumentParser(description="Train ECG Segmentation Model")
 
     # Training Process Args
-    parser.add_argument("--num_epochs", type=int, default=50, help="Number of training epochs")
+    parser.add_argument("--num_epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training")
     parser.add_argument("--val_batch_size", type=int, default=4, help="Batch size for validation")
-    parser.add_argument("--clip", type=float, default=1.0, help="Gradient clipping value (0 to disable)")
+    parser.add_argument("--clip", type=float, default=2.0, help="Gradient clipping value (0 to disable)")
 
     # Checkpointing Args
     parser.add_argument("--from_check_point", action='store_true', default=False, help="Resume training from a checkpoint")
@@ -182,7 +182,7 @@ def main():
 
     else: # Start training from scratch
         print("Initializing new model, optimizer, and scheduler...")
-        model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.4, num_heads=4)
+        model = UNet1D(num_classes=4, input_channels=1, features=[32, 64, 128], dropout=0.5, num_heads=4)
         model.to(device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.max_lr, weight_decay=1e-4)
         if not train_loader: raise RuntimeError("Cannot initialize scheduler: train_loader is not available.")
