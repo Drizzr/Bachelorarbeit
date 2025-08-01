@@ -688,11 +688,14 @@ The following table presents the delineation performance of the proposed UNet mo
   <br>
   <em>Segmentation performance of the U-Net-1D-900k model on a LUDB sample from the test set. This figure illustrates the type of sharp, high-frequency artifacts present in some LUDB recordings, which can pose a challenge for generalizing to MCG signals.</em>
 </div>
+
 <div align="center">
   <img  width="85%" src="https://github.com/user-attachments/assets/f071c2bf-fa0d-498e-bcbe-e0b318f436e5">
   <br>
   <em>Example segmentation performance of the U-Net-1D-15M on a random sample from the test dataset. The model correctly identifies the P-wave, QRS complex, and an inverted T-wave, demonstrating its robustness to pathological signals.</em>
+  <br>
 </div>
+
 <div align="center">
   <img src="https://github.com/user-attachments/assets/8e15773b-631a-43b0-8128-89116f7e0a55" alt="ECG Segmentation Performance" width="85%">
   <br>
