@@ -145,19 +145,30 @@ The following table, adapted from the thesis, summarizes the key characteristics
 | QTDB        | 105          | ~30 seconds        | 250 Hz    | 2     | P on/offsets, QRS on/offsets, T offsets |
 | LUDB        | 200          | 10 seconds         | 500 Hz    | 12    | P on/offsets, QRS on/offsets, T on/offsets |
 
+
 ### 3.3. Data Preprocessing (`create_dataset.py` and `create_training_data.py`)
 
 The project employs a multi-step preprocessing pipeline to prepare the QTDB and LUDB datasets for training.
 
 #### 3.3.1. Key Operations
-- **Download**: Scripts automatically fetch data from PhysioNet [2] into `Datasets/base/qtdb/raw/` and `Datasets/base/ludb/raw/`.
-- **Harmonization**: LUDB signals are downsampled from 500 Hz to 250 Hz to match QTDB's sampling frequency. Each lead from both datasets is processed independently.
-- **Annotation Parsing & Labeling**: Waveform and annotation files are parsed to identify P-wave, QRS complex, and T-wave segments. Gaps between waves are labeled as "No Wave". Integer labels are assigned: 0 (No Wave), 1 (P-Wave), 2 (QRS Complex), 3 (T-Wave).
-- **Artificial T-Wave Onset Generation (for QTDB)**: To address the frequent absence of T-wave onset annotations in QTDB, an artificial T-onset is generated for each beat by sampling from a Gaussian distribution centered around a physiologically normal ST segment length of 100 ms, with a standard deviation of 20 ms.
-- **Data Filtering**: For QTDB, records containing only QRS annotations are discarded to ensure high-quality multi-class segmentation data. For LUDB, only the annotated intervals are used, as annotations are often missing in the first and last seconds of a recording.
-- **Data Splitting (`create_training_data.py`)**: The final training and test sets are assembled.
-  - **Training Set**: Composed of all suitable records from QTDB and approximately 60% of the records from LUDB.
-  - **Test Set**: Composed of the remaining 40% of patient records from LUDB.
+
+-   **Download**: Scripts automatically fetch data from PhysioNet [2] into `Datasets/base/qtdb/raw/` and `Datasets/base/ludb/raw/`.
+-   **Harmonization**: LUDB signals are downsampled from 500 Hz to 250 Hz to match QTDB's sampling frequency. Each lead from both datasets is processed independently.
+-   **Annotation Parsing & Labeling**: Waveform and annotation files are parsed to identify P-wave, QRS complex, and T-wave segments. Gaps between waves are labeled as "No Wave". Integer labels are assigned: 0 (No Wave), 1 (P-Wave), 2 (QRS Complex), 3 (T-Wave).
+-   **Artificial T-Wave Onset Generation (for QTDB)**: To address the frequent absence of T-wave onset annotations in QTDB, an artificial T-onset is generated for each beat by sampling from a Gaussian distribution centered around a physiologically normal ST segment length of 100 ms, with a standard deviation of 20 ms.
+-   **Data Filtering**:
+    -   For QTDB, records containing only QRS annotations are initially discarded. Additionally, a predefined list of records with known quality issues (e.g., `sel102`, `sel104`) are moved to an `unused` directory and excluded from the training, validation, and test sets.
+    -   For LUDB, only the annotated intervals are used, as annotations are often missing in the first and last seconds of a recording.
+-   **Data Splitting and Set Composition (`create_training_data.py`)**: To ensure a rigorous and unbiased evaluation, the processed data is partitioned at the **patient level**, meaning all leads from a single patient record are assigned exclusively to one set. The final sets are a mixture from both databases, composed as follows:
+    -   **Training Set**: Used to train the model's parameters.
+        -   *From QTDB*: 94% of the usable patient records.
+        -   *From LUDB*: 55% of the patient records.
+    -   **Validation Set**: Used for hyperparameter tuning and model selection (i.e., early stopping).
+        -   *From QTDB*: The remaining 6% of usable patient records.
+        -   *From LUDB*: 5% of the patient records.
+    -   **Test Set**: A hold-out set used *only* for the final, unbiased performance evaluation.
+        -   *From LUDB*: The remaining 40% of patient records.
+        -   **Note**: No data from QTDB is included in the test set, ensuring the model is evaluated on a source it has not been heavily trained on.
 
 #### 3.3.2. Running Preprocessing
 
@@ -397,7 +408,7 @@ This section describes the training pipeline implemented in `trainer.py` and `tr
 
 ### 6.1. `Trainer` Class
 
-The `Trainer` class, defined in `trainer.py`, manages the training and evaluation loops for the model, including metric logging, checkpoint saving, and detailed assessment of significant point detection in ECG signals. In this setup, no separate validation set was used; instead, the test set was monitored during training solely to track performance, without influencing model selection or hyperparameter tuning.
+The `Trainer` class, defined in `trainer.py`, manages the training and validation loops for the model, including metric logging, checkpoint saving, and detailed assessment of significant point detection in ECG signals.
 
 #### 6.1.1. Initialization
 
@@ -532,7 +543,7 @@ python train.py \
 | `--load_dir`              | str   | `MCG_segmentation/checkpoints`             | Directory to load checkpoint from.                        |
 | `--save_dir`              | str   | `MCG_segmentation/checkpoints`             | Directory for saving new checkpoints.                     |
 | `--data_dir_train`        | str   | `MCG_segmentation/Datasets/train`          | Training data directory.                                  |
-| `--data_dir_val`          | str   | `MCG_segmentation/Datasets/test`            | Validation data directory.                                |
+| `--data_dir_val`          | str   | `MCG_segmentation/Datasets/val`            | Validation data directory.                                |
 | `--sequence_length`       | int   | 500                                        | Input sequence length for the model.                      |
 | `--overlap`               | int   | 400                                        | Overlap when creating sequences from files.               |
 | `--num_workers`           | int   | 4                                          | Number of DataLoader workers.                             |
@@ -601,8 +612,8 @@ The script loads the best model checkpoint, prepares the test dataset (with augm
 
 ### 8.1. General Training Setup
 
-- **UNet Models (`-15M`, `-900k`)**: Trained on a combined dataset of all suitable QTDB records and ~60% of LUDB records. Tested on the remaining 40% of LUDB.
-- **Other Models (`DENS`, `MCG-Segmentator`)**: Trained on the QTDB dataset only and tested on the entire LUDB dataset. This difference in training data diversity should be considered when comparing performance.
+- **UNet Models (`-15M`, `-900k`)**: The datasets were partitioned into training, validation, and test sets using a strict patient-level split to prevent data leakage across sets. The test set was composed exclusively of records from 40\% of the LUDB patients. The validation set, used to guide model selection, was formed from 5\% of patients from the QTDB and 5\% of the remaining LUDB patients. Consequently, the final training set consisted of all other records, comprising 95\% of suitable QTDB patients and the remaining 55\% of LUDB patients.
+- **Other Models (`DENS`, `MCG-Segmentator`)**: Trained and validated on the QTDB dataset only and tested on the entire LUDB dataset. This difference in training data diversity should be considered when comparing performance.
 - **Training Parameters**: Models were trained for up to 100 epochs with AdamW [5], cosine annealing LR, and Focal Loss [6]. Input sequences were 500 samples (2 seconds at 250 Hz) with an overlap of 400 samples, and data augmentation was applied with a probability of 80% during training.
 
 <div align="center">
@@ -620,6 +631,7 @@ The script loads the best model checkpoint, prepares the test dataset (with augm
   <em><b>(a)</b> Training and testing accuracy curves over 100 epochs. As shown, the peak testing performance is reached around epoch 28. <b>(b)</b> The cosine annealing learning rate schedule, decaying from 10<sup>-3</sup> to 10<sup>-5</sup>.</em>
 </div>
 
+ To select the optimal model and prevent overfitting, a strategy of early stopping was employed. The selection criterion was the sample-wise F1-score on the validation set, which evaluates the classification performance for each individual time step in the signal. The model weights from the epoch yielding the highest sample-wise F1-score were then retained for the final, event-based evaluation.
 
 ### 8.2. Summary of Model Performance
 
@@ -648,14 +660,14 @@ The following table presents the delineation performance of the proposed UNet mo
 | | PPV (%) | 87.25 | 87.41 | 99.41 | 99.80 | 97.59 | 97.55 |
 | | **F1 (%)** | **90.69** | **90.86** | **97.47** | **97.86** | **97.62** | **97.58** |
 | | m±σ (ms) | -14.1±28.1 | 0.7±23.9 | 1.2±10.5 | -2.9±14.3 | -25.2±38.6 | 10.4±33.6 |
-| **This work (U-Net-1D-900k)** | Se (%) | 97.53 | 97.61 | 97.21 | 98.23 | 97.78 | 97.62 |
-| | PPV (%) | 90.96 | 91.03 | 98.79 | 99.83 | 98.80 | 98.63 |
-| | **F1 (%)** | **94.13** | **94.20** | **97.99** | **99.02** | **98.28** | **98.12** |
-| | m±σ (ms) | 0.2±18.8 | -0.7±16.8 | 0.1±9.2 | -1.5±11.2 | -3.2±27.0 | -1.3±24.2 |
-| **This work (U-Net-1D-15M)** | Se (%) | 97.07 | 97.19 | 97.36 | 98.35 | 98.68 | 98.46 |
-| | PPV (%) | 93.31 | 93.43 | 98.81 | 99.81 | 99.53 | 99.31 |
-| | **F1 (%)** | **95.15** | **95.27** | **98.08** | **99.07** | **99.10** | **98.88** |
-| | m±σ (ms) | 0.6±18.8 | 1.5±15.6 | 1.6±8.9 | -0.3±11.0 | -4.1±25.6 | -2.1±23.2 |
+| **This work (U-Net-1D-900k)** | Se (%) | 95.58 | 95.60 | 99.37 | 99.50 | 97.84 | 97.67 |
+| | PPV (%) | 94.88 | 94.90 | 99.70 | 99.83 | 98.33 | 98.15 |
+| | **F1 (%)** | **95.23** | **95.25** | **99.53** | **99.67** | **98.08** | **97.91** |
+| | m±σ (ms) | 2.5±17.3 | 1.3±16.5 | 0.2±7.4 | -1.2±10.7 | -0.3±26.5 | -0.8±24.2 |
+| **This work (U-Net-1D-15M)** | Se (%) | 96.12 | 96.12 | 99.30 | 99.43 | 98.91 | 98.72 |
+| | PPV (%) | 96.10 | 96.10 | 99.55 | 99.68 | 98.98 | 98.79 |
+| | **F1 (%)** | **96.11** | **96.11** | **99.42** | **99.56** | **98.95** | **98.75** |
+| | m±σ (ms) | -0.2±17.2 | 2.5±16.3 | 1.0±7.8 | -1.5±10.6 | -0.5±26.1 | 3.2±23.0 |
 | **This work (MCG Segmenter s)** | Se (%) | 96.17 | 96.22 | 97.08 | 97.45 | 97.46 | 97.22 |
 | | PPV (%) | 89.45 | 89.50 | 99.23 | 99.62 | 97.74 | 97.49 |
 | | **F1 (%)** | **92.69** | **92.74** | **98.15** | **98.52** | **97.60** | **97.36** |

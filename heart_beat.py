@@ -18,7 +18,7 @@ CONFIG = {
     "setup_file": "Data/setup.json",
     "data_base_dir": "Data",
     "results_base_dir": "Results",
-    "model_checkpoint_dir": "MCG_segmentation/trained_models/UNet_1D_900k",
+    "model_checkpoint_dir": "MCG_segmentation/trained_models/UNet_1D_15M/checkpoints/acm_study_checkpoint",
     "model_class_name": "UNet1D",  # Store as string for dynamic import if needed
     "overall_plots_dir": "Results/Overall_Generated_Plots/Patient_Heart_Vectors_4_x_4",
     "grayscale_map": {

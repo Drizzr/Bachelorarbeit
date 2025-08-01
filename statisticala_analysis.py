@@ -162,7 +162,7 @@ def plot_hist_and_stats(data: pd.DataFrame, column: str, title: str, color: str,
         print(f"{title}: Mean = {stats['mean']:.2f}, Median = {stats['median']:.2f}, "
               f"Std = {stats['std']:.2f}, N = {stats['count']}")
         plt.figure(figsize=(8, 5))
-        sns.histplot(valid_data, kde=True, color=color, bins=10)
+        sns.histplot(valid_data, kde=True, color=color, bins=10, edgecolor='black', linewidth=1)
         plt.axvline(stats['mean'], color='black', linestyle='--', label=fr'Mean = {stats["mean"]:.2f}')
         if not np.isnan(stats['std']):
             plt.axvline(stats['mean'] + stats['std'], color='dimgray', linestyle=':', label=fr'+1 SD = {stats["mean"] + stats["std"]:.2f}')
@@ -598,7 +598,7 @@ groups = {"All": df_demographics, "ACM": df_demographics[df_demographics["ACM"]]
 for group_name, df_group in groups.items():
     for col in ["age", "height"]:
         demographics_summary_stats[f"{col}_{group_name.lower()}"] = plot_hist_and_stats(
-            df_group, col, fr"{col.capitalize()} Distribution ({group_name})", "darkgray",
+            df_group, col, fr"{col.capitalize()} Distribution ({group_name})", "#555555",
             os.path.join(OVERALL_PLOTS_DIR, f"demographics_{col}_{group_name.lower()}.pdf"))
 summary_path = os.path.join(OVERALL_TABLES_DIR, "demographics_summary.json")
 with open(summary_path, "w") as f: json.dump(demographics_summary_stats, f, indent=4)

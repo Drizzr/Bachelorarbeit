@@ -18,6 +18,7 @@ from matplotlib.widgets import Slider
 import copy
 import json
 from uncertainties import ufloat
+from pathlib import Path # Use the pathlib module
 
 from MCG_segmentation.model.model import MCGSegmenter, UNet1D, DENS_ECG_segmenter
 
@@ -48,7 +49,7 @@ class Analyzer:
     DEFAULT_SOURCE_SAMPLING_RATE = 1000 # Default assumed rate of raw TDMS files
     DEFAULT_SCALING = 2.7 / 1000
     DEFAULT_NUM_CHANNELS = 48
-    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/MCGsegmenter_s"
+    DEFAULT_MODEL_CHECKPOINT_DIR = "MCG_segmentation/trained_models/UNet_1D_15M/checkpoints/acm_study_checkpoint"
 
     # Determine device for PyTorch computations
     try:
@@ -72,7 +73,7 @@ class Analyzer:
         scaling=DEFAULT_SCALING,
         num_ch=DEFAULT_NUM_CHANNELS,
         model_checkpoint_dir=DEFAULT_MODEL_CHECKPOINT_DIR,
-        model_class = MCGSegmenter
+        model_class = UNet1D,
     ):
         """Initialize the Analyzer with data and model configurations.
 
@@ -350,21 +351,40 @@ class Analyzer:
 
 
     def _load_segmentation_model(self, checkpoint_dir, model_class):
-        """Load the trained ECGSegmenter model from the checkpoint directory.
+        """Load a trained ECGSegmenter model from its specific checkpoint directory.
+
+        This function expects the 'config.json' file to be located two
+        directories above the provided checkpoint directory. For example:
+        - User provides: '.../experiment_run/checkpoints/best/'
+        - The function finds:
+            - Model: '.../experiment_run/checkpoints/best/model.pth'
+            - Config: '.../experiment_run/config.json'
 
         Args:
-            checkpoint_dir (str): Path to the directory containing model.pth and params.json.
+            checkpoint_dir (str): Path to the directory containing 'model.pth'.
+            model_class: The model class to instantiate (e.g., UNet).
 
         Returns:
-            ECGSegmenter: Loaded model instance, or None if loading fails.
+            ECGSegmenter: Loaded model instance, ready for evaluation.
+            
+        Raises:
+            FileNotFoundError: If the checkpoint or config file cannot be found.
         """
+        # Convert to Path object for easier manipulation
+        checkpoint_dir = Path(checkpoint_dir)
+        
+        # Define paths based on the expected structure
+        model_path = checkpoint_dir / "model.pth"
+        
+        # Navigate up two levels from the checkpoint directory
+        # best/ -> checkpoints/ -> experiment_run/
+        experiment_dir = checkpoint_dir.parent.parent
+        config_path = experiment_dir / "config.json"
 
-
-        best_model_path = os.path.join(checkpoint_dir, "checkpoints/best/model.pth")
-        config_path = os.path.join(checkpoint_dir, "config.json")
-
-        if not os.path.exists(best_model_path) or not os.path.exists(config_path):
-            raise FileNotFoundError(f"Model files not found in {checkpoint_dir}")
+        if not model_path.is_file():
+            raise FileNotFoundError(f"Model file 'model.pth' not found in {checkpoint_dir}")
+        if not config_path.is_file():
+            raise FileNotFoundError(f"Config file not found at expected location: {config_path}")
 
         # Load model parameters
         with open(config_path, "r") as f:
@@ -374,12 +394,12 @@ class Analyzer:
         model = model_class(**model_params)
 
         try:
-            model.load_state_dict(torch.load(best_model_path, map_location=self.DEVICE))
+            model.load_state_dict(torch.load(model_path, map_location=self.DEVICE))
             model.to(self.DEVICE)
             model.eval()
-            logging.info(f"Model loaded from {best_model_path}")
+            logging.info(f"Model loaded successfully from {model_path}")
         except RuntimeError as e:
-            logging.error(f"Failed to load model state_dict: {e}")
+            logging.error(f"Failed to load model state_dict from {model_path}: {e}")
             raise
 
         return model
