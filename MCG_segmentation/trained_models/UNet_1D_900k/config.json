@@ -3,6 +3,6 @@
     "num_classes": 4,
     "input_channels": 1,
     "features": [32, 64, 128],  
-    "dropout": 0.4,
+    "dropout": 0.5,
     "num_heads": 4
 }
