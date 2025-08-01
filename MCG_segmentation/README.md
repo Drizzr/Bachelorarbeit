@@ -52,7 +52,7 @@ Built using PyTorch, this framework processes ECG data from the QT Database (QTD
 ### 1.1. Key Features
 
 - **Data Sources**: Utilizes the QT Database (QTDB) and the Lobachevsky University Database (LUDB) from PhysioNet [2], providing diverse ECG datasets for training and testing.
-- **Advanced Preprocessing**: Includes scripts to download and parse datasets, harmonize sampling frequencies, and generate artificial T-onsets for the QTDB to handle incomplete annotations. Data is split into dedicated training and test sets.
+- **Advanced Preprocessing**: Includes scripts to download and parse datasets, harmonize sampling frequencies, and generate artificial T-onsets for the QTDB to handle incomplete annotations. Data is split into dedicated training, validation and test sets.
 - **Robust Data Augmentation**: Enhances model generalization through a pipeline of augmentations including amplitude scaling, time shifting, Gaussian noise, baseline wander, and high-frequency sinusoidal noise to simulate real-world conditions.
 - **Critical Signal Normalization**: Implements a two-step zero-mean and max-absolute scaling process to ensure the model learns features independent of absolute signal amplitude.
 - **State-of-the-Art Model Architectures**:
@@ -168,7 +168,7 @@ The project employs a multi-step preprocessing pipeline to prepare the QTDB and 
         -   *From LUDB*: 5% of the patient records.
     -   **Test Set**: A hold-out set used *only* for the final, unbiased performance evaluation.
         -   *From LUDB*: The remaining 40% of patient records.
-        -   **Note**: No data from QTDB is included in the test set, ensuring the model is evaluated on a source it has not been heavily trained on.
+        -   **Note**: No data from QTDB is included in the test set, ensuring compatability with performance metrics in literature.
 
 #### 3.3.2. Running Preprocessing
 
@@ -192,7 +192,7 @@ The project employs a multi-step preprocessing pipeline to prepare the QTDB and 
 
 ### 3.4. Prepared Data Format
 
-After preprocessing, ECG data is stored in CSV format in `Datasets/train/` and `Datasets/test/`. Each CSV file represents a single channel/lead and contains:
+After preprocessing, ECG data is stored in CSV format in `Datasets/train/`, `Datasets/test/` and `Datasets/val/`. Each CSV file represents a single channel/lead and contains:
 - **Columns**: `time`, `index`, `label` (string), `train_label` (integer), and `wave_form` (signal amplitude).
 
 ## 4. Data Loading (`data_loader.py`)
@@ -449,8 +449,8 @@ Executes the training loop over multiple epochs. For each epoch:
 - Computes loss using Focal Loss (`alpha=0.25`, `gamma=2.0`) [6].
 - Updates model parameters with gradient clipping (if `args.clip > 0`).
 - Tracks training loss and accuracy using a progress bar (`tqdm`).
-- Calls `validate()` to evaluate the model on the validation (test) set.
-- Logs metrics and saves checkpoints (best model when validation (test) F1-score improves, or every 5 epochs).
+- Calls `validate()` to evaluate the model on the validation set.
+- Logs metrics and saves checkpoints (best model when validation F1-score improves, or every 5 epochs).
 - Updates the learning rate if a scheduler is provided.
 
 ##### `validate()`
@@ -517,7 +517,7 @@ The `train.py` script configures and executes the training pipeline. It handles 
 ```bash
 python train.py \
     --data_dir_train Datasets/train \
-    --data_dir_val Datasets/test \
+    --data_dir_val Datasets/val \
     --save_dir trained_models/Unet-1D-900k/checkpoints \
     --metrics_file trained_models/Unet-1D-900k/logs/training_metrics.csv \
     --model_name Unet-1D-900k \
@@ -628,7 +628,7 @@ The script loads the best model checkpoint, prepares the test dataset (with augm
     </tr>
   </table>
   <br>
-  <em><b>(a)</b> Training and testing accuracy curves over 100 epochs. As shown, the peak testing performance is reached around epoch 28. <b>(b)</b> The cosine annealing learning rate schedule, decaying from 10<sup>-3</sup> to 10<sup>-5</sup>.</em>
+  <em><b>(a)</b> Training and validation accuracy curves over 100 epochs. As shown, the peak validation performance is reached around epoch 40. <b>(b)</b> The cosine annealing learning rate schedule, decaying from 10<sup>-3</sup> to 10<sup>-5</sup>.</em>
 </div>
 
  To select the optimal model and prevent overfitting, a strategy of early stopping was employed. The selection criterion was the sample-wise F1-score on the validation set, which evaluates the classification performance for each individual time step in the signal. The model weights from the epoch yielding the highest sample-wise F1-score were then retained for the final, event-based evaluation.
@@ -680,7 +680,7 @@ The following table presents the delineation performance of the proposed UNet mo
 #### 8.2.1. Discussion
 
 - **Performance**: The proposed UNet architectures achieve performance comparable to state-of-the-art solutions, even when trained on a less diverse dataset and with significantly shorter input intervals. This is likely attributable to the **Multi-Head Self-Attention** mechanism [3], which effectively captures long-range dependencies in the signal.
-- **P-Wave Detection**: A notable finding is the comparatively lower Positive Predictive Value (PPV) for P-wave detection in the proposed models. This indicates a higher rate of false positive P-wave detections, which is likely a consequence of the training data composition. The inclusion of the QTDB, where nearly every annotated heart cycle contains a P-wave, probably biased the model toward predicting P-waves more frequently. This was a necessary trade-off to improve performance on the primary target data (MCG).
+- **P-Wave Detection**: A notable weakness, however, is observed in P-wave delineation. Compared to state-of-the-art results, both proposed models show a lower $F_1$-Score, indicating a higher rate of false positive and false negative detections. This performance gap is likely a direct consequence of the training data composition. The inclusion of the QTDB, where nearly every annotated heartbeat contains a P-wave, appears to have induced a model bias. This leads the model to over-predict P-waves when evaluated on the more diverse LUDB test set, which includes arrhythmic recordings where P-waves may be absent. This inclusion was a deliberate trade-off. Leveraging the QTDB was found to be crucial for achieving robust performance on the primary target data (magnetocardiography signals), as a subset of the LUDB recordings exhibits high-frequency and atypically sharp artifacts, not representative of typical ECG/MCG signals.
 - **Model Efficiency**: The `Unet-1D-900k` model performs only marginally worse than its 15M-parameter counterpart and other much larger models from the literature. This demonstrates its high efficiency and suitability for deployment on resource-constrained infrastructure.
 
 <div align="center">
