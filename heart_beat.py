@@ -153,7 +153,7 @@ def apply_ica_and_prepare_data(analysis, x, y, z, ica_settings, key, interval):
     return single_run_filtered, x_filtered, y_filtered, z_filtered
 
 
-def detect_peaks_and_segment(analysis, single_run_data):
+def detect_peaks_and_segment(analysis, single_run_data, key):
     """Detects R-peaks, allows manual segmentation editing, and returns segments."""
     print("\n--- Detecting Peaks and Segmenting Signal ---")
     
@@ -180,11 +180,13 @@ def detect_peaks_and_segment(analysis, single_run_data):
     plt.show()
 
     # Average beats
-    avg_channels, _ = analysis.avg_window(
+    avg_channels, time_window = analysis.avg_window(
         single_run_data, peak_positions, window_left=0.3, window_right=0.4, 
         sigma=1, heart_beat_score_threshold=0.50
     )
-    
+    x_data_window, y_data_window, z_data_window = analysis.get_field_directions(avg_channels, key)
+    analysis.plot_sensor_matrix(y_data_window, time_window, name="Y-Field")
+
     # Find cleanest channel in averaged data for segmentation
     best_channel, labels, _, _ = analysis.find_cleanest_channel(
         avg_channels, confidence_weight=0.7, plausibility_weight=0.3
@@ -355,7 +357,7 @@ def main():
     )
 
     # 5. Detect peaks and define segments
-    segment_results = detect_peaks_and_segment(analysis, single_run_filtered)
+    segment_results = detect_peaks_and_segment(analysis, single_run_filtered, primary_key)
     if segment_results[0] is None: # Check if peak detection failed
         return
     avg_channels, t_start, t_end, qrs_start, qrs_end = segment_results

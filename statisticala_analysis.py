@@ -62,7 +62,7 @@ os.makedirs(OVERALL_PLOTS_DIR, exist_ok=True)
 os.makedirs(OVERALL_TABLES_DIR, exist_ok=True)
 
 # --- Analysis Parameters ---
-N_MC_ITERATIONS = 500
+N_MC_ITERATIONS = 5000
 CONFIDENCE_LEVEL = 0.95
 
 # --- Feature Definitions ---
