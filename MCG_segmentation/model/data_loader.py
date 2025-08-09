@@ -183,6 +183,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     # Colors for plotting labels on signal
     TEST_CLASS_COLORS = {0: "silver", 1: "blue", 2: "red", 3: "green"}
+    CLASS_NAMES = {0: "No Wave", 1: "P Wave", 2: "QRS-Complex", 3: "T Wave"}
 
     try:
         print("--- Testing ECGFullDataset for 1D Output with Enhanced Augmentations ---")
@@ -232,7 +233,7 @@ if __name__ == "__main__":
 
             legend_elements = [Line2D([0], [0], color='black', lw=1, label='Signal')]
             for lbl, col in TEST_CLASS_COLORS.items():
-                legend_elements.append(Line2D([0], [0], marker='o', color='w', label=f'Label {lbl}',
+                legend_elements.append(Line2D([0], [0], marker='o', color='w', label=f'{CLASS_NAMES[lbl]}',
                                             markerfacecolor=col, markersize=8))
 
             ax.legend(handles=legend_elements, loc='upper right', fontsize='small')
