@@ -97,7 +97,7 @@ For each segment and each of the 16 sensors, we computed the magnetic heart vect
 To account for timing uncertainty in the segment definitions, a Monte Carlo simulation was conducted. In each iteration, segment boundaries were randomly perturbed within the assumed Gaussian distribution, and all metrics were recomputed to estimate uncertainty bounds.
 
 ### Statistical Analysis
-Statistical comparisons were performed between ACM patients and healthy controls. Outliers were optionally removed using the IQR method, configurable for each feature. Group differences were assessed using Welch’s two-sample t-test (p < 0.05). Diagnostic performance was evaluated using receiver operating characteristic (ROC) curve analysis, with optimal thresholds determined by maximizing Youden’s index. Measurement uncertainty was incorporated via a Monte Carlo simulation with N=500 iterations, providing confidence intervals for p-values, AUC, and other statistical outputs.
+Statistical comparisons were performed between ACM patients and healthy controls. Outliers were optionally removed using the IQR method, configurable for each feature. Group differences were assessed using Welch’s two-sample t-test (p < 0.05). Diagnostic performance was evaluated using receiver operating characteristic (ROC) curve analysis, with optimal thresholds determined by maximizing Youden’s index. Measurement uncertainty was incorporated via a Monte Carlo simulation with N=500 iterations, providing uncertainty intervals for p-values, AUC, and other statistical outputs.
 
 
 ## Installation and Setup
@@ -982,10 +982,10 @@ After running `heart_beat.py` for all subjects, this script performs a highly co
     *   **B. Aggregated Quadrant Analysis**: In this powerful new step, the script aggregates data from sensors located in four predefined quadrants of the sensor grid (Top-Left, Top-Right, Bottom-Left, Bottom-Right) for each projection type (`xy`, `yz`). It then runs the same full statistical analysis on these aggregated regional datasets.
 
 4.  **Comprehensive Statistical Comparisons**: For each feature (e.g., T-Wave Area) in each analysis run (both individual and aggregated), the script performs a comprehensive comparison between the two groups:
-    *   **T-Test Analysis**: It runs `perform_t_test()`, which calculates Welch's t-test to get a p-value. It generates a plot of the t-distribution and a detailed boxplot that includes individual data points and Monte Carlo-derived confidence intervals for the median.
+    *   **T-Test Analysis**: It runs `perform_t_test()`, which calculates Welch's t-test to get a p-value. It generates a plot of the t-distribution and a detailed boxplot that includes individual data points and Monte Carlo-derived uncertainty intervals for the median.
     *   **ROC Analysis**: It runs `determine_optimal_threshold()` to evaluate diagnostic performance. This function calculates the AUC, F1-score, sensitivity, and specificity, and generates an ROC curve plot and a confusion matrix.
 
-5.  **Monte Carlo Simulation for Uncertainty**: A core strength of the script is its robust use of Monte Carlo simulations. The `_unc` columns (e.g., `t_Area_unc`) from the `result.csv` files are used to run the `perform_t_test()` and `determine_optimal_threshold()` functions hundreds of times on data perturbed according to its measurement uncertainty. This produces robust confidence intervals for all key statistical outputs (p-value, AUC, optimal threshold, etc.), providing a rigorous assessment of the findings.
+5.  **Monte Carlo Simulation for Uncertainty**: A core strength of the script is its robust use of Monte Carlo simulations. The `_unc` columns (e.g., `t_Area_unc`) from the `result.csv` files are used to run the `perform_t_test()` and `determine_optimal_threshold()` functions hundreds of times on data perturbed according to its measurement uncertainty. This produces robust uncertainty intervals for all key statistical outputs (p-value, AUC, optimal threshold, etc.), providing a rigorous assessment of the findings.
 
 6.  **Saving Outputs**: The script generates a wealth of structured output:
     *   For individual sensor analyses, all plots and a summary CSV are saved to a `Generated_Plots_MC` and `Generated_Tables_MC` subdirectory within that sensor's result folder.

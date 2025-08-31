@@ -63,7 +63,7 @@ os.makedirs(OVERALL_TABLES_DIR, exist_ok=True)
 
 # --- Analysis Parameters ---
 N_MC_ITERATIONS = 5000
-CONFIDENCE_LEVEL = 0.95
+UNCERTAINTY_LEVEL = 0.95
 
 # --- Feature Definitions ---
 segment_cols_map = {
@@ -225,14 +225,14 @@ def _plot_feature_boxplot(data_raw: Tuple[np.ndarray, np.ndarray], data_cleaned:
     ax.scatter([], [], color='black', alpha=0.5, s=30, label=r'Individual Data Points')
 
     if mc_medians and all(mc_medians):
-        low_p, high_p = (1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100
+        low_p, high_p = (1 - UNCERTAINTY_LEVEL) / 2 * 100, (1 + UNCERTAINTY_LEVEL) / 2 * 100
         for i, mc_data in enumerate(mc_medians):
             mean_med = np.mean(mc_data)
-            low_ci, high_ci = np.percentile(mc_data, [low_p, high_p])
-            y_err = [[mean_med - low_ci], [high_ci - mean_med]]
-            
+            low_ui, high_ui = np.percentile(mc_data, [low_p, high_p])
+            y_err = [[mean_med - low_ui], [high_ui - mean_med]]
+
             if i == 0:
-                label = fr'MC Median ({CONFIDENCE_LEVEL*100:.0f}\% CI)'
+                label = fr'MC Median ({UNCERTAINTY_LEVEL*100:.0f}\% UI)'
             else:
                 label = None
                 
@@ -387,10 +387,10 @@ def perform_t_test(data1_nom, data2_nom, data1_unc, data2_unc, name, hypothesis,
             _plot_mc_distribution(mc_p_values, nom_p, r"P-value", fr"MC Distribution of P-values for {name}", f"{save_plots_prefix}_p_value_mc_dist.pdf")
 
     if mc_p_values:
-        p_low, p_high = np.percentile(mc_p_values, [(1-CONFIDENCE_LEVEL)/2*100, (1+CONFIDENCE_LEVEL)/2*100])
-        t_low, t_high = np.percentile(mc_t_stats, [(1-CONFIDENCE_LEVEL)/2*100, (1+CONFIDENCE_LEVEL)/2*100])
+        p_low, p_high = np.percentile(mc_p_values, [(1-UNCERTAINTY_LEVEL)/2*100, (1+UNCERTAINTY_LEVEL)/2*100])
+        t_low, t_high = np.percentile(mc_t_stats, [(1-UNCERTAINTY_LEVEL)/2*100, (1+UNCERTAINTY_LEVEL)/2*100])
         mean_p, mean_t = np.mean(mc_p_values), np.mean(mc_t_stats)
-        print(f"MC T-Test: Mean P-val: {mean_p:.4f} CI:[{p_low:.4f},{p_high:.4f}]. Mean T-stat: {mean_t:.4f} CI:[{t_low:.4f},{t_high:.4f}]")
+        print(f"MC T-Test: Mean P-val: {mean_p:.4f} UI:[{p_low:.4f},{p_high:.4f}]. Mean T-stat: {mean_t:.4f} UI:[{t_low:.4f},{t_high:.4f}]")
         return (mean_t, t_low, t_high), (mean_p, p_low, p_high), (mean_p < 0.05)
     
     return (nom_t, np.nan, np.nan), (nom_p, np.nan, np.nan), nom_sig
@@ -485,9 +485,9 @@ def determine_optimal_threshold(data1_nom, data2_nom, data1_unc, data2_unc, hypo
     for name, data_list, nom_val in zip(mc_results.keys(), mc_results.values(), nom_res):
         if data_list:
             mean_val = np.mean(data_list)
-            low_ci, high_ci = np.percentile(data_list, [(1 - CONFIDENCE_LEVEL) / 2 * 100, (1 + CONFIDENCE_LEVEL) / 2 * 100])
-            final_results[name] = (mean_val, low_ci, high_ci)
-            print(f"  MC Mean {name}:{mean_val:.4f} CI:[{low_ci:.4f},{high_ci:.4f}]")
+            low_ui, high_ui = np.percentile(data_list, [(1 - UNCERTAINTY_LEVEL) / 2 * 100, (1 + UNCERTAINTY_LEVEL) / 2 * 100])
+            final_results[name] = (mean_val, low_ui, high_ui)
+            print(f"  MC Mean {name}:{mean_val:.4f} UI:[{low_ui:.4f},{high_ui:.4f}]")
         else:
             final_results[name] = (nom_val, np.nan, np.nan)
     
@@ -570,9 +570,9 @@ def run_full_feature_analysis(df_analysis: pd.DataFrame, analysis_name: str, cle
                    "n_ACM_initial": len(pos_nom), "n_healthy_initial": len(neg_nom)}
             
             all_metrics = {"p_value": ttest_res[1], "t_stat": ttest_res[0], **roc_res}
-            for key, (mean, ci_low, ci_high) in all_metrics.items():
+            for key, (mean, ui_low, ui_high) in all_metrics.items():
                 key_clean = key.lower().replace('-', '_')
-                rec.update({f"{key_clean}_mean": mean, f"{key_clean}_ci_lower": ci_low, f"{key_clean}_ci_upper": ci_high})
+                rec.update({f"{key_clean}_mean": mean, f"{key_clean}_ui_lower": ui_low, f"{key_clean}_ui_upper": ui_high})
             analysis_records.append(rec)
     
     if analysis_records:
