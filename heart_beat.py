@@ -145,7 +145,7 @@ def apply_ica_and_prepare_data(analysis, x, y, z, ica_settings, key, interval):
 
     # Apply ICA filter to each component
     x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=False, max_iter=20000)
-    y_filtered, _, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=False, max_iter=20000)
+    y_filtered, _, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=True, max_iter=20000)
     z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=False, max_iter=20000)
     
     # Reconstruct the single run signal from filtered components
