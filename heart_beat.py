@@ -25,7 +25,8 @@ CONFIG = {
         "xy-Projection": '#2F2F2F',  # Dark gray
         "xz-Projection": '#5F5F5F',  # Medium gray
         "yz-Projection": "#C9C1C1"   # Light gray
-    }
+    },
+    "segmentation_unc": 15  # ms
 }
 
 # Ensure the main output directory exists
@@ -143,9 +144,9 @@ def apply_ica_and_prepare_data(analysis, x, y, z, ica_settings, key, interval):
     z_interval = z[:, :, interval[0]:interval[1]]
 
     # Apply ICA filter to each component
-    x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=True, max_iter=20000)
-    y_filtered, _, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=True, max_iter=20000)
-    z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=True, max_iter=20000)
+    x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=False, max_iter=20000)
+    y_filtered, _, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=False, max_iter=20000)
+    z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=False, max_iter=20000)
     
     # Reconstruct the single run signal from filtered components
     single_run_filtered = analysis.invert_field_directions(x_filtered, y_filtered, z_filtered, key, 48)
@@ -158,7 +159,7 @@ def detect_peaks_and_segment(analysis, single_run_data, key):
     print("\n--- Detecting Peaks and Segmenting Signal ---")
     
     # Detect QRS peaks from the cleanest channel
-    peak_positions, ch, labels, _, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(
+    peak_positions, ch, labels, heart_rate, _ = analysis.detect_qrs_complex_peaks_cleanest_channel(
         single_run_data, print_heart_rate=True, confidence_threshold=0.5, 
         confidence_weight=0.9, plausibility_weight=0.1
     )
@@ -204,7 +205,7 @@ def detect_peaks_and_segment(analysis, single_run_data, key):
     qrs_indices = np.where(mask_qrs)[0]
     qrs_start, qrs_end = qrs_indices[0], qrs_indices[-1]
     
-    return avg_channels, t_start, t_end, qrs_start, qrs_end
+    return avg_channels, t_start, t_end, qrs_start, qrs_end, heart_rate
 
 # =============================================================================
 # Main Processing Loop
@@ -278,7 +279,7 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
                     proj_name=proj_name, title_suffix=fr"{seg_name} Segment - {quspin_id}",
                     show=False, 
                     save_path=individual_plot_save_path, # Pass the save path
-                    uncertainty_ms=40
+                    uncertainty_ms=CONFIG["segmentation_unc"]
                 )
                 metrics_all_segments[seg_key] = metrics
 
@@ -360,8 +361,8 @@ def main():
     segment_results = detect_peaks_and_segment(analysis, single_run_filtered, primary_key)
     if segment_results[0] is None: # Check if peak detection failed
         return
-    avg_channels, t_start, t_end, qrs_start, qrs_end = segment_results
-    
+    avg_channels, t_start, t_end, qrs_start, qrs_end, _ = segment_results
+
     # 6. Process all sensors, save metrics and plots
     process_and_save_sensor_projections(
         analysis, avg_channels, primary_key, patient_id, run_id, 
