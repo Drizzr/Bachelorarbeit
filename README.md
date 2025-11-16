@@ -1,53 +1,64 @@
+
 # MCG Data Analyzer Documentation
-- [Overview](#overview)
-  - [Key Features](#key-features)
-  - [Scientific Context & Methodology](#scientific-context--methodology)
-    - [Background](#background)
-    - [Methods](#methods)
-    - [Measurements](#measurements)
-    - [Statistical Analysis](#statistical-analysis)
-- [Installation and Setup](#installation-and-setup)
-  - [Dependencies](#dependencies)
-  - [MCG Segmentation Package](#mcg-segmentation-package)
-  - [Model Checkpoints](#model-checkpoints)
-  - [FFmpeg](#ffmpeg)
-- [Analyzer Class](#analyzer-class)
-  - [Core Concept: 250 Hz Internal Sampling Rate](#core-concept-250-hz-internal-sampling-rate)
-  - [Initialization](#initialization)
-  - [Key Attributes](#key-attributes)
-- [Input File Formats](#input-file-formats)
-  - [TDMS Files](#tdms-files)
-  - [Sensor Log File](#sensor-log-file)
-- [Methods](#methods)
-  - [Data Preparation](#data-preparation)
-    - [prepare_data](#prepare_data)
-    - [align_multi_channel_signal](#align_multi_channel_signal)
-    - [get_field_directions](#get_field_directions)
-    - [invert_field_directions](#invert_field_directions)
-  - [Signal Filtering](#signal-filtering)
-    - [default_filter_combination](#default_filter_combination)
-    - [ICA_filter](#ica_filter)
-  - [Cardiac Segmentation and QRS Detection](#cardiac-segmentation-and-qrs-detection)
-    - [segment_entire_run](#segment_entire_run)
-    - [find_cleanest_channel](#find_cleanest_channel)
-    - [detect_qrs_complex_peaks_cleanest_channel](#detect_qrs_complex_peaks_cleanest_channel)
-    - [detect_qrs_complex_peaks_all_channels](#detect_qrs_complex_peaks_all_channels)
-    - [avg_window](#avg_window)
-  - [Visualization](#visualization)
-    - [plot_sensor_matrix](#plot_sensor_matrix)
-    - [plot_lsd_multichannel](#plot_lsd_multichannel)
-    - [visualize_heart_vector](#visualize_heart_vector)
-    - [visualize_heart_vectors](#visualize_heart_vectors)
-    - [plot_segmented_signal](#plot_segmented_signal)
-    - [plot_segments_with_editing](#plot_segments_with_editing)
-    - [butterfly_plot](#butterfly_plot)
-    - [create_heat_map_animation](#create_heat_map_animation)
-- [The Analysis Pipeline in Practice](#the-analysis-pipeline-in-practice)
-  - [Configuration: setup.json](#configuration-setupjson)
-  - [Step 1: Feature Extraction (heart_beat.py)](#step-1-feature-extraction-heart_beatpy)
-  - [Step 2: Statistical Analysis (statistical_analysis.py)](#step-2-statistical-analysis-statistical_analysispy)
-- [Troubleshooting](#troubleshooting)
-- [Notes](#notes)
+
+* [Overview](#overview)
+
+  * [Key Features](#key-features)
+  * [Scientific Context & Methodology](#scientific-context--methodology)
+
+    * [Background](#background)
+    * [Methods](#methods)
+    * [Measurements](#measurements)
+    * [Statistical Analysis](#statistical-analysis)
+* [Installation and Setup](#installation-and-setup)
+
+* [Analyzer Class](#analyzer-class)
+
+  * [Core Concept: 250 Hz Internal Sampling Rate](#core-concept-250-hz-internal-sampling-rate)
+  * [Initialization](#initialization)
+  * [Key Attributes](#key-attributes)
+* [Input File Formats](#input-file-formats)
+
+  * [TDMS Files](#tdms-files)
+  * [Sensor Log File](#sensor-log-file)
+* [Methods](#methods)
+
+  * [Data Preparation](#data-preparation)
+
+    * [prepare_data](#prepare_data)
+    * [align_multi_channel_signal](#align_multi_channel_signal)
+    * [get_field_directions](#get_field_directions)
+    * [invert_field_directions](#invert_field_directions)
+  * [Signal Filtering](#signal-filtering)
+
+    * [default_filter_combination](#default_filter_combination)
+    * [ICA_filter](#ica_filter)
+  * [Cardiac Segmentation and QRS Detection](#cardiac-segmentation-and-qrs-detection)
+
+    * [segment_entire_run](#segment_entire_run)
+    * [find_cleanest_channel](#find_cleanest_channel)
+    * [detect_qrs_complex_peaks_cleanest_channel](#detect_qrs_complex_peaks_cleanest_channel)
+    * [detect_qrs_complex_peaks_all_channels](#detect_qrs_complex_peaks_all_channels)
+    * [avg_window](#avg_window)
+  * [Visualization](#visualization)
+
+    * [plot_sensor_matrix](#plot_sensor_matrix)
+    * [plot_lsd_multichannel](#plot_lsd_multichannel)
+    * [visualize_heart_vector](#visualize_heart_vector)
+    * [visualize_heart_vectors](#visualize_heart_vectors)
+    * [plot_segmented_signal](#plot_segmented_signal)
+    * [plot_segments_with_editing](#plot_segments_with_editing)
+    * [butterfly_plot](#butterfly_plot)
+    * [create_heat_map_animation](#create_heat_map_animation)
+* [The Analysis Pipeline in Practice](#the-analysis-pipeline-in-practice)
+
+  * [Configuration: setup.json](#configuration-setupjson)
+  * [Step 1: Feature Extraction (heart_beat.py)](#step-1-feature-extraction-heart_beatpy)
+  * [Step 2: Statistical Analysis (statistical_analysis.py)](#step-2-statistical-analysis-statistical_analysispy)
+* [Troubleshooting](#troubleshooting)
+* [Notes](#notes)
+
+
 
 ## Overview
 
@@ -131,25 +142,69 @@ The Project has the following structure:
 └── README.md                  # This documentation file.
 ```
 
-### Dependencies
-The `Analyzer` class requires several Python libraries. Install them by running:
+
+To set up the `Bachelorarbeit` project and all its dependencies, follow these steps:
+
+#### **1. Clone the repository with submodules**
 
 ```bash
+git clone --recurse-submodules https://github.com/Drizzr/Bachelorarbeit
+cd Bachelorarbeit
+```
+
+* This ensures that the `MCG_segmentation` submodule is also cloned.
+
+If you already cloned the repository without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+---
+
+#### **2. Set up Python environment**
+
+It is recommended to use a virtual environment:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate   # On macOS/Linux
+# or
+venv\Scripts\activate      # On Windows
+```
+
+---
+
+#### **3. Install Python dependencies**
+
+```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
-(Note that all of this code was developed and tested using python 3.11.2 64-bit. Newer versions should work as well, although you might have to use different version of the libraries listed in the requirements.txt file)
 
-Required libraries include:
-- `numpy`, `scipy`, `matplotlib`, `torch`, `sklearn`, `nptdms`, `logging`, `ffmpeg-python` (for animations), `uncertainties`.
+> The project was tested on Python 3.11.2 64-bit. Newer versions may work, but some libraries may need version adjustments.
 
-### MCG Segmentation Package
-The cardiac segmentation model (e.g., `UNet1D`, `MCGSegmenter`) must be available in a local package named `MCG_segmentation`. Ensure it is in your `PYTHONPATH` or the working directory. If unavailable, segmentation-related methods will fail.
+---
 
-### Model Checkpoints
-The model checkpoint path is configurable in `heart_beat.py`. A typical path is `MCG_segmentation/trained_models/UNet_1D_15M`. The `Analyzer` class expects this directory to contain a `config.json` file and a `checkpoints/best/model.pth` file.
 
-### FFmpeg
-For `create_heat_map_animation`, ensure `ffmpeg` is installed and accessible in the system’s PATH.
+
+#### **4. Optional: update submodule later**
+
+If the submodule is updated in the future:
+
+```bash
+cd MCG_segmentation
+git pull origin main
+cd ..
+git add MCG_segmentation
+git commit -m "Update MCG_segmentation submodule"
+git push
+```
+
+
+
+
+
 
 ## Analyzer Class
 
