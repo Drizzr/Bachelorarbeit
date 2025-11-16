@@ -1804,7 +1804,7 @@ class Analyzer:
 
         return aligned_signal2, lag
 
-    def prepare_data(self, key, apply_default_filter=False, intervall_low_sec=5, intervall_high_sec=-5, plot_alignment=False, alignment_cutoff_sec=2, input_sampling_rate=1000):
+    def prepare_data(self, key, apply_default_filter=False, align=True, intervall_low_sec=5, intervall_high_sec=-5, plot_alignment=False, alignment_cutoff_sec=2, input_sampling_rate=1000):
         """Prepare data for a given run key for analysis.
 
         Steps:
@@ -1819,8 +1819,8 @@ class Analyzer:
 
         Args:
             key (str): Run key (must exist in `self.data` and potentially `self.add_data`).
-            input_sampling_rate (int): The original sampling rate (in Hz) of the TDMS data.
             apply_default_filter (bool): Whether to apply default filters after resampling and alignment.
+            align (bool): Whether to align the two datasets before concatenation.
             intervall_low_sec (float): Start time in seconds relative to the beginning of the *aligned* data.
             intervall_high_sec (float): End time in seconds relative to the *end* of the *aligned* data (use negative value).
             plot_alignment (bool): Whether to plot alignment results.
@@ -1843,11 +1843,14 @@ class Analyzer:
             data1 = self.default_filter_combination(data1, sampling_rate=input_sampling_rate)   
             data2 = self.default_filter_combination(data2, sampling_rate=input_sampling_rate)
 
-        aligned_data2, _ = self.align_multi_channel_signal(data1, data2, plot=plot_alignment, lag_cutoff=alignment_cutoff_sec * input_sampling_rate)
-        min_length = min(data1.shape[1], aligned_data2.shape[1])
-        single_run = np.concatenate((data1[:, :min_length], aligned_data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
+        if align:
+            aligned_data2, _ = self.align_multi_channel_signal(data1, data2, plot=plot_alignment, lag_cutoff=alignment_cutoff_sec * input_sampling_rate)
+            min_length = min(data1.shape[1], aligned_data2.shape[1])
+            single_run = np.concatenate((data1[:, :min_length], aligned_data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
+        else:
+            min_length = min(data1.shape[1], data2.shape[1])
+            single_run = np.concatenate((data1[:, :min_length], data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
         
-
         flipped_data = self._change_to_consistent_coordinate_system(single_run)
 
         if input_sampling_rate != self.INTERNAL_SAMPLING_RATE:

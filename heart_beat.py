@@ -144,9 +144,11 @@ def apply_ica_and_prepare_data(analysis, x, y, z, ica_settings, key, interval):
     z_interval = z[:, :, interval[0]:interval[1]]
 
     # Apply ICA filter to each component
-    x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=False, max_iter=20000)
-    y_filtered, _, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=True, max_iter=20000)
-    z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=False, max_iter=20000)
+    x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=True, max_iter=20000)
+    y_filtered, ica_components_y, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=True, max_iter=20000)
+    z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=True, max_iter=20000)
+
+    #analysis.plot_sensor_matrix(ica_components_y[:, :1000].reshape(3, 4, -1), np.arange(1000) / 250, name="ICA Components Y-Field")
     
     # Reconstruct the single run signal from filtered components
     single_run_filtered = analysis.invert_field_directions(x_filtered, y_filtered, z_filtered, key, 48)
