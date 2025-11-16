@@ -1,0 +1,3 @@
+[submodule "MCG_segmentation"]
+	path = MCG_segmentation
+	url = https://github.com/Drizzr/MCG_segmentation.git
