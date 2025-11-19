@@ -22,11 +22,11 @@ CONFIG = {
     "model_class_name": "UNet1D",  # Store as string for dynamic import if needed
     "overall_plots_dir": "Results/Overall_Generated_Plots/Patient_Heart_Vectors_4_x_4",
     "grayscale_map": {
-        "xy-Projection": '#2F2F2F',  # Dark gray
+        "xy-Projection": '#5F5F5F',  # Dark gray
         "xz-Projection": '#5F5F5F',  # Medium gray
-        "yz-Projection": "#C9C1C1"   # Light gray
+        "yz-Projection": '#5F5F5F'   # Light gray
     },
-    "segmentation_unc": 15  # ms
+    "segmentation_unc": 40  # ms
 }
 
 # Ensure the main output directory exists
@@ -144,9 +144,9 @@ def apply_ica_and_prepare_data(analysis, x, y, z, ica_settings, key, interval):
     z_interval = z[:, :, interval[0]:interval[1]]
 
     # Apply ICA filter to each component
-    x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=True, max_iter=20000)
+    x_filtered, _, _, _ = analysis.ICA_filter(x_interval, heart_beat_score_threshold=ica_settings[0], plot_result=False, max_iter=20000)
     y_filtered, ica_components_y, _, _ = analysis.ICA_filter(y_interval, heart_beat_score_threshold=ica_settings[1], plot_result=True, max_iter=20000)
-    z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=True, max_iter=20000)
+    z_filtered, _, _, _ = analysis.ICA_filter(z_interval, heart_beat_score_threshold=ica_settings[2], plot_result=False, max_iter=20000)
 
     #analysis.plot_sensor_matrix(ica_components_y[:, :1000].reshape(3, 4, -1), np.arange(1000) / 250, name="ICA Components Y-Field")
     
