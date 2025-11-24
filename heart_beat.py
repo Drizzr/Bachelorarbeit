@@ -262,10 +262,8 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
                 "st": (qrs_end + 1, t_start, "ST")
             }
             
-            # --- MODIFICATION START: Define paths for saving individual plots ---
             sensor_base_path = os.path.join(CONFIG["results_base_dir"], f"{quspin_id}_{proj_name[:2]}")
             patient_run_path = os.path.join(sensor_base_path, "Patients", f"{patient_id}_{run_id}")
-            # --- MODIFICATION END ---
 
             metrics_all_segments = {}
             for seg_key, (start, end, seg_name) in segments_info.items():
@@ -275,7 +273,7 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
                 os.makedirs(segment_plot_dir, exist_ok=True)
                 individual_plot_save_path = os.path.join(segment_plot_dir, f"{quspin_id}_{proj_name[:2]}.pdf")
                 # --- MODIFICATION END ---
-                
+            
                 _, metrics = analysis.visualize_heart_vector(
                     original_data=sensor_data, segment_start_global=start, segment_end_global=end,
                     proj_name=proj_name, title_suffix=fr"{seg_name} Segment - {quspin_id}",
@@ -284,6 +282,8 @@ def process_and_save_sensor_projections(analysis, avg_channels, key, patient_id,
                     uncertainty_ms=CONFIG["segmentation_unc"]
                 )
                 metrics_all_segments[seg_key] = metrics
+
+                np.savez_compressed(os.path.join(segment_plot_dir, f"data.npz"), arr=sensor_data[:, start:end])
 
             # --- Plot Grid Views ---
             plot_lims = {"t": 20, "qrs": 45, "st": 3}

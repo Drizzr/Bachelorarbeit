@@ -65,29 +65,42 @@ UNCERTAINTY_LEVEL = 0.95
 
 # --- Feature Definitions ---
 segment_cols_map = {
-    "T": ["t_Area", "t_T-Dist", "t_Compact", "t_Angle"],
-    "QRS": ["qrs_Area", "qrs_T-Dist", "qrs_Compact", "qrs_Angle"],
-    "ST": ["st_Area", "st_T-Dist", "st_Compact", "st_Angle"]
+    "T":   ["t_Area_Net", "t_Area_Hull", "t_Solidity", "t_Distance", "t_Compact", "t_Angle"],
+    "QRS": ["qrs_Area_Net", "qrs_Area_Hull", "qrs_Solidity", "qrs_Distance", "qrs_Compact", "qrs_Angle"],
+    "ST":  ["st_Area_Net", "st_Area_Hull", "st_Solidity", "st_Distance", "st_Compact", "st_Angle"]
 }
-features_to_analyze_short = ["Area", "T-Dist", "Compact", "Angle"]
 
+# The short names must match the suffix of your CSV columns
+features_to_analyze_short = ["Area_Net", "Area_Hull", "Solidity", "Distance", "Compact", "Angle"]
+# --- Feature-Specific Analysis Configuration ---
 # --- Feature-Specific Analysis Configuration ---
 feature_analysis_config = {
     "default": {"hypothesis": "not_equal", "units": r"pT"},
-    "t_Area": {"hypothesis": "not_equal", "units": r"pT$^2$"},
-    "t_Compact": {"hypothesis": "not_equal", "units": r"pT$^2$"},
-    "t_T-Dist": {"hypothesis": "not_equal", "units": r"pT"},
-    "qrs_Area": {"hypothesis": "not_equal", "units": r"pT$^2$"},
-    "qrs_Compact": {"hypothesis": "not_equal", "units": r"pT$^2$"},
-    "qrs_T-Dist": {"hypothesis": "not_equal", "units": r"pT"},
-    "st_Area": {"hypothesis": "not_equal", "units": r"pT$^2$"},
-    "st_Compact": {"hypothesis": "not_equal", "units": r"pT$^2$"},
-    "st_T-Dist": {"hypothesis": "not_equal", "units": r"pT"},
-    "t_Angle": {"hypothesis": "not_equal", "units": r"$\degree$"},
-    "qrs_Angle": {"hypothesis": "not_equal", "units": r"$\degree$"},
-    "st_Angle": {"hypothesis": "not_equal", "units": r"$\degree$"},
-}
+    
+    # --- T-Wave ---
+    "t_Area_Net":    {"hypothesis": "not_equal", "units": r"pT$^2$"},
+    "t_Area_Hull":   {"hypothesis": "not_equal", "units": r"pT$^2$"},
+    "t_Solidity":    {"hypothesis": "data1_greater", "units": r""}, # Healthy (1) > ACM (<1) usually
+    "t_Compact":     {"hypothesis": "not_equal", "units": r""},     # Unitless ratio
+    "t_Distance":      {"hypothesis": "not_equal", "units": r"pT"},
+    "t_Angle":       {"hypothesis": "not_equal", "units": r"$\degree$"},
 
+    # --- QRS Complex ---
+    "qrs_Area_Net":  {"hypothesis": "not_equal", "units": r"pT$^2$"},
+    "qrs_Area_Hull": {"hypothesis": "not_equal", "units": r"pT$^2$"},
+    "qrs_Solidity":  {"hypothesis": "not_equal", "units": r""},
+    "qrs_Compact":   {"hypothesis": "not_equal", "units": r""},
+    "qrs_Distance":    {"hypothesis": "not_equal", "units": r"pT"},
+    "qrs_Angle":     {"hypothesis": "not_equal", "units": r"$\degree$"},
+
+    # --- ST Segment ---
+    "st_Area_Net":   {"hypothesis": "not_equal", "units": r"pT$^2$"},
+    "st_Area_Hull":  {"hypothesis": "not_equal", "units": r"pT$^2$"},
+    "st_Solidity":   {"hypothesis": "not_equal", "units": r""},
+    "st_Compact":    {"hypothesis": "not_equal", "units": r""},
+    "st_Distance":     {"hypothesis": "not_equal", "units": r"pT"},
+    "st_Angle":      {"hypothesis": "not_equal", "units": r"$\degree$"},
+}
 # =============================================================================
 # Demographics Data Loading and Preparation
 # =============================================================================

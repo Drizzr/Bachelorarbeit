@@ -12,6 +12,7 @@ from scipy import signal
 from scipy.interpolate import griddata
 from scipy.signal import correlate, savgol_filter, butter, filtfilt
 from scipy.ndimage import gaussian_filter1d
+from scipy.spatial import ConvexHull, QhullError
 from scipy.stats import truncnorm
 from sklearn.decomposition import FastICA
 from matplotlib.widgets import Slider
@@ -751,28 +752,24 @@ class Analyzer:
 
     def calculate_metrics_with_uncertainty(self, original_data, segment_start_global, segment_end_global, uncertainty_ms=100, n_realizations=100):
         """
-        Calculate heart vector metrics with uncertainty propagation. Assumes gaussian uncertainty
-        in segment boundaries based on manual annotation.
+        Calculate heart vector metrics with uncertainty propagation.
+        Updated for ACM analysis to include Convex Hull and Solidity.
         
         Parameters:
         -----------
-        component1, component2 : array-like
-            The two components of the heart vector segment
         original_data : array-like, shape (2, N)
-            The full original data [component1_full, component2_full] to allow boundary expansion
+            The full original data [x_full, y_full]
         segment_start_global, segment_end_global : int
-            Global indices of the segment start and end in the original data
-        sampling_rate : float
-            Sampling rate in Hz (default 1000 Hz)
+            Global indices of the segment start and end
         uncertainty_ms : float
-            Uncertainty in manual annotation in milliseconds (default 100ms)
+            Uncertainty in manual annotation in milliseconds
+        n_realizations : int
+            Number of Monte Carlo iterations
         
         Returns:
         --------
-        dict : Dictionary containing uncertain metrics
+        dict : Dictionary containing uncertain metrics (ufloats)
         """
-
-        
 
         def sample_truncated_gaussian(mean, std, lower, upper):
             return int(truncnorm.rvs((lower - mean)/std, (upper - mean)/std, loc=mean, scale=std))
@@ -780,8 +777,10 @@ class Analyzer:
         # Convert uncertainty from ms to samples
         uncertainty_samples = int(uncertainty_ms * self.INTERNAL_SAMPLING_RATE / 1000)
         
-        # Create multiple realizations by varying segment boundaries
-        areas = []
+        # Initialize lists for metrics
+        areas_shoelace = [] # Net area (signed)
+        areas_hull = []     # Gross area (dispersion)
+        solidities = []     # Ratio of Net/Gross (Twist index)
         distances = []
         compactnesses = []
         angles = []
@@ -789,47 +788,77 @@ class Analyzer:
         original_length = original_data.shape[1]
         
         for _ in range(n_realizations):
-            # Add random boundary variations (can extend beyond original segment)
+            # --- 1. Boundary Sampling ---
             start_shift = sample_truncated_gaussian(0, uncertainty_samples / 2, -uncertainty_samples, uncertainty_samples)
             end_shift = sample_truncated_gaussian(0, uncertainty_samples / 2, -uncertainty_samples, uncertainty_samples)
 
-
-            # Calculate new boundaries in global coordinates
             new_start = segment_start_global + start_shift
             new_end = segment_end_global + end_shift
             
-            # Ensure we don't go out of bounds of the original data
             new_start = max(0, new_start)
             new_end = min(original_length, new_end)
             
-            if new_end - new_start < 3:  # Ensure minimum segment length
+            # Ensure minimum segment length (ConvexHull needs at least 3 points)
+            if new_end - new_start < 3:
                 continue
                 
-            # Extract segment with boundary uncertainty from original data
+            # Extract segment
             c1_sample = original_data[0, new_start:new_end]
             c2_sample = original_data[1, new_start:new_end]
             
+            # Stack for geometric processing (N, 2)
+            points = np.stack([c1_sample, c2_sample], axis=1)
+            
             try:
-                # Calculate metrics for this realization
-                # Shoelace formula for area
-                area = 0.5 * np.abs(np.dot(c1_sample, np.roll(c2_sample, 1)) - 
-                                np.dot(c2_sample, np.roll(c1_sample, 1)))
-                areas.append(area)
+                # --- 2. Area Calculations ---
                 
-                # T-distance (max distance from origin)
+                # Metric A: Shoelace Area (Net Area)
+                # Logic: Implicitly connects last point to first. 
+                # Note: If loop is Figure-8, this subtracts the twisted part.
+                shoelace_area = 0.5 * np.abs(np.dot(c1_sample, np.roll(c2_sample, 1)) - 
+                                np.dot(c2_sample, np.roll(c1_sample, 1)))
+                areas_shoelace.append(shoelace_area)
+                
+                # Metric B: Convex Hull Area (Gross/Unsigned Area)
+                # Logic: "Rubber band" around the points. Measures total dispersion.
+                # Better for ACM as it captures the spread even if the loop twists.
+                try:
+                    hull = ConvexHull(points)
+                    hull_area = hull.volume # In 2D scipy, .volume is the Area
+                except QhullError:
+                    # Occurs if points are perfectly collinear (flat line)
+                    hull_area = 0.0
+                areas_hull.append(hull_area)
+
+                # Metric C: Solidity (Twist/Jaggedness Index)
+                # 1.0 = Perfect convex shape. < 1.0 = Concave, Twisted, or Jagged.
+                if hull_area > 1e-9:
+                    solidities.append(shoelace_area / hull_area)
+                else:
+                    solidities.append(0.0)
+
+                # --- 3. Geometry & Shape ---
+
+                # T-Distance (Magnitude)
                 magnitudes = c1_sample**2 + c2_sample**2
                 t_max_idx = np.argmax(magnitudes)
                 distance = np.linalg.norm([c1_sample[t_max_idx] - c1_sample[0], 
                                         c2_sample[t_max_idx] - c2_sample[0]])
                 distances.append(distance)
                 
-                # Compactness
-                perimeter = np.sum(np.linalg.norm(
-                    np.diff(np.stack([c1_sample, c2_sample], axis=1), axis=0), axis=1))
-                compactness = (4 * np.pi * area) / (perimeter**2 + 1e-9)
+                # Compactness (Isoperimetric Quotient)
+            
+                # Sum of distances between points
+                path_length = np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1))
+                # Distance from last point back to first point
+                closing_gap = np.linalg.norm(points[0] - points[-1])
+                
+                total_perimeter = path_length + closing_gap
+                
+                compactness = (4 * np.pi * shoelace_area) / (total_perimeter**2 + 1e-9)
                 compactnesses.append(compactness)
                 
-                # Average angle
+                # Average Angle (Centroid Direction)
                 mean_dx = np.mean(c1_sample)
                 mean_dy = np.mean(c2_sample)
                 avg_angle_deg = np.degrees(np.arctan2(mean_dy, mean_dx))
@@ -839,22 +868,20 @@ class Analyzer:
                 logging.warning(f"Error in uncertainty calculation: {e}")
                 continue
 
-        if len(areas) > 0:
-            area_unc = ufloat(np.mean(areas), np.std(areas))
-            distance_unc = ufloat(np.mean(distances), np.std(distances))
-            compact_unc = ufloat(np.mean(compactnesses), np.std(compactnesses))
-            angle_unc = ufloat(np.mean(angles), np.std(angles))
-        else:
-            area_unc = ufloat(0, 0)
-            distance_unc = ufloat(0, 0)
-            compact_unc = ufloat(0, 0)
-            angle_unc = ufloat(0, 0)
-        
+        # --- 4. Aggregation ---
+        # Helper to create safe ufloat (defaults to 0 if no valid realizations)
+        def safe_ufloat(data_list):
+            if len(data_list) > 0:
+                return ufloat(np.mean(data_list), np.std(data_list))
+            return ufloat(0, 0)
+
         return {
-            "Area": area_unc,
-            "Distance": distance_unc,
-            "Compact": compact_unc,
-            "Angle": angle_unc
+            "Area_Net": safe_ufloat(areas_shoelace), # Standard Shoelace
+            "Area_Hull": safe_ufloat(areas_hull),    # Total Dispersion (Best for ACM size)
+            "Solidity": safe_ufloat(solidities),     # Twist/Jaggedness (Best for ACM shape)
+            "Distance": safe_ufloat(distances),      # Amplitude
+            "Compact": safe_ufloat(compactnesses),   # Roundness vs Linearity
+            "Angle": safe_ufloat(angles)             # Axis
         }
 
     @staticmethod
@@ -898,8 +925,6 @@ class Analyzer:
                                 title_suffix="", ax=None, show=True, save_path=None, 
                                 uncertainty_ms=100, n_realizations=100, display_legend=True):
         """
-        Visualize a 2D projection of the heart vector with metrics and uncertainty bars.
-        
         Parameters
         ----------
         original_data : array-like
@@ -983,7 +1008,7 @@ class Analyzer:
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('gray')
         ax.spines['bottom'].set_color('gray')
-        ax.tick_params(axis='both', which='major', labelsize=14, colors='gray')  # ⬅ bigger ticks
+        ax.tick_params(axis='both', which='major', labelsize=14, colors='gray')
         ax.axhline(y=0, color='gray', linestyle='-', alpha=0.5)
         ax.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
         ax.set_aspect('equal', adjustable='box')
@@ -1000,28 +1025,31 @@ class Analyzer:
             logging.error(f"Error calculating uncertain metrics for {proj_name}: {e}")
             uncertain_metrics = {}
 
-        # Format metrics text
+    
         if len(component1) <= 2:
             metrics_text = "Metrics N/A\n(Insufficient data)"
         elif not uncertain_metrics:
             metrics_text = "Metrics Error\n(Calculation failed)"
         else:
             try:
+                # We show Area_Net (Shoelace) as standard, and Solidity as the ACM marker.
+                # Compactness is unitless [-]. Distance is [pT].
                 metrics_text = (
-                    f'Area: ${uncertain_metrics["Area"].n:.3f} \\pm {uncertain_metrics["Area"].s:.3f}$ $pT^2$\n'
-                    f'Distance: ${uncertain_metrics["Distance"].n:.2f} \\pm {uncertain_metrics["Distance"].s:.2f}$ $pT$\n'
-                    f'Compact: ${uncertain_metrics["Compact"].n:.4f} \\pm {uncertain_metrics["Compact"].s:.4f}$ $pT$\n'
+                    f'Area: ${uncertain_metrics["Area_Net"].n:.1f} \\pm {uncertain_metrics["Area_Net"].s:.1f}$ $pT^2$\n'
+                    f'Solidity: ${uncertain_metrics["Solidity"].n:.2f} \\pm {uncertain_metrics["Solidity"].s:.2f}$\n'
+                    f'Compact: ${uncertain_metrics["Compact"].n:.3f} \\pm {uncertain_metrics["Compact"].s:.3f}$\n'
                     f'Angle: ${uncertain_metrics["Angle"].n:.1f} \\pm {uncertain_metrics["Angle"].s:.1f} ^\circ$'
                 )
             except (KeyError, ValueError, TypeError) as e:
                 logging.warning(f"Error formatting uncertain metrics for {proj_name}: {e}")
                 metrics_text = "Metrics Error\n(Formatting failed)"
+        # ---------------------------------------------------------
 
         # Larger metrics text box
         if display_legend:
             ax.text(0.05, 0.95, metrics_text, 
                     transform=ax.transAxes, 
-                    fontsize=14, fontweight='bold',  # ⬅ bigger metrics text
+                    fontsize=14, fontweight='bold',
                     color='black',
                     verticalalignment='top', 
                     bbox=dict(facecolor='white', edgecolor='gray', alpha=0.8, boxstyle='round,pad=0.3'))
@@ -1033,15 +1061,15 @@ class Analyzer:
         ax.set_xlim(-max_limit, max_limit)
         ax.set_ylim(-max_limit, max_limit)
 
-        # Axis labels (bigger font)
+        # Axis labels
         label_map = {
             "xy-Projection": ('$B_x$ [$pT$]', '$B_y$ [$pT$]'),
             "xz-Projection": ('$B_x$ [$pT$]', '$B_z$ [$pT$]'),
             "yz-Projection": ('$B_y$ [$pT$]', '$B_z$ [$pT$]')
         }
         xlabel, ylabel = label_map.get(proj_name, ('Component 1', 'Component 2'))
-        ax.set_xlabel(xlabel, fontsize=16)  # ⬅ bigger x label
-        ax.set_ylabel(ylabel, fontsize=16)  # ⬅ bigger y label
+        ax.set_xlabel(xlabel, fontsize=16)
+        ax.set_ylabel(ylabel, fontsize=16)
 
         # Format tick labels
         threshold = 1e-3 * max_limit
@@ -1054,15 +1082,15 @@ class Analyzer:
         ax.set_yticks(y_ticks)
         ax.set_yticklabels(y_labels)
 
-        # Legend with larger font
+        # Legend
         ax.legend(fontsize=14, loc='lower right', frameon=True, facecolor='white', edgecolor='gray', framealpha=0.8)
 
-        # Standalone plot title (bigger font)
+        # Standalone plot title
         if standalone_plot:
             title = f"Heart Vector Projection: {proj_name}"
             if title_suffix:
                 title += f" - {title_suffix}"
-            plt.suptitle(title, fontsize=18, fontweight='bold')  # ⬅ bigger title
+            plt.suptitle(title, fontsize=18, fontweight='bold')
             plt.tight_layout(rect=[0, 0.03, 1, 0.95])
             
             if save_path:
