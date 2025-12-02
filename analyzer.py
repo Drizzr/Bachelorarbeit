@@ -98,7 +98,6 @@ class Analyzer:
         self.add_filename = add_filename
         self.log_file_path = log_file_path
         self.scaling = scaling
-        # Removed self.sampling_rate and self.target_sampling_rate
         self.num_ch = num_ch
         self.sensor_channels_to_exclude = sensor_channels_to_exclude or {}
         self.data = {}
