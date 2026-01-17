@@ -1681,7 +1681,7 @@ class Analyzer:
             avg_channels = gaussian_filter1d(avg_channels, sigma=sigma, axis=-1, mode='nearest')
         return avg_channels, time_window
 
-    def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=1, savgol_window=61, savgol_polyorder=2, sampling_rate=1000):
+    def default_filter_combination(self, data, bandstop_freq=50, lowpass_freq=95, highpass_freq=0.5, savgol_window=61, savgol_polyorder=2, sampling_rate=1000):
         """Apply a default combination of filters to the data.
 
         Args:
@@ -1864,19 +1864,27 @@ class Analyzer:
         intervall_high_samples = int(intervall_high_sec * input_sampling_rate)
 
         data1 = np.transpose(self.data[key])[1:, :]
-        data2 = np.transpose(self.add_data[key])[1:, :]
+
+        if self.add_data:
+            data2 = np.transpose(self.add_data[key])[1:, :]
 
         if apply_default_filter:
-            data1 = self.default_filter_combination(data1, sampling_rate=input_sampling_rate)   
-            data2 = self.default_filter_combination(data2, sampling_rate=input_sampling_rate)
+            data1 = self.default_filter_combination(data1, sampling_rate=input_sampling_rate) 
+            
+            if self.add_data:
+                data2 = self.default_filter_combination(data2, sampling_rate=input_sampling_rate)
 
-        if align:
+        if align and self.add_data:
             aligned_data2, _ = self.align_multi_channel_signal(data1, data2, plot=plot_alignment, lag_cutoff=alignment_cutoff_sec * input_sampling_rate)
             min_length = min(data1.shape[1], aligned_data2.shape[1])
             single_run = np.concatenate((data1[:, :min_length], aligned_data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
-        else:
+        elif self.add_data:
             min_length = min(data1.shape[1], data2.shape[1])
             single_run = np.concatenate((data1[:, :min_length], data2[:, :min_length]), axis=0)[:, intervall_low_samples:intervall_high_samples]
+        else:
+            dummy_run = np.zeros((16, data1.shape[1]))
+            single_run = np.concatenate((data1, dummy_run), axis=0)[:, intervall_low_samples:intervall_high_samples]
+        
         
         flipped_data = self._change_to_consistent_coordinate_system(single_run)
 
