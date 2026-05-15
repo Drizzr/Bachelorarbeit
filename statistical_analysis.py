@@ -532,6 +532,210 @@ def determine_optimal_threshold(data1_nom, data2_nom, data1_unc, data2_unc, hypo
             _plot_mc_distribution(mc_results[name], final_results[name][0], name, fr"MC Distribution of {name.replace('-', ' ')}", f"{save_plots_prefix}_{name.lower().replace('-', '_')}_mc_dist.png",  units if name == "Threshold" else "")
     return final_results
 
+
+# =============================================================================
+# Multiple-Comparison Sensitivity Analysis
+# =============================================================================
+
+def benjamini_hochberg_fdr(p_values: np.ndarray) -> np.ndarray:
+    """
+    Benjamini-Hochberg FDR correction.
+
+    Parameters
+    ----------
+    p_values : np.ndarray
+        Array of raw p-values.
+
+    Returns
+    -------
+    q_values : np.ndarray
+        FDR-adjusted q-values in the original order.
+
+    Notes
+    -----
+    NaN values are ignored during correction and returned as NaN.
+    """
+    p_values = np.asarray(p_values, dtype=float)
+    q_values = np.full_like(p_values, np.nan, dtype=float)
+
+    valid = ~np.isnan(p_values)
+    p_valid = p_values[valid]
+
+    if len(p_valid) == 0:
+        return q_values
+
+    m = len(p_valid)
+    order = np.argsort(p_valid)
+    ranked_p = p_valid[order]
+
+    raw_q = ranked_p * m / np.arange(1, m + 1)
+
+    # Enforce monotonicity from largest to smallest p-value
+    monotone_q = np.minimum.accumulate(raw_q[::-1])[::-1]
+    monotone_q = np.clip(monotone_q, 0, 1)
+
+    q_valid = np.empty_like(p_valid)
+    q_valid[order] = monotone_q
+
+    q_values[valid] = q_valid
+    return q_values
+
+
+def add_source_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds sensor/quadrant and projection metadata from the 'source' column.
+
+    Expected individual source examples:
+        F1_xy, OX_yz
+
+    Expected aggregated source examples:
+        aggregated_TopLeft_xy, aggregated_BottomRight_yz
+    """
+    df = df.copy()
+
+    def extract_projection(source):
+        source = str(source)
+        if source.endswith("_xy"):
+            return "xy"
+        if source.endswith("_yz"):
+            return "yz"
+        return "unknown"
+
+    def extract_sensor_or_region(source):
+        source = str(source)
+        if source.endswith("_xy") or source.endswith("_yz"):
+            return source.rsplit("_", 1)[0]
+        return source
+
+    df["projection"] = df["source"].apply(extract_projection)
+    df["sensor_or_region"] = df["source"].apply(extract_sensor_or_region)
+
+    return df
+
+
+def add_fdr_sensitivity_results(
+    df_summary: pd.DataFrame,
+    p_col: str = "p_value_mean",
+    alpha: float = 0.05,
+    correction_group_cols: List[str] = None
+) -> pd.DataFrame:
+    """
+    Adds Benjamini-Hochberg FDR q-values to an existing summary table.
+
+    Correction is performed within each segment-feature-projection family by default.
+    This is intended as a sensitivity analysis, not as a replacement for the
+    nominal feasibility analysis.
+    """
+    if correction_group_cols is None:
+        correction_group_cols = ["segment", "feature", "projection"]
+
+    df = add_source_metadata(df_summary)
+
+    df["q_value_fdr"] = np.nan
+
+    for _, idx in df.groupby(correction_group_cols).groups.items():
+        idx = list(idx)
+        p_vals = df.loc[idx, p_col].values
+        df.loc[idx, "q_value_fdr"] = benjamini_hochberg_fdr(p_vals)
+
+    df["significant_fdr_q<0.05"] = df["q_value_fdr"] < alpha
+
+    # Conservative robustness flag:
+    # significant after FDR and the upper MC p-value UI remains below 0.05.
+    if "p_value_ui_upper" in df.columns:
+        df["robust_after_fdr_and_mc_ui"] = (
+            (df["q_value_fdr"] < alpha) &
+            (df["p_value_ui_upper"] < alpha)
+        )
+    else:
+        df["robust_after_fdr_and_mc_ui"] = df["q_value_fdr"] < alpha
+
+    return df
+
+
+def save_fdr_sensitivity_summary(
+    records: List[Dict],
+    save_path: str,
+    p_col: str = "p_value_mean",
+    alpha: float = 0.05,
+    correction_group_cols: List[str] = None
+) -> pd.DataFrame:
+    """
+    Converts analysis records to a DataFrame, adds FDR sensitivity results,
+    saves the extended table, and returns it.
+    """
+    if not records:
+        print("No records available for FDR sensitivity analysis.")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+
+    if p_col not in df.columns:
+        print(f"Column {p_col} not found. Cannot perform FDR correction.")
+        return df
+
+    df_fdr = add_fdr_sensitivity_results(
+        df_summary=df,
+        p_col=p_col,
+        alpha=alpha,
+        correction_group_cols=correction_group_cols
+    )
+
+    df_fdr.to_csv(save_path, index=False)
+    print(f"FDR sensitivity summary saved to {save_path}")
+
+    return df_fdr
+
+
+def print_fdr_survival_report(
+    df_fdr: pd.DataFrame,
+    title: str,
+    key_features: List[Tuple[str, str]] = None
+):
+    """
+    Prints a compact summary of nominal and FDR-surviving findings.
+
+    key_features should be a list of tuples:
+        [("T", "Area_Hull"), ("T", "Distance"), ("QRS", "Distance")]
+    """
+    if df_fdr.empty:
+        print(f"\nNo FDR results available for {title}.")
+        return
+
+    print(f"\n--- FDR SENSITIVITY REPORT: {title} ---")
+
+    if key_features is not None:
+        report_df = df_fdr[
+            df_fdr.apply(
+                lambda row: (row["segment"], row["feature"]) in key_features,
+                axis=1
+            )
+        ].copy()
+    else:
+        report_df = df_fdr.copy()
+
+    group_cols = ["segment", "feature", "projection"]
+
+    for group_key, df_group in report_df.groupby(group_cols):
+        seg, feat, proj = group_key
+
+        n_total = len(df_group)
+        n_nominal = int((df_group["p_value_mean"] < 0.05).sum())
+        n_fdr = int((df_group["q_value_fdr"] < 0.05).sum())
+
+        if "robust_after_fdr_and_mc_ui" in df_group.columns:
+            n_robust = int(df_group["robust_after_fdr_and_mc_ui"].sum())
+        else:
+            n_robust = n_fdr
+
+        if n_nominal > 0 or n_fdr > 0:
+            print(
+                f"{seg} {feat} [{proj}]: "
+                f"nominal {n_nominal}/{n_total}, "
+                f"FDR {n_fdr}/{n_total}, "
+                f"FDR + MC-UI robust {n_robust}/{n_total}"
+            )
+
 # =============================================================================
 # Main Analysis Execution Logic
 # =============================================================================
@@ -673,8 +877,45 @@ for sensor_name, df_sensor in all_sensor_data_dfs.items():
     overall_individual_analysis_records.extend(sensor_records)
 
 if overall_individual_analysis_records:
-    pd.DataFrame(overall_individual_analysis_records).to_csv(os.path.join(OVERALL_TABLES_DIR, "all_sensors_features_summary_mc.csv"), index=False)
-    print(f"\nOverall summary for all individual features saved.")
+    # Original nominal / MC summary
+    individual_summary_path = os.path.join(
+        OVERALL_TABLES_DIR,
+        "all_sensors_features_summary_mc.csv"
+    )
+
+    pd.DataFrame(overall_individual_analysis_records).to_csv(
+        individual_summary_path,
+        index=False
+    )
+
+    print(f"\nOverall summary for all individual features saved to {individual_summary_path}")
+
+    # FDR sensitivity summary
+    individual_fdr_path = os.path.join(
+        OVERALL_TABLES_DIR,
+        "all_sensors_features_summary_mc_fdr.csv"
+    )
+
+    df_individual_fdr = save_fdr_sensitivity_summary(
+        records=overall_individual_analysis_records,
+        save_path=individual_fdr_path,
+        p_col="p_value_mean",
+        alpha=0.05,
+        correction_group_cols=["segment", "feature", "projection"]
+    )
+
+    key_features_for_report = [
+    ("T", "Area_Hull"),
+    ("T", "Distance"),
+    ("QRS", "Area_Hull"),
+    ("QRS", "Distance"),
+    ]
+
+    print_fdr_survival_report(
+        df_individual_fdr,
+        title="Individual sensors",
+        key_features=key_features_for_report
+    )
 
 # --- 4. Aggregated Projections Analysis ---
 print("\n\n--- AGGREGATED PROJECTION ANALYSIS ---")
@@ -774,7 +1015,45 @@ for subsquare_name, sensor_ids in subsquares.items():
         agg_analysis_records.extend(agg_records)
 
 if agg_analysis_records:
-    pd.DataFrame(agg_analysis_records).to_csv(os.path.join(OVERALL_TABLES_DIR, "aggregated_projection_summary_mc.csv"), index=False)
-    print(f"\nAggregated analysis summary saved.")
+    # Original nominal / MC summary
+    aggregated_summary_path = os.path.join(
+        OVERALL_TABLES_DIR,
+        "aggregated_projection_summary_mc.csv"
+    )
+
+    pd.DataFrame(agg_analysis_records).to_csv(
+        aggregated_summary_path,
+        index=False
+    )
+
+    print(f"\nAggregated analysis summary saved to {aggregated_summary_path}")
+
+    # FDR sensitivity summary
+    aggregated_fdr_path = os.path.join(
+        OVERALL_TABLES_DIR,
+        "aggregated_projection_summary_mc_fdr.csv"
+    )
+
+    df_aggregated_fdr = save_fdr_sensitivity_summary(
+        records=agg_analysis_records,
+        save_path=aggregated_fdr_path,
+        p_col="p_value_mean",
+        alpha=0.05,
+        correction_group_cols=["segment", "feature", "projection"]
+    )
+
+    key_features_for_report = [
+        ("T", "Area_Hull"),
+        ("T", "Distance"),
+        ("QRS", "Area_Hull"),
+        ("QRS", "Distance"),
+    ]
+
+
+    print_fdr_survival_report(
+        df_aggregated_fdr,
+        title="Aggregated quadrants",
+        key_features=key_features_for_report
+    )
 
 print("\n\n--- SCRIPT FINISHED ---")
